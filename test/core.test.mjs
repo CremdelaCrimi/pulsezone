@@ -111,6 +111,12 @@ check(ctrl.status === Zone.InZone, `controller accepts bridged readings (${ctrl.
 for (let i = 0; i < 400; i++) { remote.tick(DT); ctrl.tick(remote, DT); }
 check(ctrl.status === Zone.NoSignal, 'controller notices when the bridge goes quiet');
 
+const { codeFromInput } = await import('../js/link.js');
+check(codeFromInput('fkgs5g') === 'FKGS5G', 'bare code, lowercase');
+check(codeFromInput(' FK GS-5G ') === 'FKGS5G', 'code with spaces/dashes');
+check(codeFromInput('https://cremdelacrimi.github.io/pulsezone/bridge.html?code=FKGS5G') === 'FKGS5G', 'whole bridge link pasted');
+check(codeFromInput('https://cremdelacrimi.github.io/pulsezone/') === '', 'link without a code -> empty');
+
 const easy = evaluateDifficulty(0), max = evaluateDifficulty(1);
 check(easy.spawnInterval > max.spawnInterval && easy.orbSpeed < max.orbSpeed, 'difficulty monotonic at the ends');
 check(evaluateDifficulty(0.2).duckBarChance === 0, 'no squats at low intensity');

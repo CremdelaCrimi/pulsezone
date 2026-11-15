@@ -13,6 +13,18 @@ export function newCode(len = 6) {
 }
 
 export const normalizeCode = (s) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+/**
+ * Pull the pairing code out of whatever the player typed or pasted: the bare code ("FKGS5G"),
+ * or the whole bridge link ("https://.../bridge.html?code=FKGS5G").
+ */
+export function codeFromInput(text) {
+  const t = String(text || '').trim();
+  const m = t.match(/[?&#]code=([A-Za-z0-9]+)/i);
+  if (m) return normalizeCode(m[1]);
+  if (/^https?:|\//i.test(t)) return ''; // a link without a code in it
+  return normalizeCode(t).slice(0, 8);
+}
 const peerIdFor = (code) => PREFIX + normalizeCode(code).toLowerCase();
 
 function storageGet(key) { try { return localStorage.getItem(key); } catch { return null; } }

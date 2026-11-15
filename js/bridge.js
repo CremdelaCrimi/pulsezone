@@ -1,6 +1,6 @@
 // Phone bridge: Charge 6 (Web Bluetooth, via the Bluefy browser on iPhone) -> game on the Quest.
 import { parseHeartRateMeasurement } from './core.js';
-import { BridgeLink, normalizeCode } from './link.js';
+import { BridgeLink, normalizeCode, codeFromInput } from './link.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -31,8 +31,16 @@ function renderLink() {
 
 const fromUrl = normalizeCode(new URLSearchParams(location.search).get('code'));
 ui.code.value = fromUrl || link.code || '';
-ui.linkBtn.addEventListener('click', () => link.connect(ui.code.value));
-ui.code.addEventListener('keydown', (e) => { if (e.key === 'Enter') link.connect(ui.code.value); });
+// Accept the bare code or the whole bridge link pasted in; show just the code.
+function linkFromBox() {
+  const code = codeFromInput(ui.code.value);
+  ui.code.value = code;
+  if (code) link.connect(code);
+  else { ui.linkDot.className = 'dot bad'; ui.linkText.textContent = 'Enter the 6-letter phone code shown in the game'; }
+}
+ui.code.addEventListener('paste', () => setTimeout(linkFromBox, 0)); // auto-link on paste
+ui.linkBtn.addEventListener('click', linkFromBox);
+ui.code.addEventListener('keydown', (e) => { if (e.key === 'Enter') linkFromBox(); });
 if (ui.code.value) link.connect(ui.code.value);
 
 // ------------------------------------------------------------------ Bluetooth heart rate
