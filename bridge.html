@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>PulseZone Bridge</title>
+  <meta name="theme-color" content="#0b0d12" />
+  <style>
+    :root {
+      --bg: #0b0d12; --panel: #141821; --line: #262c3a; --text: #e6e9ef; --muted: #8d95a5;
+      --accent: #4fd1c5; --good: #4ade80; --warn: #fbbf24; --bad: #f87171; --blue: #60a5fa;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, -apple-system, sans-serif; }
+    main { max-width: 480px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px 40px; }
+    h1 { font-size: 20px; margin: 4px 0 2px; letter-spacing: .2px; }
+    h1 span { color: var(--accent); }
+    .sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+    .row { display: flex; gap: 8px; }
+    input { flex: 1; min-width: 0; font: 600 24px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .25em; text-transform: uppercase;
+            background: #0e1118; color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+    button { font: 600 16px/1 system-ui, sans-serif; border: 0; border-radius: 10px; padding: 14px 16px; background: var(--accent); color: #062421; cursor: pointer; }
+    button.secondary { background: #222837; color: var(--text); }
+    button:disabled { opacity: .45; }
+    .stack { display: grid; gap: 8px; }
+    .pill { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; margin-top: 10px; color: var(--muted); }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+    .dot.good { background: var(--good); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+    .bpm { text-align: center; padding: 10px 0 4px; }
+    .bpm b { font: 700 84px/1 system-ui, sans-serif; letter-spacing: -2px; font-variant-numeric: tabular-nums; }
+    .bpm small { display: block; color: var(--muted); font-size: 14px; }
+    .banner { border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; font-size: 15px; }
+    .banner.bad { background: #3a1518; border: 1px solid #6b2328; }
+    .banner a { color: var(--warn); }
+    details { color: var(--muted); font-size: 14px; }
+    details p, details li { margin: 6px 0; }
+    summary { cursor: pointer; color: var(--text); }
+    label.toggle { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+    label.toggle input { flex: none; width: 22px; height: 22px; letter-spacing: 0; padding: 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Pulse<span>Zone</span> heart-rate bridge</h1>
+  <p class="sub">Sends your Charge 6 heart rate from this phone to the game on your Quest.</p>
+
+  <div id="noBle" class="banner bad" hidden>
+    This browser can't use Bluetooth. On iPhone, open this page in the free
+    <a href="https://apps.apple.com/app/id1492822055" target="_blank" rel="noopener">Bluefy browser</a>
+    (Safari can't do it). You can still use <b>Test without a tracker</b> below.
+  </div>
+
+  <section>
+    <h2>1 · Game code</h2>
+    <div class="row">
+      <input id="code" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" inputmode="text" />
+      <button id="linkBtn">Link</button>
+    </div>
+    <div class="pill"><span id="linkDot" class="dot"></span><span id="linkText">Type the code shown in the game</span></div>
+  </section>
+
+  <section>
+    <h2>2 · Heart-rate monitor</h2>
+    <div class="stack">
+      <button id="bleBtn">Connect Charge 6</button>
+      <button id="bleAllBtn" class="secondary">Not listed? Show all Bluetooth devices</button>
+    </div>
+    <div class="pill"><span id="bleDot" class="dot"></span><span id="bleText">Not connected</span></div>
+    <div class="bpm"><b id="bpm">--</b><small>BPM</small></div>
+  </section>
+
+  <section>
+    <label class="toggle"><input type="checkbox" id="fake" /> Test without a tracker (sends a fake heart rate)</label>
+  </section>
+
+  <details>
+    <summary>Tips</summary>
+    <ul>
+      <li><b>Charge 6:</b> turn on heart-rate sharing. Start an exercise and connect within the first 2 minutes, or turn on <i>Extended Pairing</i> in the tracker's settings.</li>
+      <li>Keep this page open with the screen on (iPhone pauses web pages when locked). Lowering the brightness is fine.</li>
+      <li>The phone and headset connect directly to each other, so the heart-rate readings go straight from the phone to the game.</li>
+    </ul>
+  </details>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script type="module" src="./js/bridge.js"></script>
+</body>
+</html>

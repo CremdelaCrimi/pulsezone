@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PulseZone VR</title>
+  <meta name="description" content="A VR workout that adapts its difficulty to keep your heart rate at a target." />
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b0d12; overflow: hidden; font: 14px/1.5 system-ui, -apple-system, sans-serif; color: #dfe3ea; }
+    canvas { display: block; }
+    #panel { position: fixed; top: 16px; left: 16px; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 100px); overflow: auto;
+             background: #0a0c12d9; border: 1px solid #262c3a; border-radius: 12px; padding: 14px 16px; backdrop-filter: blur(6px); }
+    #panel h1 { font-size: 18px; margin: 0 0 6px; } #panel h1 span { color: #4fd1c5; }
+    #panel .muted { color: #8d95a5; }
+    .code { font: 700 26px/1.2 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .2em; color: #ffd34d; }
+    .card { border-top: 1px solid #262c3a; margin-top: 10px; padding-top: 10px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    label { font-size: 12px; color: #8d95a5; display: grid; gap: 2px; }
+    input[type=number] { width: 100%; box-sizing: border-box; background: #121621; color: #dfe3ea; border: 1px solid #2b3242; border-radius: 6px; padding: 6px; font-size: 14px; }
+    button { background: #4fd1c5; color: #062421; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 600; cursor: pointer; }
+    button.secondary { background: #222837; color: #dfe3ea; }
+    a { color: #7cc7ff; word-break: break-all; }
+    #hide { position: absolute; top: 10px; right: 12px; background: none; color: #8d95a5; padding: 2px 6px; }
+    #show { position: fixed; top: 16px; left: 16px; display: none; }
+    kbd { background: #222837; border-radius: 4px; padding: 0 5px; font-size: 12px; }
+    .help { font-size: 12px; color: #9aa3b2; }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="panel">
+    <button id="hide" title="Hide panel">✕</button>
+    <h1>Pulse<span>Zone</span> VR</h1>
+    <div class="muted">Punch the orbs and duck the bars. The game speeds up or eases off to keep your heart rate at the target.</div>
+
+    <div class="card">
+      <div class="muted">Phone code</div>
+      <div class="code" id="code">······</div>
+      <div class="muted">On your iPhone, open this in the <b>Bluefy</b> browser and enter the code:<br /><a id="bridgeLink" target="_blank" rel="noopener"></a></div>
+    </div>
+
+    <div class="card">
+      <div>Heart rate: <b id="srcName">Simulator</b> <button id="srcBtn" class="secondary">Switch</button></div>
+      <div class="muted" id="srcStatus"></div>
+    </div>
+
+    <div class="card">
+      <div class="grid">
+        <label>Target BPM <input id="target" type="number" min="80" max="180" step="5" /></label>
+        <label>Your age <input id="age" type="number" min="12" max="90" /></label>
+        <label>Minutes <input id="minutes" type="number" min="1" max="60" /></label>
+      </div>
+      <div style="margin-top:8px"><button id="apply">Apply &amp; restart</button></div>
+      <div class="muted" style="font-size:12px;margin-top:6px">Includes a 2-minute warm-up and cool-down. Not a medical device. Stop if you feel unwell.</div>
+    </div>
+
+    <div class="card help">
+      <b>Quest:</b> press <b>Enter VR</b> below. <kbd>B</kbd>/<kbd>Y</kbd> switch simulator / phone heart rate, <kbd>A</kbd>/<kbd>X</kbd> restart when finished.<br />
+      <b>Desktop test:</b> click = punch · hold <kbd>C</kbd> = duck · <kbd>[</kbd> <kbd>]</kbd> target · <kbd>B</kbd> switch source · <kbd>Tab</kbd> sim mode · <kbd>↑</kbd><kbd>↓</kbd> effort ·
+      <kbd>L</kbd> drop signal · <kbd>T</kbd> fast-forward · <kbd>E</kbd> end · <kbd>R</kbd> restart
+    </div>
+  </div>
+  <button id="show" class="secondary">Show panel</button>
+
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script type="module" src="./js/game.js"></script>
+</body>
+</html>
