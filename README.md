@@ -14,7 +14,7 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 
 1. **On the Quest:** open the game page in the Quest Browser and note the **phone code**. It's on the panel and on the scoreboard in VR.
 2. **On the iPhone:** open `bridge.html` in the free **[Bluefy](https://apps.apple.com/app/id1492822055)** browser (Safari can't use Bluetooth) and enter the code.
-3. **On the Charge 6:** turn on heart-rate sharing. Start an exercise and connect within 2 minutes, or turn on *Extended Pairing*. Then tap **Connect Charge 6** in the bridge. If it isn't listed, use **Show all Bluetooth devices**.
+3. **On the Charge 6:** swipe down from the clock face and tap **Broadcast HR** (or use the exercise menu during a workout). Then tap **Connect Charge 6** in the bridge and pick it (if it isn't listed, use **Show all Bluetooth devices**). When the tracker asks to share your heart rate, tap **Share**, then **Start**.
 4. **Back on the Quest:** press **Enter VR**. The game switches to your phone's heart rate as soon as readings arrive.
 
 Keep the bridge page open with the iPhone screen on, because iOS pauses web pages when the phone locks. **B/Y** switches between the simulator and phone heart rate. **A/X** restarts after a workout.
