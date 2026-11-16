@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v38';
+} from './core.js?v39';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v38';
+import { AudioEngine } from './audio.js?v39';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v38';
-import { loadTuning, createDevPanel } from './dev.js?v38';
+import { OptionsPanel } from './options.js?v39';
+import { loadTuning, createDevPanel } from './dev.js?v39';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -315,6 +315,7 @@ function startWorkout() {
   finishedPlayed = false;
   shiftReadyAt = 0;
   waveState = 0;
+  audio.dropIn(); // never start a workout with the song still thinned out
   spotlight = null; spotlightStarted = null;
   lastPick = lastReason = ''; forceShiftNext = false; testQueued = false; comboReadyAt = 0;
   Object.assign(tstat, { slams: 0, slamHits: 0, aboveSec: 0, flatSec: 0, notes: [] }); pendingNote = '';
@@ -1471,6 +1472,7 @@ function comboResult(orb, hit) {
   score.score += pts;
   say(`${c.name.toUpperCase()} COMBO!  +${pts}`);
   audio.sfx('streak', { level: c.n });
+  audio.dropIn(); // a combo clear slams a song breakdown back in
   // Finisher: the last punch gets a big pop-up and a strong buzz on both hands.
   popText(`COMBO CLEAR +${pts}`, orb.group.position, '#ffc04d', 0.32); // above the hit's own points
   pulseBoth(0.9, 120);

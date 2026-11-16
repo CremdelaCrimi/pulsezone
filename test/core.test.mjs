@@ -409,11 +409,14 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     const built = new ChallengeBoost(); for (let i = 0; i < 40 * 10; i++) built.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0 });
     const v = built.value; for (let i = 0; i < 30 * 10; i++) built.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0, hold: true });
     check(b.value === 0 && built.value === v && v > 0, 'challenge boost holds still while the sensor looks stuck');
+    for (let i = 0; i < 20 * 10; i++) built.update(0.1, { status: 'Above', intensity: 0.5, bpmTrend: 0, hold: true });
+    check(built.value < v - 0.5, 'while held it still winds down if the reading says you are above the zone');
   }
 
   // Song breakdowns: every 24 bars, never above the zone, once per bar boundary.
-  check(breakdownDue(24, 0, 'InZone') && breakdownDue(48, 24, 'InZone') && !breakdownDue(48, 24, 'Below') && !breakdownDue(24, 24, 'InZone') && !breakdownDue(25, 0, 'InZone')
-    && !breakdownDue(24, 0, 'Above') && !breakdownDue(0, null, 'InZone'), 'song breakdowns every 24 bars, only in the zone');
+  check(breakdownDue(24, -1, 'InZone') && breakdownDue(26, 0, 'InZone') && breakdownDue(48, 1, 'InZone') && !breakdownDue(48, 2, 'InZone')
+    && !breakdownDue(29, -1, 'InZone') && !breakdownDue(24, -1, 'Below') && !breakdownDue(24, -1, 'Above') && !breakdownDue(3, -1, 'InZone'),
+    'song breakdowns: any of the first 4 bars of each 24-bar stretch, once per stretch, only in the zone');
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
   {

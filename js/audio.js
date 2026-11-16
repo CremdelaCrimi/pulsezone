@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo, songTone, breakdownDue, BREAKDOWN_BARS } from './core.js?v38';
+import { musicTempo, songTone, breakdownDue, BREAKDOWN_BARS, BREAKDOWN_EVERY } from './core.js?v39';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
@@ -154,10 +154,12 @@ export class AudioEngine {
     const tone = songTone(this.state);
     // Breakdowns: count bars in song time (independent of the playback rate).
     const bar = Math.floor((s.el.currentTime - (s.loopStart || 0)) / (240 / s.bpm));
-    if (on && !s.breakdown && !this.state.paused && breakdownDue(bar, s.lastBreakBar, this.state.status)) {
-      s.breakdown = { until: bar + BREAKDOWN_BARS }; s.lastBreakBar = bar;
+    if (s.lastBar != null && bar < s.lastBar) { this.dropIn(); s.lastBreakPeriod = -1; } // the song looped: start counting afresh
+    s.lastBar = bar;
+    if (on && !s.breakdown && !this.state.paused && breakdownDue(bar, s.lastBreakPeriod, this.state.status)) {
+      s.breakdown = { until: bar + BREAKDOWN_BARS }; s.lastBreakPeriod = Math.floor(bar / BREAKDOWN_EVERY);
     }
-    if (s.breakdown && (bar >= s.breakdown.until || bar < s.lastBreakBar || this.state.status !== 'InZone')) this.dropIn(); // leaving the zone ends it
+    if (s.breakdown && (bar >= s.breakdown.until || ended || this.state.status !== 'InZone')) this.dropIn(); // leaving the zone or finishing ends it
     s.filter.frequency.setTargetAtTime(tone.cutoff, this.ctx.currentTime, 1.5);
     s.shelf.gain.setTargetAtTime(s.breakdown ? 0 : tone.bassDb, this.ctx.currentTime, s.breakdown ? 0.3 : 1.5);
     s.hp.frequency.setTargetAtTime(s.breakdown ? 380 : 20, this.ctx.currentTime, s.breakdown ? 0.25 : 0.03);
@@ -177,6 +179,7 @@ export class AudioEngine {
     if (!s?.breakdown) return;
     s.breakdown = null;
     if (s.hp) s.hp.frequency.setTargetAtTime(20, this.ctx.currentTime, 0.03);
+    if (s.shelf) s.shelf.gain.setTargetAtTime(songTone(this.state).bassDb, this.ctx.currentTime, 0.05); // bass slams back too
   }
 
   /** Dip the music for a moment so a big hit lands harder (like sidechain compression). */
@@ -436,7 +439,6 @@ export class AudioEngine {
         break;
       }
       case 'streak': { // held the zone another 15 s (or a combo clear): a soft bell chord that climbs
-        this.dropIn();
         const up = Math.pow(2, Math.min(opts.level ?? 1, 8) / 12);
         [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.tone(t + i * 0.03, f * up, 'sine', 0.09, 0.9));
         this.tone(t, 1567.98 * up, 'triangle', 0.05, 1.2);

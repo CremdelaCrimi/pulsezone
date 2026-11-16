@@ -828,8 +828,10 @@ export class ChallengeBoost {
   }
 
   update(dt, { status, intensity, bpmTrend, climbing = false, hold = false }) {
-    // hold: the heart-rate reading can't be trusted right now (e.g. stuck sensor): change nothing.
-    if (hold) { this.stuckSeconds = 0; return this.value; }
+    // hold: the heart-rate reading can't be trusted right now (stuck sensor, phone asleep): never
+    // build on it. It still winds down normally if the reading says you're in or above the zone.
+    if (hold && status === 'Below') { this.stuckSeconds = 0; return this.value; }
+    if (hold) this.stuckSeconds = 0;
     // "Stuck": below the zone and HR rising slower than ~2 BPM per 10 s, or game already maxed out.
     // Not stuck if your effort already points into the zone ('climbing'): your heart just lags,
     // and pushing harder now would overshoot. Then the boost drains instead (~60 s from full).
@@ -1050,8 +1052,11 @@ export function songTone({ status, bpm, target }) {
  * you on when you should ease off.
  */
 export const BREAKDOWN_EVERY = 24, BREAKDOWN_BARS = 4;
-export function breakdownDue(bar, lastBar, status) {
-  return bar > 0 && bar % BREAKDOWN_EVERY === 0 && bar !== lastBar && status === 'InZone';
+export function breakdownDue(bar, lastPeriod, status) {
+  // Any of the first 4 bars of each 24-bar stretch will do (being in the zone for one exact bar
+  // was too rare); at most one breakdown per stretch.
+  const period = Math.floor(bar / BREAKDOWN_EVERY);
+  return bar >= BREAKDOWN_EVERY && bar % BREAKDOWN_EVERY < 4 && period !== lastPeriod && status === 'InZone';
 }
 
 /**

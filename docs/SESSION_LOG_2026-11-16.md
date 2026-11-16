@@ -163,3 +163,12 @@ Longest quiet stretch in training: 11 s (during a two-hand rope); longest a move
   - **Song breakdowns below the zone** (thinning the music right when you need to push): valid. Breakdowns now only happen in the zone, and leaving the zone ends one.
   - **Phone asleep**: valid. While the heart rate is only estimated from movement, the challenge boost now holds still (as it does for a stuck sensor), so a locked iPhone can't cause runaway escalation on a guess.
 - Checked: all checks pass; 3-minute auto-play, 0 overlaps, no console errors.
+
+## Cycle 27 (1:05 PM): final independent review
+- A third read-only review covered everything since 11:05. One confirmed bug and four plausible issues, all fixed:
+  - Confirmed: after the song looped, a breakdown could be skipped (the "last breakdown" marker wasn't reset on the loop). Now reset when the song wraps.
+  - A breakdown active when the workout finished could carry over and thin the start of the next workout. Breakdowns now end when the workout ends and when a new one starts.
+  - The challenge boost was fully frozen while the phone slept, so it couldn't wind down even if you were above the zone. It now only refuses to *build* on an untrustworthy reading; it still winds down normally (new test).
+  - Breakdowns needed you in the zone during one exact ~2 s bar, and the 15 s zone-streak chime cut them short. Now any of the first 4 bars of each 24-bar stretch will do (once per stretch), and only big hits (power orb, slam, combo clear, bursts) end one.
+  - The bass returned slowly (1.5 s) after a breakdown; it now slams back with the high-pass.
+- Checked: all checks pass; in the browser a breakdown started inside the window, survived a streak chime, dropped on a big hit, and the counter reset when the song looped; no console errors.
