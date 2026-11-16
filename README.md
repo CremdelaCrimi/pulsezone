@@ -36,7 +36,7 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 - **Rope tracing:** a long glowing rope in your hand's colour flows toward you along the lane, curving left, right, up and down (low dips mean squats). Where it crosses arm's length there's a ring: keep that hand on the rope as it slides past, and the ring turns green while you're on it. The catch is forgiving: your hand counts as on the rope within 20 cm of it, anywhere from 35 cm in front of the ring to 35 cm behind it (shown by a faint sleeve), and a small wobble won't knock you off. Points depend on how much of the rope you stayed on.
 - **Two-hand rope:** two ropes side by side, one per hand, that sweep wide from side to side and dip low, so you step, shift your weight and squat while following them. Score is the average of both hands.
 - **Finishing slam:** battle ropes and two-hand ropes end with a wide gold bar at head height. Raise both fists and smash it **down** together (within 0.3 s of each other), like a medicine-ball slam. In Touch mode, reaching it with both hands is enough.
-- **Boxing combos on the beat:** once intensity is up, a plain punch sometimes becomes a short combination (1-2, 1-1-2, 1-2-hook, 1-2-1-uppercut, squat-squat-hook-hook) with one orb per beat of the music (two beats when it's fast), the first landing on a beat. Clear the whole combo for a bonus: the last punch pops a floating "COMBO CLEAR +N" with a strong buzz. Combos only use moves you have switched on, and like other solo moves they get the lane to themselves.
+- **Boxing combos on the beat:** once intensity is up, a plain punch sometimes becomes a short combination (1-2, 1-1-2, 1-2-hook, 1-2-1-uppercut, squat-squat-hook-hook) with one orb per beat of the music (two beats when it's fast), the first landing on a beat. Combos come at most about every 9 seconds, so they stay special. Clear the whole combo for a bonus: the last punch pops a floating "COMBO CLEAR +N" with a strong buzz. Combos only use moves you have switched on, and like other solo moves they get the lane to themselves.
 - **Side shifts (footwork):** when you're below your zone (and not already climbing), the game may call **STEP RIGHT** or **STEP LEFT**: for 8 seconds the orbs come 35 cm to that side, and a glowing pad on the floor shows where to stand. The scoreboard, walls, ropes and bursts stay centred; walls and ropes wait until the shift is over. At most one every ~40 s. Switch it off with **Shift** in the Walls row.
 - **Game type:** **Punch** (hit hard enough to pop orbs) or **Touch** (just hold your hand where the orb arrives and it pops on contact). Choose it on the options board.
 
@@ -146,7 +146,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v36` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v37` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

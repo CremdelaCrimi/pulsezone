@@ -146,3 +146,8 @@ Six ~4-minute auto-played workouts with different settings, each checked for ove
 | F: Waves + Gentle, punches only | 0 overlaps; the target followed the waves (115–125 in training) |
 
 Longest quiet stretch in training: 11 s (during a two-hand rope); longest a move waited in the queue: 11 s (the queue gives up at 10 s and picks something else). Local test data was cleared afterwards.
+
+## Cycle 24 (11:45 AM)
+- **Built:** a combo cooldown (~9 s plus the combo's own length). In the sweep, with only punches enabled, about half of all spawns became combos (51 in 4 minutes); now 15 in a comparable run.
+- Asked Gemini (round 10) which of today's additions should be off for the first headset test. Its answer: keep side shifts, spotlight, breakdowns, combos and the breathing pacer on (each only kicks in when relevant, and the Diag line / CSV show when they did), but use **Steady**, not Waves, for a clean baseline. Updated `docs/HEADSET_TEST_PLAN.md` accordingly (Waves moved to an optional second session).
+- Checked: all checks pass; punches-only run with 0 overlaps and no console errors.

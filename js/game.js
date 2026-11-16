@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v36';
+} from './core.js?v37';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v36';
+import { AudioEngine } from './audio.js?v37';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v36';
-import { loadTuning, createDevPanel } from './dev.js?v36';
+import { OptionsPanel } from './options.js?v37';
+import { loadTuning, createDevPanel } from './dev.js?v37';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -316,7 +316,7 @@ function startWorkout() {
   shiftReadyAt = 0;
   waveState = 0;
   spotlight = null; spotlightStarted = null;
-  lastPick = lastReason = ''; forceShiftNext = false; testQueued = false;
+  lastPick = lastReason = ''; forceShiftNext = false; testQueued = false; comboReadyAt = 0;
   Object.assign(tstat, { slams: 0, slamHits: 0, aboveSec: 0, flatSec: 0, notes: [] }); pendingNote = '';
   zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
   summaryBoard.visible = false; lastSummary = null;
@@ -1430,6 +1430,8 @@ function updateTeach(head) {
 
 const combos = new Map(); // id -> { name, n, hit, failed }
 let comboSeq = 0, queuedCombo = null;
+let comboReadyAt = 0;            // combos at most every ~9 s, so they stay special (with few moves on, half of all punches became combos)
+const COMBO_COOLDOWN = 9;
 /** Send a combo (one orb per beat, first one landing on a beat). False if the lane isn't free. */
 function spawnCombo(head, standing, tpl) {
   const speed = difficulty.orbSpeed;
@@ -1444,6 +1446,7 @@ function spawnCombo(head, standing, tpl) {
   lane.push(plan);
   const id = ++comboSeq;
   combos.set(id, { name: tpl.name, n: tpl.steps.length, hit: 0, failed: false });
+  comboReadyAt = gameTime + COMBO_COOLDOWN + gap * tpl.steps.length;
   const chest = standing - 0.35;
   tpl.steps.forEach(([hand, kind], i) => {
     const side = hand === 'left' ? -1 : 1;
@@ -2507,7 +2510,7 @@ function frame(time) {
       });
       // A plain punch sometimes becomes a combo; like other solo moves it waits for a free lane slot.
       let pick = activity;
-      if (!inShift && !standNext && !queuedActivity && activity === 'jab' && Math.random() < comboChance(difficulty.intensity)) {
+      if (!inShift && !standNext && !queuedActivity && activity === 'jab' && gameTime >= comboReadyAt && Math.random() < comboChance(difficulty.intensity)) {
         const en = enabledActivities(true);
         const list = availableCombos({ swing: en.swing, low: en.low });
         if (list.length) { queuedCombo = list[Math.floor(Math.random() * list.length)]; pick = 'combo'; }
