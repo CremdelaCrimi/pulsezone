@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v41';
+} from './core.js?v42';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v41';
+import { AudioEngine } from './audio.js?v42';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v41';
-import { loadTuning, createDevPanel } from './dev.js?v41';
+import { OptionsPanel } from './options.js?v42';
+import { loadTuning, createDevPanel } from './dev.js?v42';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -1115,7 +1115,7 @@ const HEAVY_ARRIVE = 1.0;
 const HEAVY_PATCH = {
   hookL: { pos: [-0.145, 0.05, 0.145], rot: [0, -Math.PI / 4, 0] },  // front-left corner, so you can see it
   hookR: { pos: [0.145, 0.05, 0.145], rot: [0, Math.PI / 4, 0] },
-  upper: { pos: [0, -0.22, 0.17], rot: [0.5, 0, 0] },
+  upper: { pos: [0, -0.374, 0.181], rot: [0.5, 0, 0] }, // on the lower curve, facing down and out
   straight: { pos: [0, 0.08, 0.205], rot: [0, 0, 0] },
 };
 function burstLabel() {
@@ -1154,7 +1154,7 @@ function spawnHeavy(head, standing) {
   group.position.set(station.x, station.y, head.z - 10);
   scene.add(group);
   heavy = {
-    group, body, mat, patch, patchMat, lc, tex, label, station, startZ: head.z - 10, age: 0, duration: 6,
+    group, body, chain, mat, patch, patchMat, lc, tex, label, station, startZ: head.z - 10, age: 0, duration: 6,
     hits: 0, onTarget: 0, points: 0, armed: { left: true, right: true }, off: new THREE.Vector3(), offV: new THREE.Vector3(),
     target: null, targetHand: 'left', targetAge: 0, smokeT: 0, labelKey: '',
   };
@@ -1246,6 +1246,7 @@ function endHeavy(award) {
   }
   scene.remove(h.group);
   h.mat.dispose(); h.patchMat.dispose(); h.tex.dispose();
+  h.chain.geometry.dispose(); h.label.geometry.dispose(); h.label.material.dispose();
   heavy = null;
   heavyReadyAt = gameTime + 25;
 }
@@ -1340,6 +1341,7 @@ function endSled(award) {
   for (const p of s.poles) { scene.remove(p); p.geometry.dispose(); }
   scene.remove(s.snow, s.label);
   s.poleMat.dispose(); s.snowMat.dispose(); s.tex.dispose();
+  s.snow.geometry.dispose(); s.label.geometry.dispose(); s.label.material.dispose();
   sled = null;
   sledReadyAt = gameTime + 30;
 }
@@ -2821,7 +2823,7 @@ function frame(time) {
     const shiftBusy = shiftPlan && gameTime < shiftPlan.end + SHIFT.margin;
     if (pendingBurst && !standNext && !shiftBusy) {
       // A burst waits until the lane is clear, then takes over for a few seconds.
-      if (!orbs.length && !walls.length && !traces.length && !guards.length && !slams.length && !bombs.length) {
+      if (!burstActive() && !orbs.length && !walls.length && !traces.length && !guards.length && !slams.length && !bombs.length) {
         ({ bag: spawnBag, ropes: spawnRopes, heavy: spawnHeavy, sled: spawnSled })[pendingBurst](head, standing);
         pendingBurst = null;
         spawnTimer = 0;

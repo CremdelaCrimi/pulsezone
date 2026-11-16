@@ -2,7 +2,7 @@
 // (trigger = click). Also works on desktop with the mouse. The game pauses while it's open.
 import * as THREE from 'three';
 
-const W = 1024, H = 1950;
+const W = 1024, H = 2000;
 
 export class OptionsPanel {
   /**

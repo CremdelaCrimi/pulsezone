@@ -182,3 +182,15 @@ The player asked for: narrower orbs, a second bag for hooks/uppercuts, a "sleddi
 - Test buttons for all three (and the speed bag / battle ropes) in a "Test 2" row when Diag is on.
 - Fixed after snapshots: hook patches moved to the bag's front corners (they were edge-on), the heavy-bag and sled counters moved so they don't cover the scoreboard, and floating text shrinks when it pops right in front of you.
 - Checked: all checks pass (new tests for barrage, heavy-bag points, tuck); each move forced with its Test button (5/5 bombs dodged by the auto-player, 26 heavy-bag punches, 13 sled strokes); a 3-minute normal run had 4 barrages, 0 overlaps, no console errors.
+
+## 14:10 — Review fixes for the new moves (v42)
+
+An independent read-only review of c5e456a (heavy bag, sled run, dodge barrage) found four real bugs, all fixed:
+
+- **Test bursts could stack.** Pressing a burst test button while another burst was running started the second one immediately, and a same-type press (e.g. Heavy during Heavy) left the old bag in the scene for good. Bursts now wait for any running burst to end.
+- **Uppercut patch was buried** inside the heavy bag (only its edge showed). Moved onto the bag's lower curve, facing down and out, where an uppercut lands.
+- **Small GPU leaks** per heavy bag / sled run (chain, snow plane, label geometry and material). Now disposed.
+- **Options board bottom buttons clipped** with Diag on (Restart / End / Close cut by ~23 px). Board canvas 1950 → 2000 px tall.
+
+Checked OK by the review: bomb arrival times match the booked lane slot, all new state resets between workouts, attribution keys match.
+Smoke: stacked test presses ran heavy → heavy → bombs → sled in sequence, 0 overlaps, no errors.
