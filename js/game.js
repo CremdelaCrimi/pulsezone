@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v46';
+} from './core.js?v47';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v46';
+import { AudioEngine } from './audio.js?v47';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v46';
-import { loadTuning, createDevPanel } from './dev.js?v46';
+import { OptionsPanel } from './options.js?v47';
+import { loadTuning, createDevPanel } from './dev.js?v47';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -91,7 +91,11 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
 document.body.appendChild(renderer.domElement);
-document.body.appendChild(VRButton.createButton(renderer));
+const vrButton = VRButton.createButton(renderer);
+document.body.appendChild(vrButton);
+if (!navigator.xr) vrButton.style.display = 'none';
+// three.js fills the button in after its own check, so hide it whenever it says VR isn't available.
+new MutationObserver(() => { if (vrButton.style.display !== 'none' && /NOT (SUPPORTED|ALLOWED)/.test(vrButton.textContent)) vrButton.style.display = 'none'; }).observe(vrButton, { childList: true, characterData: true, subtree: true, attributes: true });
 
 const scene = new THREE.Scene();
 const skyBase = new THREE.Color(0x0b0d18);
@@ -383,7 +387,9 @@ function addNote(label) {
 function testMove(key) {
   if (controller.phase === Phase.Finished) startWorkout();
   if (key === 'shift') { forceShiftNext = true; say('Test: side shift coming', 2); return; }
-  if (BURSTS.includes(key)) { pendingBurst = key; say(`Test: ${MOVE_LABELS[key].toLowerCase()} coming`, 2); return; }
+  const after = burstActive() ? ' after this burst' : shiftPlan ? ' after the side shift' : '';
+  if (BURSTS.includes(key)) { pendingBurst = key; pendingBurstTest = true; say(`Test: ${MOVE_LABELS[key].toLowerCase()} coming${after}`, 2); return; }
+  if (pendingBurst && !pendingBurstTest) pendingBurst = null; // an automatic burst that hasn't started yet gives way to the test move
   if (key === 'combo') {
     const en = enabledActivities();
     const list = availableCombos({ swing: en.swing, low: en.low });
@@ -391,7 +397,7 @@ function testMove(key) {
     queuedCombo = list[Math.floor(Math.random() * list.length)];
   }
   queuedActivity = key; queuedFor = 0; testQueued = true;
-  say(`Test: ${key === 'sweep' ? 'two-hand rope + slam' : key} coming`, 2);
+  say(`Test: ${key === 'sweep' ? 'two-hand rope + slam' : key} coming${after}`, 2);
 }
 function setSound(on) { settings.sound = on; audio.setEnabled(on); $('sound').checked = on; saveSettings(); }
 
@@ -492,6 +498,7 @@ const MAT = {
   ghostR: new THREE.MeshBasicMaterial({ color: HAND_COLOR.right, transparent: true, opacity: 0.9 }),
   wall: new THREE.MeshBasicMaterial({ color: 0xd94cf2, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }),
   wallEdge: new THREE.LineBasicMaterial({ color: 0xf5a3ff }),
+  wallNear: new THREE.MeshBasicMaterial({ color: 0xd94cf2, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }),
   wallHit: new THREE.MeshBasicMaterial({ color: 0xff2626, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
   flash: new THREE.MeshBasicMaterial({ color: 0xffffff }),
   // Power orbs: faceted, armoured, glowing harder.
@@ -545,7 +552,7 @@ let pendingNote = '';
 let lastPick = '', lastReason = '';  // what the spawner sent last, and why (diagnostics / CSV)
 let forceShiftNext = false, testQueued = false;          // a 'Test: Shift' press: plan a shift as soon as the lane allows
 let standNext = false;                                // a squat box was sent: a "Stand tall!" box comes next
-let bag = null, ropes = null, pendingBurst = null;   // speed bag / battle ropes (one at a time)
+let bag = null, ropes = null, pendingBurst = null, pendingBurstTest = false;   // speed bag / battle ropes (one at a time)
 let bagReadyAt = 0, ropesReadyAt = 0;                // burst cooldowns (game seconds)
 let centerX = 0;
 let recenterSoon = true;
@@ -835,7 +842,7 @@ function updateReactor(dt, rawDt, status, running) {
     g.fillStyle = 'rgba(8,10,18,0.6)'; g.beginPath(); g.roundRect(4, 4, 504, 120, 26); g.fill();
     g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillStyle = look.text; g.font = '700 46px system-ui, sans-serif';
-    const word = { zone: `REACTOR ${pct}%`, overheat: 'OVERHEATING', stalled: 'REACTOR STALLED', idle: 'REACTOR' }[r.state];
+    const word = { zone: `REACTOR ${pct}%`, overheat: 'OVERHEATING', stalled: 'REACTOR WAITING', idle: 'REACTOR' }[r.state];
     g.fillText(word, 256, 50);
     g.fillStyle = '#c9ced8'; g.font = '30px system-ui, sans-serif';
     g.fillText(r.state === 'stalled' ? 'get into your zone to charge' : r.state === 'overheat' ? 'ease off to cool it' : `level ${r.level}`, 256, 98);
@@ -1295,7 +1302,7 @@ function spawnSled(head, standing) {
     poles, poleMat, snow, snowMat, lc, tex, label, age: 0, duration: 8, strokes: 0, tuckTime: 0, points: 0,
     down: { left: null, right: null }, armed: { left: true, right: true }, smokeT: 0, labelKey: '', tucked: false,
   };
-  say('SLED RUN! Tuck low and push both poles down together', 1);
+  say('SLED RUN! Tuck low, push both poles down', 1);
   audio.sfx('burst');
   pulseBoth(0.4, 60);
 }
@@ -1366,9 +1373,10 @@ function endSled(award) {
 const bombs = [];
 let barrageSeq = 0;
 const bombGeo = new THREE.IcosahedronGeometry(0.11, 0);
-const bombSpikeGeo = new THREE.ConeGeometry(0.025, 0.09, 5);
-const bombMat = new THREE.MeshStandardMaterial({ color: 0x2a0d12, emissive: 0xff2a3a, emissiveIntensity: 0.7, roughness: 0.5, flatShading: true });
-const bombHaloMat = new THREE.MeshBasicMaterial({ color: 0xff2a3a, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false });
+const bombSpikeGeo = new THREE.ConeGeometry(0.03, 0.12, 5);
+// Hazard yellow on black: nothing you punch uses these colours (hands blue/orange, guard white/teal, walls purple).
+const bombMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xd8ff1a, emissiveIntensity: 0.55, roughness: 0.5, flatShading: true });
+const bombHaloMat = new THREE.MeshBasicMaterial({ color: 0xd8ff1a, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false });
 const bombHaloGeo = new THREE.SphereGeometry(0.19, 14, 10);
 function makeBomb() {
   const g = new THREE.Group();
@@ -2011,7 +2019,7 @@ let lastSummary = null;
 
 function finishWorkout() {
   const w = summarizeWorkout(sessionLog);
-  Object.assign(w, { score: score.score, streak: Math.floor(longestStreak), reactor: reactor.level, combo: score.best });
+  Object.assign(w, { score: score.score, streak: Math.min(Math.floor(longestStreak), w.inZoneSeconds), reactor: reactor.level, combo: score.best });
   // Personal bests only count workouts driven mostly by your real heart rate (not the simulator).
   w.real = w.trainingSeconds > 0 && realHrSeconds >= 0.5 * w.trainingSeconds;
   let records = [];
@@ -2063,6 +2071,8 @@ function drawSummary(w, records) {
     g.fillText(String(tgt + half), x0 - 10, Y(tgt + half)); g.fillText(String(tgt - half), x0 - 10, Y(tgt - half));
     g.textAlign = 'left'; g.fillText('0:00', x0, y1 + 22);
     g.textAlign = 'right'; g.fillText(mmss(tMax - tMin), x1, y1 + 22);
+    g.textAlign = 'center'; g.font = '20px system-ui, sans-serif';
+    g.fillText('line: your heart rate (green = in zone)  ·  band: target zone  ·  shaded: warm-up / cool-down', (x0 + x1) / 2, y1 + 22, 560);
   } else {
     g.fillStyle = '#8d95a5'; g.font = '28px system-ui, sans-serif'; g.textAlign = 'center';
     g.fillText('No heart-rate readings this time', W / 2, (y0 + y1) / 2);
@@ -2090,7 +2100,8 @@ function drawSummary(w, records) {
     g.fillStyle = i === 0 ? '#ffffff' : '#c9ced8'; g.font = `${i === 0 ? '700 ' : ''}22px system-ui, sans-serif`;
     g.fillText(r.label, 640, y, 170);
     g.fillStyle = '#262a38'; g.fillRect(820, y - 9, 150, 18);
-    g.fillStyle = `hsl(${20 + 160 * (1 - r.bpmPer10 / maxG)} 85% 55%)`; g.fillRect(820, y - 9, Math.max(6, 150 * (r.bpmPer10 / maxG)), 18);
+    g.fillStyle = `hsl(${20 + 160 * (1 - r.bpmPer10 / maxG)} 85% 55%)`; g.fillRect(820, y - 9, Math.max(6, 120 * (r.bpmPer10 / maxG)), 18);
+    g.fillStyle = '#c9ced8'; g.font = '18px system-ui, sans-serif'; g.textAlign = 'right'; g.fillText(`+${r.bpmPer10.toFixed(0)}`, 990, y); g.textAlign = 'left';
   });
   g.textAlign = 'center'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
   const short = !w.real ? 'Simulator / estimated heart rate: personal bests not saved'
@@ -2167,6 +2178,7 @@ function statusLabel(c) {
   if (c.phase === Phase.Finished) return 'NICE WORK';
   if (c.phase === Phase.CoolDown && c.status !== Zone.SafetyBrake) return 'COOLING DOWN';
   // Heart rate lags effort by 30-40 s: say so when you're already doing the right thing.
+  if (c.phase === Phase.WarmUp && c.status === Zone.InZone) return 'WARM-UP: ON PACE';
   if (trendShown === 'climbing' && c.status === Zone.Below) return 'CLIMBING';
   if (trendShown === 'easing' && c.status === Zone.Above) return 'SETTLING';
   return { InZone: 'IN THE ZONE', Below: 'PICK IT UP', Above: 'EASE OFF', SafetyBrake: 'SAFETY BRAKE - SLOW DOWN', NoSignal: 'NO HEART-RATE SIGNAL' }[c.status];
@@ -2215,7 +2227,7 @@ function drawHud(xr) {
   g.fillText(c.phase === Phase.Finished ? statusLabel(c) : `${statusLabel(c)}  ·  ${target}`, W / 2, 230);
 
   g.fillStyle = '#c9ced8'; g.font = '30px system-ui, sans-serif';
-  const srcName = sourceKind === 'sim' ? `SIM HR (${workloadMode})` : phoneFallback ? 'ESTIMATED HR (phone asleep)' : 'PHONE HR';
+  const srcName = sourceKind === 'sim' ? (workloadMode === 'Manual' ? `SIM HR (Manual, effort ${Math.round(manualWorkload * 100)}%)` : `SIM HR (${workloadMode})`) : phoneFallback ? 'ESTIMATED HR (phone asleep)' : 'PHONE HR';
   const boostText = ''; // the challenge boost shows as the red glow past the intensity bar
   g.fillText(c.phase === Phase.Finished ? 'WORKOUT COMPLETE'
     : options.open ? 'PAUSED - options open'
@@ -2232,14 +2244,16 @@ function drawHud(xr) {
 
   g.fillStyle = '#ffffff'; g.font = '600 40px system-ui, sans-serif';
   if (c.phase === Phase.Finished) {
-    const pctZone = Math.round((c.secondsInZone / Math.max(1, c.s.trainingSeconds)) * 100);
+    const sw = lastSummary?.w; // same numbers as the board below
+    const pctZone = sw ? sw.pct : Math.round((c.secondsInZone / Math.max(1, c.s.trainingSeconds)) * 100);
+    const avgTxt = sw ? (sw.avgBpm || '--') : avgN ? Math.round(avgSum / avgN) : '--';
     const top = attribution.ranking()[0];
     g.font = '600 32px system-ui, sans-serif';
-    g.fillText(`Score ${score.score}  ·  ${score.hits} hits (${score.perfect} perfect)  ·  ${score.dodges} dodges  ·  reactor level ${reactor.level}`, W / 2, 392);
-    g.fillText(`Time in zone ${pctZone}%  ·  avg ${avgN ? Math.round(avgSum / avgN) : '--'} BPM  ·  best for you: ${top.label}`, W / 2, 436);
+    g.fillText(`Score ${score.score}  ·  ${score.hits} hits${score.perfect ? ` (${score.perfect} perfect)` : ''}  ·  ${score.dodges + score.bombDodges} dodges  ·  reactor level ${reactor.level}`, W / 2, 392, W - 60);
+    g.fillText(`Time in zone ${pctZone}%  ·  avg ${avgTxt} BPM  ·  best for you: ${top.label}`, W / 2, 436, W - 60);
     g.fillText(xr ? 'Press A to go again' : 'Press R to go again', W / 2, 480);
   } else if (fresh) {
-    g.fillText(lastEvent, W / 2, 400);
+    g.fillText(lastEvent, W / 2, 400, W - 60);
   } else if (c.phase === Phase.WarmUp && bestsLine()) {
     g.fillStyle = '#ffc04d'; g.font = '600 32px system-ui, sans-serif';
     g.fillText(bestsLine(), W / 2, 400);
@@ -2514,7 +2528,7 @@ function updatePanel(force) {
   const url = new URL('bridge.html', location.href);
   url.search = `?code=${link.code}`;
   panel.link.href = url.toString();
-  panel.link.textContent = url.toString();
+  panel.link.replaceChildren(`${url.origin}${url.pathname}`, document.createElement('wbr'), url.search);
   panel.srcName.textContent = sourceKind === 'sim' ? `Simulator (${workloadMode})` : phoneFallback ? 'Estimated (phone asleep)' : 'Phone (Charge 6)';
   updateRemoteStatus();
   panel.srcStatus.textContent = sourceKind === 'sim' ? `Phone: ${remote.statusText}` : remote.statusText;
@@ -2648,7 +2662,7 @@ function trySpawn(activity, extra = {}) {
   if (activity === 'combo') return queuedCombo ? spawnCombo(head, standing, queuedCombo) : true;
   if (activity === 'barrage') return spawnBarrage(head, standing);
   if (BURSTS.includes(activity)) {
-    pendingBurst = activity;
+    pendingBurst = activity; pendingBurstTest = false;
     say({ bag: 'Speed bag coming...', ropes: 'Battle ropes coming...', heavy: 'Heavy bag coming...', sled: 'Sled run coming...' }[activity]);
     return true;
   }
@@ -2715,6 +2729,7 @@ function updateDrift(head, xr, paused) {
 /** Plan a shift when you're stuck below the zone, if no wall/rope/etc. would arrive during it. */
 function maybePlanShift() {
   if (shiftPlan || burstActive() || pendingBurst) return;
+  if (testQueued && !forceShiftNext) return; // a test move goes first
   if (!forceShiftNext) {
     if (!settings.moves.shift) return;
     if (!PLAIN_ORBS.some((k) => enabledActivities(true)[k])) return; // shifts are plain punches only
@@ -2752,7 +2767,7 @@ function updateShift(head, standing) {
 // ------------------------------------------------------------------ main loop
 
 const head = new THREE.Vector3();
-let standing = 1.6;
+let standing = 1.6, lastLowAt = -99;
 let lastTime = 0;
 let finishedPlayed = false;
 
@@ -2773,6 +2788,7 @@ function frame(time) {
   camera.getWorldPosition(head);
   standing = head.y > standing ? head.y : standing - 0.01 * gdt;
   standing = Math.min(2.1, Math.max(1.0, standing));
+  if (head.y < standing - 0.25) lastLowAt = gameTime; // for stand-tall boxes: did you actually get low?
   if (recenterSoon && (!xr || head.y > 0.8)) { centerX = xr ? head.x : 0; recenterSoon = false; }
 
   const tNow = now();
@@ -2868,7 +2884,7 @@ function frame(time) {
       });
       // A plain punch sometimes becomes a combo; like other solo moves it waits for a free lane slot.
       let pick = activity;
-      if (!inShift && !standNext && !queuedActivity && activity === 'jab' && gameTime >= comboReadyAt && Math.random() < comboChance(difficulty.intensity)) {
+      if (!inShift && !standNext && !queuedActivity && activity === 'jab' && controller.phase === Phase.Training && gameTime >= comboReadyAt && Math.random() < comboChance(difficulty.intensity)) {
         const en = enabledActivities(true);
         const list = availableCombos({ swing: en.swing, low: en.low });
         if (list.length) { queuedCombo = list[Math.floor(Math.random() * list.length)]; pick = 'combo'; }
@@ -2944,6 +2960,7 @@ function frame(time) {
     w.mesh.position.z += w.speed * gdt;
     const far = w.mesh.position.z, near = far + w.depth;
     if (!w.announced && near > head.z - 6) { w.announced = true; say(w.label, 1); }
+    if (!w.hit && !w.faded && near > head.z - 1.0) { w.faded = true; w.fill.material = MAT.wallNear; } // you've seen it: don't hide the scoreboard
     // You're inside the box while its near face has passed you and its far face hasn't.
     if (!w.hit && near >= head.z && far <= head.z && wallHitsHead(w.poly, head.x - centerX, head.y)) {
       w.hit = true;
@@ -2954,8 +2971,10 @@ function frame(time) {
       pulseBoth(1, 120);
     }
     if (far > w.passZ) {
-      if (!w.hit) { score.dodge(); audio.sfx('dodge'); }
-      if (w.activity && !w.hit) attribution.record(w.activity, gameTime); // only when you actually ducked/squatted/stepped
+      // Would standing still have hit it? (A stand-tall box only counts if you were low just before.)
+      const neededMove = w.type === 'rise' ? gameTime - lastLowAt < 4 : wallHitsHead(w.poly, 0, standing);
+      if (!w.hit && neededMove) { score.dodge(); audio.sfx('dodge'); }
+      if (w.activity && !w.hit && neededMove) attribution.record(w.activity, gameTime); // only when you actually ducked/squatted/stepped
       scene.remove(w.mesh);
       walls.splice(i, 1);
     }
@@ -3047,7 +3066,7 @@ window.pz = {
       phase: c.phase, status: c.status, intensity: +c.intensity.toFixed(3), bpm: s.currentBpm, hasReading: s.hasReading,
       sourceKind, phoneFallback, workloadMode, code: link.code, link: link.state, remoteStatus: remote.statusText,
       score: score.score, hits: score.hits, perfect: score.perfect, misses: score.misses, wrong: score.wrong, weak: score.weak,
-      dodges: score.dodges, wallHits: score.wallHits, bombDodges: score.bombDodges, bombHits: score.bombHits, boost: +boost.value.toFixed(2), spawnInterval: +difficulty.spawnInterval.toFixed(2),
+      lastPick, lastReason, dodges: score.dodges, wallHits: score.wallHits, bombDodges: score.bombDodges, bombHits: score.bombHits, boost: +boost.value.toFixed(2), spawnInterval: +difficulty.spawnInterval.toFixed(2),
       orbs: orbs.length, walls: walls.length, swingOrbs: orbs.filter((o) => o.swing).length, secondsInZone: Math.round(c.secondsInZone),
       reps: { ...attribution.counts }, ranking: attribution.ranking().map((r) => `${r.key} ${r.bpmPer10.toFixed(1)}`),
       optionsOpen: options.open, logRows: sessionLog.length, traces: traces.length, gameType: settings.gameType,
