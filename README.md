@@ -25,7 +25,9 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 
 - **Orbs:** punch **blue** with your left hand and **orange** with your right. **Low orbs** (knee to hip height) mean squat and punch.
 - **Swing orbs** have a glowing **white curve** through them, with a "ghost fist" sliding along it. Swing along the curve (an uppercut, or a hook from the outside in) for **double points**. Any solid punch still counts, so you're never punished for an imperfect angle.
-- **Walls (purple):** get your head into the open gap: **duck**, **step aside** from a centre pillar, **lean left or right**, or **squat left or right**.
+- **Walls (purple boxes):** get your head into the open gap: **duck**, **step aside** from a centre pillar, **lean left or right**, or **squat left or right**. Each wall is a box, and its length shows how long to hold the position (about 1.2 s for a duck).
+- **Tracing orbs:** a small orb arrives with its **string** (the path) attached. When it reaches arm's length it glides along the string. Keep the matching hand inside its ring (it turns green) the whole way. Points depend on how closely you followed.
+- **Game type:** **Punch** (hit hard enough to pop orbs) or **Touch** (just hold your hand where the orb arrives and it pops on contact). Choose it on the options board.
 - **Heat gauge (left):** frosty when you're below your zone, a lively flame in it, and a hyper flame above it.
 - **Music & sound:** synthesized live. The **tempo leads you**: it speeds up when you need to pick it up and slows when you need to ease off. You also get icy bells below your zone, a bright arpeggio in it, a soft heartbeat at your real BPM, and a sound for every hit, dodge and wall.
 
@@ -44,6 +46,8 @@ Press **Y** (or **B**) to open the options board on your left, point at it with 
 - Choose phone or simulator heart rate.
 - Turn music on or off and change the volume.
 - Set the challenge level: **Gentle / Normal / Hard** changes how hard the game pushes and how fast the boost builds.
+- Choose the game type (Punch or Touch) and turn tracing orbs on or off.
+- Pick which walls you get: straight **Duck**, **Side squat** (left/right), **Lean** (left/right), and the centre **Pillar**.
 - See the "what raises your heart rate" chart.
 - Restart, end the workout, or close the board.
 
@@ -65,7 +69,7 @@ Left click = left punch · right click = right punch · hold **C** duck · **A/D
 | `js/dev.js` | Developer tuning panel |
 | `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
 | `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
-| `test/core.test.mjs` | 61 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, activity mix, challenge boost, heart-rate learning, music tempo |
+| `test/core.test.mjs` | 67 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, activity mix, challenge boost, heart-rate learning, music tempo |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
 
@@ -95,7 +99,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 | Heat gauge look | `js/thermo.js` |
 | Phone bridge | `bridge.html`, `js/bridge.js` |
 
-After changing a file's contents, bump the `?v5` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v6` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

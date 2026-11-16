@@ -5,13 +5,13 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, estimatedMaxBpm, EASY, HARD, WALL_TYPES, wallPolygon, wallHitsHead,
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
-  HeartRateAttribution,
-} from './core.js?v5';
-import { HostLink } from './link.js?v5';
-import { AudioEngine } from './audio.js?v5';
-import { HeartThermometer } from './thermo.js?v5';
-import { OptionsPanel } from './options.js?v5';
-import { loadTuning, createDevPanel } from './dev.js?v5';
+  HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints,
+} from './core.js?v6';
+import { HostLink } from './link.js?v6';
+import { AudioEngine } from './audio.js?v6';
+import { HeartThermometer } from './thermo.js?v6';
+import { OptionsPanel } from './options.js?v6';
+import { loadTuning, createDevPanel } from './dev.js?v6';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -21,8 +21,24 @@ const PHONE_TIMEOUT = 6;                       // seconds without phone readings
 // ------------------------------------------------------------------ settings & tuning
 
 const SETTINGS_KEY = 'pulsezone.settings';
-const settings = { targetBpm: 120, age: 30, trainingMinutes: 15, warmUpMinutes: 2, coolDownMinutes: 2, sound: true, volume: 0.8, challenge: 'normal' };
-try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch { /* ignore */ }
+const settings = {
+  targetBpm: 120, age: 30, trainingMinutes: 15, warmUpMinutes: 2, coolDownMinutes: 2, sound: true, volume: 0.8, challenge: 'normal',
+  gameType: 'punch',   // 'punch' = hit hard enough; 'touch' = just hold your hand where the orb arrives
+  trace: true,         // tracing orbs (follow the orb along its string)
+  walls: { duck: true, squatSide: true, lean: true, pillar: true },
+};
+try {
+  const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+  Object.assign(settings, saved, { walls: { ...settings.walls, ...(saved.walls || {}) } });
+} catch { /* ignore */ }
+/** Which activities the options allow right now. */
+const enabledActivities = () => ({
+  duck: settings.walls.duck,
+  squatSide: settings.walls.squatSide,
+  lateral: settings.walls.lean || settings.walls.pillar,
+  swing: settings.gameType === 'punch',     // swing direction needs a real punch
+  trace: settings.trace,
+});
 if (params.has('warmup')) settings.warmUpMinutes = Number(params.get('warmup'));
 if (params.has('minutes')) settings.trainingMinutes = Number(params.get('minutes'));
 if (params.has('cooldown')) settings.coolDownMinutes = Number(params.get('cooldown'));
@@ -378,30 +394,39 @@ function swingGuide(swing, hand) {
 
 const orbs = [], walls = [], bursts = [];
 window.__orbs = orbs; // test hook
+window.__walls = walls;
 let spawnTimer = 0, wallCooldown = 0;
 let centerX = 0;
 let recenterSoon = true;
 
 function clearObstacles() {
   for (const o of [...orbs, ...walls, ...bursts]) scene.remove(o.group || o.mesh);
-  orbs.length = walls.length = bursts.length = 0;
+  for (const t of traces) scene.remove(t.group, t.orb, t.ring, t.tail);
+  orbs.length = walls.length = bursts.length = traces.length = 0;
   spawnTimer = 0;
 }
 
+/**
+ * Walls are translucent boxes: the open gap is where your head goes, and the box's length is
+ * how long you have to hold the position (about 1.2 s for a duck).
+ */
 function spawnWall(head, standing, type, activity) {
   const poly = wallPolygon(type, standing);
+  const speed = difficulty.orbSpeed * 0.8;
+  const depth = wallDepth(type, speed);
   const shape = new THREE.Shape(poly.map(([x, y]) => new THREE.Vector2(x + centerX, y)));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
   const group = new THREE.Group();
-  const fill = new THREE.Mesh(new THREE.ShapeGeometry(shape), MAT.wall);
-  const edge = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(poly.map(([x, y]) => new THREE.Vector3(x + centerX, y, 0))), MAT.wallEdge);
+  const fill = new THREE.Mesh(geo, MAT.wall);
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), MAT.wallEdge);
   group.add(fill, edge);
-  group.position.z = head.z - 14;
+  group.position.z = head.z - 14 - depth; // geometry spans z..z+depth (near face = z+depth)
   scene.add(group);
   walls.push({
-    mesh: group, fill, poly, type, activity, speed: difficulty.orbSpeed * 0.8, passZ: head.z + 0.6, hit: false, announced: false,
+    mesh: group, fill, poly, type, activity, depth, speed, passZ: head.z + 0.3, hit: false, announced: false,
     label: WALL_TYPES.find((w) => w.type === type).label,
   });
-  wallCooldown = 1.3;
+  wallCooldown = 1.3 + depth / speed;
 }
 
 function spawnOrb(head, standing, activity) {
@@ -429,6 +454,85 @@ function spawnOrb(head, standing, activity) {
   orbs.push({ group, mesh, r, hand, swing, guide, activity, speed: d.orbSpeed, minPunch: d.minPunchSpeed, immuneUntil: 0, flashUntil: 0, passZ: head.z + 0.6 });
 }
 
+/**
+ * Tracing orb: arrives with its "string" (the path) already drawn at arm's reach, then glides
+ * along it. Keep the matching hand inside the ring the whole way; points = how closely you followed.
+ */
+const traces = [];
+const ringGeo = new THREE.RingGeometry(0.1, 0.125, 32);
+const TRACE_RADIUS = 0.13;
+function spawnTrace(head, standing) {
+  const pts = tracePath(standing).map(([x, y]) => new THREE.Vector3(centerX + x, y, 0));
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+  const hand = pts.reduce((s, p) => s + p.x - centerX, 0) < 0 ? 'left' : 'right';
+  const planeZ = head.z - 0.5;                                        // arm's reach
+  const group = new THREE.Group();
+  group.position.z = head.z - 14;     // the whole string flies in with the orb
+  const pathMat = new THREE.MeshBasicMaterial({ color: HAND_COLOR[hand], transparent: true, opacity: 0.55, depthWrite: false });
+  const path = new THREE.Mesh(new THREE.TubeGeometry(curve, 80, 0.012, 6, false), pathMat);
+  group.add(path);
+  const orb = new THREE.Mesh(orbGeo, MAT[hand]);
+  orb.scale.setScalar(0.07);
+  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
+  const tail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: HAND_COLOR[hand] }));
+  scene.add(group, orb, ring, tail);
+  const start = curve.getPoint(0);
+  orb.position.set(start.x, start.y, head.z - 14);
+  traces.push({
+    group, path, orb, ring, tail, curve, hand, planeZ, speed: Math.max(3, difficulty.orbSpeed * 1.4), state: 'approach', u: 0,
+    duration: traceSeconds(difficulty.intensity), onTime: 0, totalTime: 0, history: [],
+  });
+  wallCooldown = Math.max(wallCooldown, 1.0);
+}
+function endTrace(t, i) {
+  const frac = t.totalTime > 0 ? t.onTime / t.totalTime : 0;
+  const pts = tracePoints(frac) * (score.inZone() ? 2 : 1);
+  score.score += pts;
+  if (frac >= 0.6) { score.hits++; score.combo++; score.best = Math.max(score.best, score.combo); } else score.combo = 0;
+  say(`Traced ${Math.round(frac * 100)}%  +${pts}`);
+  audio.sfx(frac >= 0.8 ? 'perfect' : frac >= 0.5 ? 'hit' : 'miss', { hand: t.hand });
+  attribution.record('trace', gameTime);
+  scene.remove(t.group, t.orb, t.ring, t.tail);
+  t.path.geometry.dispose();
+  traces.splice(i, 1);
+}
+/** Where the player's hand is for tracing: the matching fist in VR, the mouse on desktop. */
+const tracePlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+function traceHandPos(t, xr) {
+  if (xr) return fistByHand[t.hand].world;
+  if (SMOKE) return t.orb.position;
+  tracePlane.constant = -t.planeZ;
+  raycaster.setFromCamera(pointer, camera);
+  return raycaster.ray.intersectPlane(tracePlane, new THREE.Vector3()) || fistByHand[t.hand].world;
+}
+function updateTraces(dt, xr) {
+  for (let i = traces.length - 1; i >= 0; i--) {
+    const t = traces[i];
+    if (t.state === 'approach') {
+      t.group.position.z = Math.min(t.planeZ, t.group.position.z + t.speed * dt);
+      t.orb.position.z = t.group.position.z;
+      if (t.group.position.z >= t.planeZ) { t.state = 'trace'; say('Follow it!'); }
+    } else {
+      t.u = Math.min(1, t.u + dt / t.duration);
+      const p = t.curve.getPoint(t.u);
+      t.orb.position.set(p.x, p.y, t.planeZ);
+      const hand = traceHandPos(t, xr);
+      const on = hand.distanceTo(t.orb.position) < TRACE_RADIUS;
+      t.totalTime += dt;
+      if (on) t.onTime += dt;
+      t.ring.material.color.set(on ? 0x4dff73 : 0xffffff);
+      if (on && xr && Math.random() < 0.3) pulse(fistByHand[t.hand], 0.15, 15);
+      // Short glowing tail behind the orb.
+      t.history.push(t.orb.position.clone());
+      if (t.history.length > 18) t.history.shift();
+      t.tail.geometry.setFromPoints(t.history);
+      if (t.u >= 1) { endTrace(t, i); continue; }
+    }
+    t.ring.position.copy(t.orb.position);
+    t.ring.lookAt(camera.getWorldPosition(new THREE.Vector3()));
+  }
+}
+
 function removeOrb(orb) {
   scene.remove(orb.group);
   const i = orbs.indexOf(orb);
@@ -453,7 +557,7 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
     flashWeak();
     return false;
   }
-  if (speed < orb.minPunch * (orb.swing ? 0.7 : 1)) {
+  if (settings.gameType === 'punch' && speed < orb.minPunch * (orb.swing ? 0.7 : 1)) {
     score.weakHit();
     audio.sfx('weak');
     pulse(fist, 0.2, 20);
@@ -576,7 +680,7 @@ function drawHud(xr) {
     wrapText(g, statusLine, W / 2, 520, 900, 30);
   }
   g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
-  g.fillText(xr ? `blue = left hand · orange = right · white curve = swing path (x2) · Y = options · code ${link.code}`
+  g.fillText(xr ? `${settings.gameType === 'touch' ? 'TOUCH MODE' : 'blue = left · orange = right'} · white curve = swing path · Y = options · code ${link.code}`
     : `blue = left click · orange = right click · O = options · phone code ${link.code}`, W / 2, 595);
 
   g.textAlign = 'left'; g.fillStyle = '#ffffff'; g.font = '600 30px system-ui, sans-serif';
@@ -606,6 +710,7 @@ const options = new OptionsPanel({
   getState: () => ({
     target: settings.targetBpm, minutes: settings.trainingMinutes, source: sourceKind, sound: settings.sound,
     volume: Math.round(settings.volume * 10), challenge: settings.challenge,
+    gameType: settings.gameType, trace: settings.trace, walls: { ...settings.walls },
     ranking: attribution.ranking().map((r) => ({ ...r, bpmPer10: Math.round(r.bpmPer10) })),
   }),
   act: (id) => {
@@ -626,6 +731,14 @@ const options = new OptionsPanel({
         controller.s.kp = tuning.controller.kp * ch.kp;
         controller.s.ki = tuning.controller.ki * ch.ki;
         boost.riseSeconds = tuning.boostRiseSeconds * ch.rise;
+        saveSettings();
+        break;
+      }
+      case 'mode-punch': case 'mode-touch': settings.gameType = id.slice(5); saveSettings(); say(settings.gameType === 'touch' ? 'Touch mode: just hold your hand there' : 'Punch mode'); break;
+      case 'trace': settings.trace = !settings.trace; saveSettings(); break;
+      case 'wall-duck': case 'wall-squatSide': case 'wall-lean': case 'wall-pillar': {
+        const k = id.slice(5);
+        settings.walls[k] = !settings.walls[k];
         saveSettings();
         break;
       }
@@ -809,7 +922,7 @@ function updateDesktop(dt, head) {
   let wantDuck = keys.has('KeyC') || keys.has('ControlLeft');
   let wantLean = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
   if (SMOKE) {
-    const w = walls.find((x) => !x.hit && x.mesh.position.z > head.z - 2.5 && x.mesh.position.z < head.z + 0.3);
+    const w = walls.find((x) => !x.hit && x.mesh.position.z + x.depth > head.z - 2.5 && x.mesh.position.z < head.z + 0.3);
     if (w) {
       const opts = [[0, 0], [-0.35, 0], [0.35, 0], [0, 0.5], [-0.35, 0.5], [0.35, 0.5]];
       const ok = opts.find(([lx, dy]) => !wallHitsHead(w.poly, lx, 1.6 - dy));
@@ -927,16 +1040,20 @@ function frame(time) {
   if (!paused && controller.phase !== Phase.Finished) {
     spawnTimer += gdt;
     wallCooldown -= gdt;
-    if (spawnTimer >= difficulty.spawnInterval && wallCooldown <= 0) {
+    if (spawnTimer >= difficulty.spawnInterval && wallCooldown <= 0 && !traces.length) {
       spawnTimer = 0;
       const activity = chooseActivity({
-        intensity: difficulty.intensity, status: controller.status, boost: boost.value, gains: attribution.w, baseWeights: tuning.weights,
+        intensity: difficulty.intensity, status: controller.status, boost: boost.value, gains: attribution.w,
+        baseWeights: tuning.weights, enabled: enabledActivities(),
       });
-      const wallType = wallTypeFor(activity);
+      const wallType = wallTypeFor(activity, Math.random, settings.walls);
       if (wallType) spawnWall(head, standing, wallType, activity);
-      else spawnOrb(head, standing, activity);
+      else if (activity === 'trace') spawnTrace(head, standing);
+      else if (ACTIVITIES.find((a) => a.key === activity).kind === 'orb') spawnOrb(head, standing, activity);
     }
   }
+
+  if (!paused) updateTraces(gdt, xr);
 
   // Orbs.
   for (let i = orbs.length - 1; i >= 0; i--) {
@@ -950,7 +1067,8 @@ function frame(time) {
     if (o.flashUntil && tNow > o.flashUntil) { o.flashUntil = 0; o.mesh.material = MAT[o.hand]; }
     if (xr && !paused) {
       for (const f of fists) {
-        if (f.world.distanceTo(o.group.position) < o.r + FIST_R + (o.swing ? 0.05 : 0.02)) { tryHit(o, f); break; }
+        const reach = o.r + FIST_R + (o.swing ? 0.05 : 0.02) + (settings.gameType === 'touch' ? 0.03 : 0);
+        if (f.world.distanceTo(o.group.position) < reach) { tryHit(o, f); break; }
       }
     }
     if (SMOKE && orbs[i] === o && o.group.position.z > head.z - 1.2) tryHit(o, null, o.hand, 5);
@@ -964,10 +1082,11 @@ function frame(time) {
   // Walls: duck, step aside, lean left/right, squat left/right.
   for (let i = walls.length - 1; i >= 0; i--) {
     const w = walls[i];
-    const prevZ = w.mesh.position.z;
     w.mesh.position.z += w.speed * gdt;
-    if (!w.announced && w.mesh.position.z > head.z - 6) { w.announced = true; say(w.label); }
-    if (!w.hit && prevZ < head.z && w.mesh.position.z >= head.z && wallHitsHead(w.poly, head.x - centerX, head.y)) {
+    const far = w.mesh.position.z, near = far + w.depth;
+    if (!w.announced && near > head.z - 6) { w.announced = true; say(w.label); }
+    // You're inside the box while its near face has passed you and its far face hasn't.
+    if (!w.hit && near >= head.z && far <= head.z && wallHitsHead(w.poly, head.x - centerX, head.y)) {
       w.hit = true;
       w.fill.material = MAT.wallHit;
       score.wallHit();
@@ -975,7 +1094,7 @@ function frame(time) {
       audio.sfx('wall');
       pulseBoth(1, 120);
     }
-    if (w.mesh.position.z > w.passZ) {
+    if (far > w.passZ) {
       if (!w.hit) { score.dodge(); audio.sfx('dodge'); }
       attribution.record(w.activity, gameTime); // you moved either way
       scene.remove(w.mesh);
@@ -1065,7 +1184,7 @@ window.pz = {
       dodges: score.dodges, wallHits: score.wallHits, boost: +boost.value.toFixed(2), spawnInterval: +difficulty.spawnInterval.toFixed(2),
       orbs: orbs.length, walls: walls.length, swingOrbs: orbs.filter((o) => o.swing).length, secondsInZone: Math.round(c.secondsInZone),
       reps: { ...attribution.counts }, ranking: attribution.ranking().map((r) => `${r.key} ${r.bpmPer10.toFixed(1)}`),
-      optionsOpen: options.open, logRows: sessionLog.length,
+      optionsOpen: options.open, logRows: sessionLog.length, traces: traces.length, gameType: settings.gameType,
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo),
     };
@@ -1082,5 +1201,13 @@ window.pz = {
     return this.state;
   },
   phone(bpm) { remote.push(bpm); if (sourceKind === 'sim' && !userChoseSource) sourceKind = 'phone'; },
+  /** Test helper: touch the nearest plain orb with the correct hand at a given hand speed. */
+  testHit(speed) {
+    const orb = orbs.find((o) => !o.swing);
+    if (!orb) return null;
+    const fake = { hand: orb.hand, speed, vel: new THREE.Vector3(0, 0, -1), hist: [], world: orb.group.position.clone(), source: null };
+    return tryHit(orb, fake);
+  },
+  act: (id) => options.hooks.act(id),
   logRows: () => sessionLog,
 };

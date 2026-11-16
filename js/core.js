@@ -502,6 +502,7 @@ export const ACTIVITIES = Object.freeze([
   { key: 'duck', label: 'Ducks', kind: 'wall', from: 0.15, base: 0.3, prior: 1.2 },
   { key: 'lateral', label: 'Side steps', kind: 'wall', from: 0.25, base: 0.35, prior: 1.0 },
   { key: 'squatSide', label: 'Side squats', kind: 'wall', from: 0.4, base: 0.3, prior: 1.6 },
+  { key: 'trace', label: 'Tracing', kind: 'orb', from: 0.2, base: 0.35, prior: 0.8 },
 ]);
 export const ACTIVITY_KEYS = ACTIVITIES.map((a) => a.key);
 
@@ -512,8 +513,9 @@ export const ACTIVITY_KEYS = ACTIVITIES.map((a) => a.key);
  * - Above your zone: favour plain punches (easy on the legs) so you can come down.
  * `baseWeights` lets the developer panel override the mix.
  */
-export function chooseActivity({ intensity, status, boost = 0, gains = null, baseWeights = null, rng = Math.random }) {
+export function chooseActivity({ intensity, status, boost = 0, gains = null, baseWeights = null, enabled = null, rng = Math.random }) {
   const weights = ACTIVITIES.map((a) => {
+    if (enabled && enabled[a.key] === false) return 0; // turned off in options
     const unlock = clamp01((intensity - a.from) / 0.1 + (a.from === 0 ? 1 : 0));
     let w = (baseWeights?.[a.key] ?? a.base) * unlock;
     if (w <= 0) return 0;
@@ -540,13 +542,46 @@ export function chooseActivity({ intensity, status, boost = 0, gains = null, bas
   return 'jab';
 }
 
-/** Which concrete wall shape an activity uses. */
-export function wallTypeFor(activity, rng = Math.random) {
+/**
+ * Which concrete wall shape an activity uses. `allow` can switch off side leans or the centre
+ * pillar (the two shapes behind "side steps").
+ */
+export function wallTypeFor(activity, rng = Math.random, allow = { lean: true, pillar: true }) {
   if (activity === 'duck') return 'duck';
-  if (activity === 'lateral') return ['pillar', 'dodgeLeft', 'dodgeRight'][Math.floor(rng() * 3) % 3];
+  if (activity === 'lateral') {
+    const shapes = [...(allow.pillar !== false ? ['pillar'] : []), ...(allow.lean !== false ? ['dodgeLeft', 'dodgeRight'] : [])];
+    return shapes.length ? shapes[Math.floor(rng() * shapes.length) % shapes.length] : null;
+  }
   if (activity === 'squatSide') return rng() < 0.5 ? 'squatLeft' : 'squatRight';
   return null;
 }
+
+/** Walls are boxes: their length is how long you must hold the position (seconds at wall speed). */
+export const WALL_HOLD_SECONDS = Object.freeze({ duck: 1.2, squatLeft: 1.0, squatRight: 1.0, dodgeLeft: 0.8, dodgeRight: 0.8, pillar: 0.6 });
+export const wallDepth = (type, speed) => Math.max(0.4, (WALL_HOLD_SECONDS[type] ?? 0.8) * speed);
+
+// ---------------------------------------------------------------- tracing orbs (follow the string)
+
+/**
+ * Control points for a tracing orb's path, in the plane at arm's reach (x right of centre,
+ * y height). It dips low enough to need a squat and swings side to side.
+ */
+export function tracePath(standing, rng = Math.random, points = 5) {
+  const out = [];
+  let x = (rng() - 0.5) * 0.3;
+  for (let i = 0; i < points; i++) {
+    x = clamp(x + (rng() < 0.5 ? -1 : 1) * (0.25 + rng() * 0.3), -0.5, 0.5);
+    const y = clamp(standing - 0.35 + (rng() - 0.6) * 0.75, standing - 0.95, standing - 0.05);
+    out.push([x, y]);
+  }
+  return out;
+}
+
+/** How long a trace lasts: slower when easy, quicker when hard. */
+export const traceSeconds = (intensity) => lerp(4.5, 2.6, clamp01(intensity));
+
+/** Points for a trace from the fraction of time your hand stayed on the orb. */
+export const tracePoints = (fraction) => Math.round(50 * clamp01(fraction) ** 1.5);
 
 // ---------------------------------------------------------------- challenge boost (when you're stuck)
 

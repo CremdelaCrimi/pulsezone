@@ -2,7 +2,7 @@
 // (trigger = click). Also works on desktop with the mouse. The game pauses while it's open.
 import * as THREE from 'three';
 
-const W = 1024, H = 1180;
+const W = 1024, H = 1450;
 
 export class OptionsPanel {
   /**
@@ -18,7 +18,7 @@ export class OptionsPanel {
     this.g = this.canvas.getContext('2d');
     this.tex = new THREE.CanvasTexture(this.canvas);
     this.tex.colorSpace = THREE.SRGBColorSpace;
-    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.0, (1.0 * H) / W), new THREE.MeshBasicMaterial({ map: this.tex, transparent: true }));
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.9, (0.9 * H) / W), new THREE.MeshBasicMaterial({ map: this.tex, transparent: true }));
     this.mesh.visible = false;
     this.buttons = [];
     this.hover = null;
@@ -93,11 +93,16 @@ export class OptionsPanel {
     };
     const value = (text, x, w) => { g.fillStyle = '#ffffff'; g.font = '700 40px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText(text, x + w / 2, y + 37); };
 
-    label('Target heart rate'); button('target-', '−', 520, 100); value(`${s.target} BPM`, 630, 230); button('target+', '+', 870, 100); y += 100;
-    label('Workout length'); button('minutes-', '−', 520, 100); value(`${s.minutes} min`, 630, 230); button('minutes+', '+', 870, 100); y += 100;
-    label('Heart rate from'); button('src-phone', 'Phone', 520, 215, s.source === 'phone'); button('src-sim', 'Simulator', 755, 215, s.source === 'sim'); y += 100;
-    label('Music & sounds'); button('sound', s.sound ? 'On' : 'Off', 520, 140, s.sound); button('vol-', 'Vol −', 680, 140); button('vol+', 'Vol +', 830, 140); y += 100;
-    label('Challenge'); button('ch-gentle', 'Gentle', 430, 170, s.challenge === 'gentle'); button('ch-normal', 'Normal', 615, 170, s.challenge === 'normal'); button('ch-hard', 'Hard', 800, 170, s.challenge === 'hard'); y += 110;
+    const R = 90; // row height
+    label('Target heart rate'); button('target-', '−', 520, 100); value(`${s.target} BPM`, 630, 230); button('target+', '+', 870, 100); y += R;
+    label('Workout length'); button('minutes-', '−', 520, 100); value(`${s.minutes} min`, 630, 230); button('minutes+', '+', 870, 100); y += R;
+    label('Heart rate from'); button('src-phone', 'Phone', 520, 215, s.source === 'phone'); button('src-sim', 'Simulator', 755, 215, s.source === 'sim'); y += R;
+    label('Game type'); button('mode-punch', 'Punch', 520, 215, s.gameType === 'punch'); button('mode-touch', 'Touch', 755, 215, s.gameType === 'touch'); y += R;
+    label('Tracing orbs'); button('trace', s.trace ? 'On' : 'Off', 520, 215, s.trace); y += R;
+    label('Walls'); button('wall-duck', 'Duck', 230, 160, s.walls.duck); button('wall-squatSide', 'Side squat', 400, 215, s.walls.squatSide);
+    button('wall-lean', 'Lean', 625, 160, s.walls.lean); button('wall-pillar', 'Pillar', 795, 175, s.walls.pillar); y += R;
+    label('Music & sounds'); button('sound', s.sound ? 'On' : 'Off', 520, 140, s.sound); button('vol-', 'Vol −', 680, 140); button('vol+', 'Vol +', 830, 140); y += R;
+    label('Challenge'); button('ch-gentle', 'Gentle', 430, 170, s.challenge === 'gentle'); button('ch-normal', 'Normal', 615, 170, s.challenge === 'normal'); button('ch-hard', 'Hard', 800, 170, s.challenge === 'hard'); y += R + 10;
 
     // What raises your heart rate (learned).
     g.fillStyle = '#e6e9ef'; g.font = '600 36px system-ui, sans-serif'; g.textAlign = 'left';
@@ -114,9 +119,9 @@ export class OptionsPanel {
       g.beginPath(); g.roundRect(400, y + 6, Math.max(14, 430 * (r.bpmPer10 / max)), 32, 10); g.fill();
       g.fillStyle = '#ffffff'; g.font = '28px system-ui, sans-serif'; g.textAlign = 'right';
       g.fillText(`${r.bpmPer10.toFixed(0)} · ${r.reps}`, W - 50, y + 22);
-      y += 50;
+      y += 46;
     }
-    y += 25;
+    y += 22;
     button('restart', 'Restart', 50, 290); button('end', 'End workout', 367, 290); button('close', 'Close', 684, 290, true);
 
     this.tex.needsUpdate = true;

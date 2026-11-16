@@ -4,6 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
+  wallDepth, tracePath, traceSeconds, tracePoints,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -180,7 +181,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
   // Learning: a synthetic player whose heart responds strongly to side squats and barely to punches.
   // Generated with a slightly different lag than the learner assumes, plus noise.
-  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0 };
+  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6 };
   const att = new HeartRateAttribution({ weights: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 1.0])) });
   const rng = mulberry32(7);
   const tr = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
@@ -213,6 +214,19 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     flat.update(tt, 100);
   }
   check(flat.ranking().every((r) => r.bpmPer10 > 0.5), `flat heart rate: no activity collapses to zero (${flat.ranking().map((r) => `${r.key} ${r.bpmPer10.toFixed(1)}`).join(', ')})`);
+
+  // Options: switching activities and wall shapes off.
+  const onlySome = count({ intensity: 0.9, status: 'Below', enabled: { duck: false, squatSide: false, swing: false } });
+  check(!onlySome.duck && !onlySome.squatSide && !onlySome.swing && onlySome.jab && onlySome.lateral && onlySome.trace,
+    `disabled activities never appear (${JSON.stringify(onlySome)})`);
+  const shapes = new Set(); for (let i = 0; i < 300; i++) shapes.add(wallTypeFor('lateral', Math.random, { lean: false, pillar: true }));
+  check(shapes.size === 1 && shapes.has('pillar'), 'side steps can be limited to the centre pillar');
+  check(wallTypeFor('lateral', Math.random, { lean: false, pillar: false }) === null, 'no side-step shapes allowed -> no wall');
+  check(Math.abs(wallDepth('duck', 2) - 2.4) < 1e-9 && wallDepth('pillar', 0.5) === 0.4, 'duck box length = 1.2 s of travel (with a minimum)');
+  const tp = tracePath(1.7, mulberry32(4));
+  check(tp.length === 5 && tp.every(([x, y]) => Math.abs(x) <= 0.5 && y >= 1.7 - 0.95 && y <= 1.7 - 0.05) && Math.min(...tp.map((p) => p[1])) < 1.45,
+    'trace path stays within reach and dips low');
+  check(traceSeconds(0) > traceSeconds(1) && tracePoints(1) === 50 && tracePoints(0.5) < 25, 'traces get quicker when hard; accuracy drives points');
 
   check(musicTempo({ intensity: 0.5, status: 'Below', bpm: 100, target: 120 }) > musicTempo({ intensity: 0.5, status: 'InZone', bpm: 120, target: 120 }),
     'music speeds up when you need to pick it up');
