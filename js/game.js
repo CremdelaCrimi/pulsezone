@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v44';
+} from './core.js?v45';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v44';
+import { AudioEngine } from './audio.js?v45';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v44';
-import { loadTuning, createDevPanel } from './dev.js?v44';
+import { OptionsPanel } from './options.js?v45';
+import { loadTuning, createDevPanel } from './dev.js?v45';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -1115,6 +1115,7 @@ let heavy = null, heavyReadyAt = 0;
 const heavyGeo = new THREE.CapsuleGeometry(0.2, 0.55, 6, 18);
 const heavyPatchGeo = new THREE.CircleGeometry(0.1, 24);
 const HEAVY_ARRIVE = 1.0;
+const HEAVY_TELEGRAPH = 0.3; // seconds a new target flashes before it settles
 const HEAVY_PATCH = {
   hookL: { pos: [-0.145, 0.05, 0.145], rot: [0, -Math.PI / 4, 0] },  // front-left corner, so you can see it
   hookR: { pos: [0.145, 0.05, 0.145], rot: [0, Math.PI / 4, 0] },
@@ -1178,7 +1179,8 @@ function nextHeavyTarget() {
   const p = HEAVY_PATCH[t.key];
   heavy.patch.position.set(...p.pos);
   heavy.patch.rotation.set(...p.rot);
-  heavy.patchMat.color.set(HAND_COLOR[heavy.targetHand]);
+  heavy.patchMat.color.set(0xffffff); // telegraph: flashes white and big, then shrinks onto the spot in the hand's colour
+  heavy.patch.scale.setScalar(1.8);
 }
 const heavyTmp = new THREE.Vector3(), heavyPatchW = new THREE.Vector3();
 function heavyHit(hand, fist, power, onTarget) {
@@ -1209,6 +1211,12 @@ function updateHeavy(dt, xr) {
   h.body.rotation.set(h.off.z * 1.2, 0, -h.off.x * 1.2);
   h.mat.emissiveIntensity += (0.3 - h.mat.emissiveIntensity) * Math.min(1, dt * 6);
   h.patchMat.opacity = 0.55 + 0.4 * Math.abs(Math.sin(h.age * 6));
+  if (h.target) { // new target: 0.3 s white flash that closes in, so you can load the punch before it settles
+    const tele = Math.min(1, h.targetAge / HEAVY_TELEGRAPH);
+    h.patch.scale.setScalar(1 + 0.8 * (1 - tele) * (1 - tele));
+    if (tele >= 1 && !h.colored) { h.patchMat.color.set(HAND_COLOR[h.targetHand]); h.colored = true; }
+    if (tele < 1) h.colored = false;
+  }
   h.label.lookAt(camera.getWorldPosition(heavyTmp));
   if (h.age >= HEAVY_ARRIVE) {
     h.targetAge += dt;

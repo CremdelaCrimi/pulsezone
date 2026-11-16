@@ -211,3 +211,7 @@ Shared the player's second feedback round and the three new moves with Gemini; a
 Built (c), adapted: each bomb plays a short falling whistle, panned to its side, at the moment it stops following your head (0.7 s before arrival). That's exactly when you need to move, so the dodge reads by ear as well as by eye. (a) and (b) are noted as next ideas for after the headset test (stroke sounds already play on sled strokes).
 
 Brief updated (moves table, second feedback round, untested thresholds, third review). Smoke: 2 barrages, 15 dodged, 0 overlaps, no errors; the whistle verified in an audio context directly.
+
+## 14:25 — Heavy-bag target telegraph (v45)
+
+Gemini's idea (a) from round 12: each new heavy-bag target now appears as a big white flash that closes onto its spot over 0.3 s, then settles in the hand's colour. You see where the next punch goes a beat early and can load the hook or uppercut. Hits during the flash still count. Smoke: heavy bag ran, scored, no overlaps or errors.
