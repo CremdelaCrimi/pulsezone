@@ -2,7 +2,7 @@
 
 A brainstorming reference for PulseZone, a heart-rate-adaptive VR workout for Meta Quest.
 Live game: https://cremdelacrimi.github.io/pulsezone/ · iPhone bridge: https://cremdelacrimi.github.io/pulsezone/bridge.html
-Last updated: 2026-11-16 (after the first headset play test).
+Last updated: 2026-11-16, 10:35 AM (after the first headset play test and a morning of Claude + Gemini iterations).
 
 ## 1. Core idea
 
@@ -19,7 +19,7 @@ It is a fitness game where the "difficulty slider" is driven by the body, not by
 - Runs in the Meta Quest Browser as a WebXR web page (three.js). No install, no developer mode.
 - Heart rate path: Charge 6 → Bluetooth → iPhone (Bluefy browser, bridge page) → direct WebRTC link → Quest.
   - The player pairs phone and headset with a 6-character code shown in the game.
-- If the phone goes quiet (screen lock), after 6 seconds the game falls back to an estimate based on the player's movement, then switches back when the phone reconnects.
+- If the phone goes quiet (screen lock), after 6 seconds the game falls back to an estimate based on the player's movement (shown as "~118" in a muted colour, with an alert sound), then switches back when the phone reconnects (two-tone chime).
 - A built-in heart simulator allows testing without a tracker.
 - Performance budget: Quest browser, so everything is simple geometry, instanced meshes, no post-processing.
 
@@ -47,6 +47,7 @@ If the player sits below the zone for about 15 seconds without heart rate rising
 - Each activity starts with a prior guess; gains can't collapse below a floor.
 - Below the zone, the mix shifts toward what raises this player's heart rate most; above it, toward easier punches.
 - Saved in the browser; the options board shows "What raises YOUR heart rate"; the end screen names the best activity.
+- Only real phone heart rate trains it (not the simulator, not the movement estimate while the phone sleeps). New players learn ~3x faster for their first ~10 minutes of real data.
 - This is how "fun" moves are judged: if rope tracing turns out to barely move heart rate, it gets sent less when the player needs to push.
 
 ### 4.4b Spotlight rounds
@@ -110,6 +111,8 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - **In the zone, the world lights up:** equalizer pillars pulse to the beat along the lane, embers drift up, fists leave glowing trails, the lane rails turn from blue to orange, the sky warms.
 - Breathing pacer above the zone: the reactor cage breathes 4 s in / 6 s out with BREATHE IN / OUT on the scoreboard.
 - Controller haptics on hits, blocks and while on the rope; a wrong-hand hit double-buzzes the correct controller.
+- **Drift guard:** more than 55 cm from where you should be (centre or the side-shift spot) shows an amber floor arrow pointing back.
+- **Spotlight** line on the scoreboard during a spotlight round, with a countdown; **combo clear** pops a floating "COMBO CLEAR +N".
 - **First-time hints:** the first two times a player meets a guard shot, rope, two-hand rope or slam bar, see-through ghost fists demonstrate the move.
 - **Heart-lag bridge:** when you're below the zone but a ~12 s effort estimate (from the learning model) says your heart rate is heading into it, the scoreboard shows a green ▲ and "CLIMBING – KEEP IT UP"; above the zone, "SETTLING" with a ▼ once you've eased off enough.
 - **Zone streaks:** every 15 s in the zone: a rising bell chord, the rails flare, bonus points and reactor charge; the current streak is on the scoreboard.
@@ -123,7 +126,7 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - Sound effects for hits (scaled by power), power smash, block, bag taps, burst warning, perfect swing, weak punch, wrong hand, miss, wall hit, dodge, entering the zone, finishing.
 
 ## 9. Options and settings
-- **VR options board** (Y or B; laser + trigger; pauses the workout): target BPM, warm-up, workout length, heart rate source, game type (Punch/Touch), moveset (Orbs / More / Bursts / Walls rows), music on/off and volume, music style, challenge level (Gentle/Normal/Hard), the learned ranking, Restart / End workout / Close.
+- **VR options board** (Y or B; laser + trigger; pauses the workout): target BPM, warm-up, workout length, workout shape (Steady / Waves / Build), heart rate source, game type (Punch/Touch), moveset (Orbs / More incl. 2 ropes / Bursts / Walls incl. Shift rows), music on/off and volume, music style, challenge level (Gentle/Normal/Hard), the learned ranking, Restart / End workout / Close.
 - **Game page (desktop):** the same plus the phone code; developer tools (tuning, workout CSV download, reset learned data).
 
 ## 10. Design principles
@@ -147,7 +150,7 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - Open question: how much does each "fun" move actually raise heart rate? (the learned ranking answers this over several workouts)
 
 ## 12. Not yet tested in the headset
-The slam bar's height and downward-speed threshold, the climbing cue's accuracy with a real heart, guard detection distance, speed bag distance, rope pump speed, zone visuals' frame rate, the music fix, the two-hand rope, stand-tall timing.
+Everything added on 2026-11-16 morning (slam bar height and 1.1 m/s threshold, side-shift comfort, combos' beat timing, waves, spotlight, breathing pacer, song filter), the climbing cue's accuracy with a real heart, the climbing cue's accuracy with a real heart, guard detection distance, speed bag distance, rope pump speed, zone visuals' frame rate, the music fix, the two-hand rope, stand-tall timing.
 
 ## 13. Rejected or reworked ideas
 - 40/20 Tabata intervals: heart rate lags 30–40 s, so fixed short intervals fight the controller (consider effort-based or 2–3 min HR-gated intervals instead).
