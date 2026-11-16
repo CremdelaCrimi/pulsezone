@@ -13,7 +13,7 @@ import {
 import { HostLink } from './link.js?v8';
 import { AudioEngine } from './audio.js?v11';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v11';
+import { OptionsPanel } from './options.js?v12';
 import { loadTuning, createDevPanel } from './dev.js?v11';
 
 const params = new URLSearchParams(location.search);
@@ -25,7 +25,7 @@ const PHONE_TIMEOUT = 6;                       // seconds without phone readings
 
 const SETTINGS_KEY = 'pulsezone.settings';
 const settings = {
-  targetBpm: 120, age: 30, trainingMinutes: 15, warmUpMinutes: 2, coolDownMinutes: 2, sound: true, volume: 0.8, challenge: 'normal',
+  targetBpm: 120, age: 30, trainingMinutes: 15, warmUpSeconds: 30, coolDownMinutes: 2, sound: true, volume: 0.8, challenge: 'normal',
   gameType: 'punch',   // 'punch' = hit hard enough; 'touch' = just hold your hand where the orb arrives
   musicStyle: 'song',  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
   // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
@@ -40,6 +40,7 @@ try {
   if (typeof saved.trace === 'boolean' && !saved.moves) moves.trace = saved.trace;
   Object.assign(settings, saved, { moves });
   delete settings.walls; delete settings.trace;
+  delete settings.warmUpMinutes; // older saves had a 2-minute warm-up; it's now in seconds (30 s default)
 } catch { /* ignore */ }
 const MOVE_LABELS = {
   jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then reach up', guard: 'Guard & counter',
@@ -62,7 +63,7 @@ const enabledActivities = (forSpawn = false) => ({
   squatSide: settings.moves.squatSide,
   lateral: settings.moves.lean || settings.moves.pillar,
 });
-if (params.has('warmup')) settings.warmUpMinutes = Number(params.get('warmup'));
+if (params.has('warmup')) settings.warmUpSeconds = Number(params.get('warmup')) * 60; // ?warmup= is in minutes
 if (params.has('minutes')) settings.trainingMinutes = Number(params.get('minutes'));
 if (params.has('cooldown')) settings.coolDownMinutes = Number(params.get('cooldown'));
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ } };
@@ -279,7 +280,7 @@ function startWorkout() {
     ki: tuning.controller.ki * ch.ki,
     targetBpm: settings.targetBpm,
     safetyCeilingBpm: Math.min(maxBpm * 0.9, settings.targetBpm + 35),
-    warmUpSeconds: settings.warmUpMinutes * 60,
+    warmUpSeconds: settings.warmUpSeconds,
     trainingSeconds: settings.trainingMinutes * 60,
     coolDownSeconds: settings.coolDownMinutes * 60,
   });
@@ -317,6 +318,19 @@ function setSource(kind) {
 }
 const toggleSource = () => setSource(sourceKind === 'sim' ? 'phone' : 'sim');
 
+/** Warm-up length choices on the VR board (seconds; 0 = straight into training). */
+const WARMUP_STEPS = [0, 15, 30, 45, 60, 90, 120, 180, 300];
+function stepWarmUp(sec, dir) {
+  const next = dir > 0 ? WARMUP_STEPS.find((v) => v > sec) : [...WARMUP_STEPS].reverse().find((v) => v < sec);
+  return next ?? sec;
+}
+/** Change the warm-up, also for the workout in progress (a shorter one ends it straight away). */
+function setWarmUp(sec) {
+  settings.warmUpSeconds = sec;
+  controller.s.warmUpSeconds = sec;
+  $('warmup').value = sec;
+  saveSettings();
+}
 function setSound(on) { settings.sound = on; audio.setEnabled(on); $('sound').checked = on; saveSettings(); }
 
 /** Phone went quiet (screen locked?): keep the workout adapting from movement until it's back. */
@@ -1371,7 +1385,7 @@ function wrapText(g, text, x, y, maxWidth, lineHeight) {
 
 const options = new OptionsPanel({
   getState: () => ({
-    target: settings.targetBpm, minutes: settings.trainingMinutes, source: sourceKind, sound: settings.sound,
+    target: settings.targetBpm, minutes: settings.trainingMinutes, warmUp: settings.warmUpSeconds, source: sourceKind, sound: settings.sound,
     volume: Math.round(settings.volume * 10), challenge: settings.challenge,
     gameType: settings.gameType, moves: { ...settings.moves },
     musicStyle: settings.musicStyle, songAvailable,
@@ -1382,6 +1396,8 @@ const options = new OptionsPanel({
     switch (id) {
       case 'target-': nudgeTarget(-5); break;
       case 'target+': nudgeTarget(5); break;
+      case 'warmup-': setWarmUp(stepWarmUp(settings.warmUpSeconds, -1)); break;
+      case 'warmup+': setWarmUp(stepWarmUp(settings.warmUpSeconds, 1)); break;
       case 'minutes-': settings.trainingMinutes = Math.max(1, settings.trainingMinutes - (settings.trainingMinutes > 5 ? 5 : 1)); controller.s.trainingSeconds = settings.trainingMinutes * 60; saveSettings(); break;
       case 'minutes+': settings.trainingMinutes = Math.min(60, settings.trainingMinutes + (settings.trainingMinutes >= 5 ? 5 : 1)); controller.s.trainingSeconds = settings.trainingMinutes * 60; saveSettings(); break;
       case 'src-phone': setSource('phone'); break;
@@ -1528,12 +1544,14 @@ function alertPanel(text) { $('srcStatus').textContent = text; }
 const $ = (id) => document.getElementById(id);
 const panel = { code: $('code'), link: $('bridgeLink'), srcName: $('srcName'), srcStatus: $('srcStatus') };
 $('target').value = settings.targetBpm; $('age').value = settings.age; $('minutes').value = settings.trainingMinutes;
+$('warmup').value = settings.warmUpSeconds;
 $('sound').checked = settings.sound;
 $('sound').addEventListener('change', (e) => setSound(e.target.checked));
 $('apply').addEventListener('click', () => {
   settings.targetBpm = Number($('target').value) || 120;
   settings.age = Number($('age').value) || 30;
   settings.trainingMinutes = Math.max(1, Number($('minutes').value) || 15);
+  settings.warmUpSeconds = Math.min(300, Math.max(0, Math.round(Number($('warmup').value) || 0)));
   saveSettings();
   startWorkout();
   $('apply').blur();

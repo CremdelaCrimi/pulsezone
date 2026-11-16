@@ -2,12 +2,12 @@
 // (trigger = click). Also works on desktop with the mouse. The game pauses while it's open.
 import * as THREE from 'three';
 
-const W = 1024, H = 1680;
+const W = 1024, H = 1770;
 
 export class OptionsPanel {
   /**
    * @param {object} hooks
-   *   getState(): { target, minutes, source, sound, volume, challenge, ranking, paused }
+   *   getState(): { target, minutes, warmUp, source, sound, volume, challenge, ranking, paused }
    *   act(id): perform a button action (see ids below)
    */
   constructor(hooks) {
@@ -95,6 +95,8 @@ export class OptionsPanel {
 
     const R = 90; // row height
     label('Target heart rate'); button('target-', '−', 520, 100); value(`${s.target} BPM`, 630, 230); button('target+', '+', 870, 100); y += R;
+    const warm = s.warmUp === 0 ? 'Off' : s.warmUp < 60 ? `${s.warmUp} s` : `${+(s.warmUp / 60).toFixed(1)} min`;
+    label('Warm-up'); button('warmup-', '−', 520, 100); value(warm, 630, 230); button('warmup+', '+', 870, 100); y += R;
     label('Workout length'); button('minutes-', '−', 520, 100); value(`${s.minutes} min`, 630, 230); button('minutes+', '+', 870, 100); y += R;
     label('Heart rate from'); button('src-phone', 'Phone', 520, 215, s.source === 'phone'); button('src-sim', 'Simulator', 755, 215, s.source === 'sim'); y += R;
     label('Game type'); button('mode-punch', 'Punch', 520, 215, s.gameType === 'punch'); button('mode-touch', 'Touch', 755, 215, s.gameType === 'touch'); y += R;

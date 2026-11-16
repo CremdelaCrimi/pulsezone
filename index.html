@@ -65,11 +65,12 @@
         <label>Target BPM <input id="target" type="number" min="80" max="180" step="5" /></label>
         <label>Your age <input id="age" type="number" min="12" max="90" /></label>
         <label>Minutes <input id="minutes" type="number" min="1" max="60" /></label>
+        <label>Warm-up (seconds) <input id="warmup" type="number" min="0" max="300" step="15" /></label>
       </div>
       <div style="margin-top:8px;display:flex;gap:14px;align-items:center"><button id="apply">Apply &amp; restart</button>
         <label style="display:flex;flex-direction:row;gap:6px;align-items:center;font-size:13px;color:#dfe3ea"><input type="checkbox" id="sound" /> Music &amp; sounds</label>
         <button id="devBtn" class="secondary" title="Tune the game's numbers, download workout logs">Developer tools</button></div>
-      <div class="muted" style="font-size:12px;margin-top:6px">Includes a 2-minute warm-up and cool-down. Not a medical device. Stop if you feel unwell.</div>
+      <div class="muted" style="font-size:12px;margin-top:6px">Includes a short warm-up (30 seconds unless you change it; 0 skips it) and a 2-minute cool-down. Not a medical device. Stop if you feel unwell.</div>
     </div>
 
     <div class="card help">
@@ -85,6 +86,6 @@
   <button id="show" class="secondary">Show panel</button>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <script type="module" src="./js/game.js?v11"></script>
+  <script type="module" src="./js/game.js?v12"></script>
 </body>
 </html>

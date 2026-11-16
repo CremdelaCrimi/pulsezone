@@ -57,6 +57,7 @@ Press **Y** (or **B**) to open the options board on your left, point at it with 
 
 - Set the target BPM and workout length.
 - Choose phone or simulator heart rate.
+- Set the **warm-up**: off, 15 s up to 5 min (30 s by default). It also changes the workout in progress.
 - Turn music on or off and change the volume.
 - Set the challenge level: **Gentle / Normal / Hard** changes how hard the game pushes and how fast the boost builds.
 - Choose the game type (Punch or Touch).
@@ -115,7 +116,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v11` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v11`/`?v12` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 
