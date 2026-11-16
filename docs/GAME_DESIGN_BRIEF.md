@@ -105,6 +105,7 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - Heat gauge (thermometer) on the left: frosty below the zone, a lively flame in the zone, a hyper flame above.
 - In-world scoreboard: heart rate, target, phase and time, intensity, score, combo, challenge boost, phone status and pairing code, short call-outs ("Stand tall!", "Ride the rope!", "Perfect hook!").
 - **In the zone, the world lights up:** equalizer pillars pulse to the beat along the lane, embers drift up, fists leave glowing trails, the lane rails turn from blue to orange, the sky warms.
+- Breathing pacer above the zone: the reactor cage breathes 4 s in / 6 s out with BREATHE IN / OUT on the scoreboard.
 - Controller haptics on hits, blocks and while on the rope; a wrong-hand hit double-buzzes the correct controller.
 - **First-time hints:** the first two times a player meets a guard shot, rope, two-hand rope or slam bar, see-through ghost fists demonstrate the move.
 - **Heart-lag bridge:** when you're below the zone but a ~12 s effort estimate (from the learning model) says your heart rate is heading into it, the scoreboard shows a green ▲ and "CLIMBING – KEEP IT UP"; above the zone, "SETTLING" with a ▼ once you've eased off enough.
@@ -114,6 +115,7 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 
 ## 8. Music and sound (pace-leading audio)
 - **Song mode:** "Hard-Knuckle Focus" (121 BPM), time-stretched 0.78×–1.25× with pitch preserved to lead the player's pace. On Quest it starts from a button press (enter VR / trigger); if blocked, the synth plays instead.
+- The song is filtered by zone (muffled well below, opening as you climb, +4 dB bass in the zone) and ducks under big hits.
 - **Synth mode:** live procedural music (kick, clap, hats, bass, pad, arpeggio); icy bells below the zone, bright arpeggio in it, a soft heartbeat at the real BPM.
 - Sound effects for hits (scaled by power), power smash, block, bag taps, burst warning, perfect swing, weak punch, wrong hand, miss, wall hit, dodge, entering the zone, finishing.
 
