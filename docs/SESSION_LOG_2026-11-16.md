@@ -151,3 +151,6 @@ Longest quiet stretch in training: 11 s (during a two-hand rope); longest a move
 - **Built:** a combo cooldown (~9 s plus the combo's own length). In the sweep, with only punches enabled, about half of all spawns became combos (51 in 4 minutes); now 15 in a comparable run.
 - Asked Gemini (round 10) which of today's additions should be off for the first headset test. Its answer: keep side shifts, spotlight, breakdowns, combos and the breathing pacer on (each only kicks in when relevant, and the Diag line / CSV show when they did), but use **Steady**, not Waves, for a clean baseline. Updated `docs/HEADSET_TEST_PLAN.md` accordingly (Waves moved to an optional second session).
 - Checked: all checks pass; punches-only run with 0 overlaps and no console errors.
+
+## Cycle 25 (12:09 PM)
+- Documentation: brought `docs/GAME_DESIGN_BRIEF.md` up to 12:10 (call-out tiers, test tools, real-reps-only learning, stuck-sensor guard, guard colours, spotlight unlock rule, combo cooldown, breakdowns, robustness checks, postponed ideas) and added a fourth notebook source, "changes on 2026-11-16 (10:35 AM to 12:10 PM)", so Gemini has the full picture.

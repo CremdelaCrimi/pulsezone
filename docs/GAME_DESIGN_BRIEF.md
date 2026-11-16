@@ -2,7 +2,7 @@
 
 A brainstorming reference for PulseZone, a heart-rate-adaptive VR workout for Meta Quest.
 Live game: https://cremdelacrimi.github.io/pulsezone/ · iPhone bridge: https://cremdelacrimi.github.io/pulsezone/bridge.html
-Last updated: 2026-11-16, 10:35 AM (after the first headset play test and a morning of Claude + Gemini iterations).
+Last updated: 2026-11-16, 12:10 PM (after the first headset play test and a day of Claude + Gemini iterations).
 
 ## 1. Core idea
 
@@ -47,11 +47,13 @@ If the player sits below the zone for about 15 seconds without heart rate rising
 - Each activity starts with a prior guess; gains can't collapse below a floor.
 - Below the zone, the mix shifts toward what raises this player's heart rate most; above it, toward easier punches.
 - Saved in the browser; the options board shows "What raises YOUR heart rate"; the end screen names the best activity.
-- Only real phone heart rate trains it (not the simulator, not the movement estimate while the phone sleeps). New players learn ~3x faster for their first ~10 minutes of real data.
+- Only real phone heart rate trains it (not the simulator, not the movement estimate while the phone sleeps, not a stuck sensor). New players learn ~3x faster for their first ~10 minutes of real data.
+- Only reps the player actually did count: orbs hit, walls cleared, guard shots blocked, ropes followed ≥ 30% (missed or failed moves teach nothing).
+- Stuck-sensor guard: the same phone BPM for > 25 s while below the zone and clearly working → no learning, the challenge boost holds, one call-out to check the band.
 - This is how "fun" moves are judged: if rope tracing turns out to barely move heart rate, it gets sent less when the player needs to push.
 
 ### 4.4b Spotlight rounds
-Every 4 minutes of training (first at 3:00) one move is featured for 60 s (2.5x weight). Below the zone it's picked from the player's top 3 learned heart-raisers; above the zone the round is cancelled.
+Every 4 minutes of training (first at 3:00) one move is featured for 60 s (2.5x weight). Below the zone it's picked from the player's top 3 learned heart-raisers, and only from moves unlocked at the current intensity; above the zone the round is cancelled.
 
 ### 4.5 Lane spacing (nothing overlaps)
 Everything flies down one lane. Each thing books a time slot for when it reaches the player. Plain orbs can come in groups, but ropes, wall boxes, power orbs, pairs and guard shots get the lane to themselves with a short gap before and after. Bursts wait for an empty lane. Nothing flies through anything else. **Every new move must fit into this booking.**
@@ -74,7 +76,7 @@ Everything flies down one lane. Each thing books a time slot for when it reaches
 | Stand tall (auto) | After every duck/squat box: a low box you must stand fully up over | follows squats | — |
 | Speed bag (burst) | 4–5 s of rapid alternating punches on a bag | 0.35, or early when stuck | 0.3 per punch |
 | Battle ropes (burst) | 6 s of pumping both arms; staying low scores 1.5× | 0.45, or early when stuck | 1.6 per second |
-| Boxing combo | 2–4 orbs one beat apart (1-2, 1-1-2, 1-2-hook, 1-2-1-upper, squat-squat-hook-hook); bonus for clearing it | replaces a plain punch, 25–60% chance from intensity 0.25 | (counts as its punches) |
+| Boxing combo | 2–4 orbs one beat apart (1-2, 1-1-2, 1-2-hook, 1-2-1-upper, squat-squat-hook-hook); bonus + floating COMBO CLEAR for clearing it | replaces a plain punch, 25–60% chance from intensity 0.25, at most ~every 9 s | (counts as its punches) |
 | Side shift (footwork) | Below the zone: for 8 s plain orbs come 35 cm to one side; a floor pad shows where to step; walls/ropes/bursts wait | below zone, intensity ≥ 0.35 or boost | — (part of the orbs) |
 | Finishing slam (auto) | After battle ropes and two-hand ropes: a wide gold bar at head height; smash it DOWN with both fists together (within 0.3 s) | follows ropes | — |
 
@@ -99,7 +101,7 @@ The player chooses their moveset with checkboxes (game page and VR options board
 - Score depends on the fraction of time on the rope.
 
 ### 6.4 Guard & counter, bursts, reactor
-- Guard: both fists within ~34 cm of the head, in front of the face. Block = points + a counter orb from close range.
+- Guard: a white shot with a teal shield glow (no hand colour, so it isn't mistaken for an orb to punch). Both fists within ~34 cm of the head, in front of the face. Block = points + a counter orb from close range.
 - Reactor (right of the HUD): charges while in the zone; level-ups give bonus points; shows overheat when above the zone and "stalled" below.
 
 ### 6.5 Scoring
@@ -127,6 +129,7 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - Sound effects for hits (scaled by power), power smash, block, bag taps, burst warning, perfect swing, weak punch, wrong hand, miss, wall hit, dodge, entering the zone, finishing.
 
 ## 9. Options and settings
+- **Test tools:** a **Diag** toggle on the VR board shows a diagnostics line (intensity, boost, heading-to vs now, what was sent and why, learned top move, learning speed, SENSOR FLAT) and reveals **Test** buttons (Guard / 2 ropes / Shift / Combo: send that move next) and **Note** buttons (Slam missed / Guard picky / Too fast / Felt great: bookmark the CSV). With Diag on, the end board adds a test report (slams, guards, walls hit, time above zone, stuck-sensor time, notes). The CSV logs last_sent, reason, effort_bpm, trend, spotlight, shift, learned_top, note. A 20-minute plan is in docs/HEADSET_TEST_PLAN.md.
 - **VR options board** (Y or B; laser + trigger; pauses the workout): target BPM, warm-up, workout length, workout shape (Steady / Waves / Build), heart rate source, game type (Punch/Touch), moveset (Orbs / More incl. 2 ropes / Bursts / Walls incl. Shift rows), music on/off and volume, music style, challenge level (Gentle/Normal/Hard), the learned ranking, Restart / End workout / Close.
 - **Game page (desktop):** the same plus the phone code; developer tools (tuning, workout CSV download, reset learned data).
 
@@ -153,7 +156,12 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 ## 12. Not yet tested in the headset
 Everything added on 2026-11-16 morning (slam bar height and 1.1 m/s threshold, side-shift comfort, combos' beat timing, waves, spotlight, breathing pacer, song filter), the climbing cue's accuracy with a real heart, the climbing cue's accuracy with a real heart, guard detection distance, speed bag distance, rope pump speed, zone visuals' frame rate, the music fix, the two-hand rope, stand-tall timing.
 
+## 12b. Robustness checks done (2026-11-16)
+- Two independent code reviews (10:11 and 10:59) found 7 real bugs, all fixed (e.g. side-shift call-out spam, Build warm-up jump, simulator data being learned, test moves dropped behind stand-up boxes, spotlight on locked moves).
+- A sweep of six 4-minute auto-played workouts (Touch; ropes only; walls only; Build + Hard; everything off; Waves + Gentle punches only): 0 overlaps, 0 errors, no stuck queues.
+
 ## 13. Rejected or reworked ideas
 - 40/20 Tabata intervals: heart rate lags 30–40 s, so fixed short intervals fight the controller (consider effort-based or 2–3 min HR-gated intervals instead).
 - 45–90° portal turns: disorienting in a tethered-lane design (small lane shifts may be OK).
 - Knee strikes: no leg tracking on Quest.
+- 45-second "pure" move-family blocks to speed up learning: postponed (touches the spawner right before a headset test; faster early learning + spotlight rounds cover part of it).
