@@ -64,3 +64,19 @@ Claude's first triage notes are in *italics*; none are verified yet.
 Not changed: no Start button (the game auto-starts so the Quest flow stays one step), the heat gauge and Diag line wording, and the ideas list (kept for after the headset test).
 
 Checks: core tests pass; idle desktop run (2 min) earned no dodge points; test buttons each sent their move within 5 s; a 3-minute auto-play to the end board had 0 overlaps, no errors, and matching numbers (128 s in zone, 72%, streak 2:08).
+
+## Morty's re-check of v47 (4:23–4:36 PM)
+
+**Verified fixed:** no idle dodge points (0 hits, 0 dodges after a full idle run); WAITING / WARM-UP: ON PACE / Manual effort labels; score, reactor, average and zone % match between boards; streak ≤ time in zone; "(0 perfect)" gone; graph legend and bar numbers; dodges = walls + bombs exactly; VR button hidden; call-outs fit; Guard, 2 ropes and Combo test buttons fire immediately.
+
+**Still failing (Morty), with Claude's first read (not verified yet):**
+- **Idle score still leaks** (0 → 15 → 35 after ~5.5 min, no zone time). *A third scoring source; needs finding.*
+- **Sled and Heavy test buttons don't deliver** (a pair, a barrage, a jab shift or a boost burst came instead). *Likely: when the burst can't start yet (stand-up box or side shift), the normal picker runs and an automatic burst overwrites the test one.*
+- **In-zone time 0:47 (scoreboard corner) vs 0:42 (board below).** *The small "in zone" counter on the scoreboard still uses the live controller timer.*
+- **Combo 95 vs hits + dodges 93.** *Guard blocks count toward the combo; the board should say so or count them.*
+- **Top-3 bars identical on an idle run.** *They're the starting estimates (priors) until real heart rate teaches them; the label should say so.*
+- **Bombs are yellow-green, not black.** *That is the v47 look (hazard yellow glow on a dark body); the description to Morty overstated "black".*
+- **Walls don't fade in the last metre** (a red pillar, an orange duck bar). *Red/orange is the "you got hit" colour: hit walls were excluded from the fade. Should fade too.*
+- **Bridge URL still breaks mid-word.** *The URL is longer than the panel, so it still breaks inside "bridge.html"; needs break points at each "/".*
+- **Walls can cover the options board while it's open.**
+- **Suggestion:** show the version number on screen.
