@@ -507,6 +507,7 @@ export const ACTIVITIES = Object.freeze([
   // that the challenge boost leans on when your heart rate is stuck.
   { key: 'power', label: 'Power punches', kind: 'orb', from: 0.3, base: 0.3, prior: 0.9 },
   { key: 'pair', label: 'Squat + reach', kind: 'orb', from: 0.3, base: 0.3, prior: 1.4 },
+  { key: 'guard', label: 'Guard & counter', kind: 'orb', from: 0.3, base: 0.25, prior: 0.9 },
   { key: 'bag', label: 'Speed bag', kind: 'burst', from: 0.35, base: 0.1, prior: 0.3 },     // per punch on the bag
   { key: 'ropes', label: 'Battle ropes', kind: 'burst', from: 0.45, base: 0.1, prior: 1.6 }, // per second of pumping
 ]);
@@ -598,6 +599,50 @@ export const traceSeconds = (intensity) => lerp(4.5, 2.6, clamp01(intensity));
 
 /** Points for a trace from the fraction of time your hand stayed on the orb. */
 export const tracePoints = (fraction) => Math.round(50 * clamp01(fraction) ** 1.5);
+
+// ---------------------------------------------------------------- lane timeline (spacing between obstacles)
+
+/**
+ * Everything flies down one lane, so the game books a time slot for when each thing reaches you.
+ * Plain orbs can share the lane with other plain orbs; everything else ("solo": walls, ropes,
+ * power orbs, pairs, guard + counter) gets the lane to itself, with a little breathing room
+ * before and after. Because things spawn at the same distance, a new thing must also arrive
+ * after every solo thing already on its way, or it would fly through it.
+ */
+export const SPAWN_DISTANCE = 14;
+export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0 }) {
+  const orbArrive = now + (SPAWN_DISTANCE - 0.5) / speed;
+  switch (activity) {
+    case 'jab': case 'low': case 'swing':
+      return { kind: 'orb', start: orbArrive - 0.3, end: orbArrive + 0.3 };
+    case 'power':
+      return { kind: 'solo', start: orbArrive - 0.7, end: orbArrive + 0.6 };
+    case 'pair':   // low orb, then the high one 0.85 s later
+      return { kind: 'solo', start: orbArrive - 0.6, end: orbArrive + 0.85 + 0.6 };
+    case 'guard': { // the hot shot, then a counter orb from close range
+      const gs = speed * 0.9, cs = Math.max(2.5, speed);
+      const arrive = now + (SPAWN_DISTANCE - 0.35) / gs;
+      return { kind: 'solo', start: arrive - 0.8, end: arrive + COUNTER_DISTANCE / cs + 0.6 };
+    }
+    case 'trace': {
+      const ts = Math.max(2.2, speed * 0.85);
+      const front = now + (SPAWN_DISTANCE - 0.5) / ts;
+      const tail = front + traceSeconds(intensity);
+      return { kind: 'solo', start: front - 0.9, end: tail + 0.7 };
+    }
+    case 'duck': case 'lateral': case 'squatSide': {
+      const ws = speed * 0.8;
+      return { kind: 'solo', start: now + SPAWN_DISTANCE / ws - 0.7, end: now + (SPAWN_DISTANCE + depth) / ws + 0.6 };
+    }
+    default: return null;
+  }
+}
+/** Can `plan` be added to the booked `lane` slots without crowding anything? */
+export function laneFree(lane, plan) {
+  if (!plan) return true;
+  return lane.every((r) => (r.kind === 'orb' && plan.kind === 'orb') || plan.start >= r.end);
+}
+export const COUNTER_DISTANCE = 3.5;
 
 // ---------------------------------------------------------------- punch quality (anti wrist-flick)
 

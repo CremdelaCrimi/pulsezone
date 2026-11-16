@@ -7,12 +7,13 @@ import {
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
   HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
-} from './core.js?v9';
+  lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
+} from './core.js?v10';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v9';
+import { AudioEngine } from './audio.js?v10';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v9';
-import { loadTuning, createDevPanel } from './dev.js?v9';
+import { OptionsPanel } from './options.js?v10';
+import { loadTuning, createDevPanel } from './dev.js?v10';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -28,7 +29,7 @@ const settings = {
   musicStyle: 'song',  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
   // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
   moves: {
-    jab: true, low: true, swing: true, power: true, pair: true, trace: true,
+    jab: true, low: true, swing: true, power: true, pair: true, guard: true, trace: true,
     bag: true, ropes: true, duck: true, squatSide: true, lean: true, pillar: true,
   },
 };
@@ -40,7 +41,7 @@ try {
   delete settings.walls; delete settings.trace;
 } catch { /* ignore */ }
 const MOVE_LABELS = {
-  jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then reach up',
+  jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then reach up', guard: 'Guard & counter',
   trace: 'Rope tracing', bag: 'Speed bag', ropes: 'Battle ropes',
   duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar',
 };
@@ -51,6 +52,7 @@ const enabledActivities = (forSpawn = false) => ({
   swing: settings.moves.swing && settings.gameType === 'punch', // swing direction needs a real punch
   power: settings.moves.power && settings.gameType === 'punch', // power is all about punching hard
   pair: settings.moves.pair,
+  guard: settings.moves.guard,
   trace: settings.moves.trace,
   bag: settings.moves.bag && (!forSpawn || gameTime >= bagReadyAt),
   ropes: settings.moves.ropes && (!forSpawn || gameTime >= ropesReadyAt),
@@ -285,6 +287,7 @@ function startWorkout() {
   finishedPlayed = false;
   clearObstacles();
   score.reset();
+  resetReactor();
   hudKey = '';
   recenterSoon = true;
 }
@@ -351,7 +354,7 @@ function updateMotion(dt, head) {
 // ------------------------------------------------------------------ score
 
 const score = {
-  reset() { Object.assign(this, { score: 0, combo: 0, best: 0, hits: 0, perfect: 0, misses: 0, weak: 0, wrong: 0, dodges: 0, wallHits: 0 }); },
+  reset() { Object.assign(this, { score: 0, combo: 0, best: 0, hits: 0, perfect: 0, misses: 0, weak: 0, wrong: 0, dodges: 0, wallHits: 0, blocks: 0, guardsMissed: 0 }); },
   inZone: () => controller?.status === Zone.InZone,
   hit(bonus = 1, label = '') {
     this.hits++; this.combo++; this.best = Math.max(this.best, this.combo);
@@ -433,7 +436,10 @@ const orbs = [], walls = [], bursts = [], shards = [];
 window.__orbs = orbs; // test hook
 window.__walls = walls;
 setTimeout(() => { window.__traces = traces; });
-let spawnTimer = 0, wallCooldown = 0;
+let spawnTimer = 0;
+// Lane timeline: booked arrival slots so obstacles never crowd each other (see lanePlan in core.js).
+let lane = [];
+let queuedActivity = null, queuedFor = 0;
 let bag = null, ropes = null, pendingBurst = null;   // speed bag / battle ropes (one at a time)
 let bagReadyAt = 0, ropesReadyAt = 0;                // burst cooldowns (game seconds)
 let centerX = 0;
@@ -445,9 +451,13 @@ function clearObstacles() {
   orbs.length = walls.length = bursts.length = traces.length = shards.length = 0;
   if (bag) { scene.remove(bag.group); bag = null; }
   if (ropes) { endRopes(false); }
+  for (const g of guards) scene.remove(g.group);
+  guards.length = 0;
   pendingBurst = null;
   bagReadyAt = ropesReadyAt = 0;
   spawnTimer = 0;
+  lane = [];
+  queuedActivity = null; queuedFor = 0;
 }
 
 /**
@@ -470,7 +480,6 @@ function spawnWall(head, standing, type, activity) {
     mesh: group, fill, poly, type, activity, depth, speed, passZ: head.z + 0.3, hit: false, announced: false,
     label: WALL_TYPES.find((w) => w.type === type).label,
   });
-  wallCooldown = 1.3 + depth / speed;
 }
 
 /**
@@ -496,7 +505,7 @@ function spawnOrb(head, standing, activity, opts = {}) {
     : power ? chest + (Math.random() - 0.5) * 0.15
       : Math.max(0.6, chest + (Math.random() * 1.4 - 1) * d.verticalSpread));
   const group = new THREE.Group();
-  group.position.set(centerX + x, y, head.z - 14 - (opts.behind || 0));
+  group.position.set(centerX + x, y, head.z - (opts.dist ?? SPAWN_DISTANCE) - (opts.behind || 0));
   const baseMat = power ? (hand === 'left' ? MAT.powerL : MAT.powerR) : MAT[hand];
   const mesh = new THREE.Mesh(power ? powerGeo : orbGeo, baseMat);
   mesh.scale.setScalar(r);
@@ -517,7 +526,7 @@ function spawnOrb(head, standing, activity, opts = {}) {
   }
   scene.add(group);
   const orb = {
-    group, mesh, shell, baseMat, r, hand, swing, guide, activity, power, speed: opts.speed ?? d.orbSpeed, minPunch: d.minPunchSpeed,
+    group, mesh, shell, baseMat, r, hand, swing, guide, activity, power, counter: !!opts.counter, speed: opts.speed ?? d.orbSpeed, minPunch: d.minPunchSpeed,
     immuneUntil: 0, flashUntil: 0, passZ: head.z + 0.6, dying: 0,
   };
   orbs.push(orb);
@@ -545,6 +554,263 @@ function spawnPair(head, standing) {
     link: [lowX - highX, lowY - highY, gap],
   });
   say('Squat... then reach up!');
+}
+
+// ------------------------------------------------------------------ guard & counter
+
+/**
+ * A red-hot shot flies at your face: don't punch it, bring both fists up by your chin to block.
+ * Block it and a counter orb comes straight in from close range for double points.
+ */
+const guards = [];
+const guardGeo = new THREE.IcosahedronGeometry(0.15, 1);
+const guardHaloGeo = new THREE.SphereGeometry(0.24, 18, 12);
+const guardMat = new THREE.MeshStandardMaterial({ color: 0xff3b1f, emissive: 0xff3b1f, emissiveIntensity: 1, roughness: 0.4, flatShading: true });
+const guardHaloMat = new THREE.MeshBasicMaterial({ color: 0xff7a1f, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false });
+const guardIcon = (() => { // a shield badge floating above the shot
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(40,6,4,0.75)'; g.beginPath(); g.roundRect(4, 4, 248, 120, 26); g.fill();
+  g.strokeStyle = '#ff7a3d'; g.lineWidth = 5; g.stroke();
+  g.fillStyle = '#ffd9c7'; g.font = '700 54px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('GUARD', 128, 66);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false });
+})();
+const guardIconGeo = new THREE.PlaneGeometry(0.34, 0.17);
+function spawnGuard(head, standing) {
+  const group = new THREE.Group();
+  const core = new THREE.Mesh(guardGeo, guardMat);
+  const halo = new THREE.Mesh(guardHaloGeo, guardHaloMat);
+  const icon = new THREE.Mesh(guardIconGeo, guardIcon);
+  icon.position.y = 0.33;
+  group.add(core, halo, icon);
+  group.position.set(centerX, standing - 0.08, head.z - SPAWN_DISTANCE);
+  scene.add(group);
+  guards.push({ group, core, halo, icon, speed: difficulty.orbSpeed * 0.9, hitZ: head.z - 0.35, announced: false });
+}
+/** Both fists up by your face, in front of you. */
+function isGuarding(head, xr) {
+  if (SMOKE) return true;
+  if (!xr) return keys.has('KeyG');
+  return fists.every((f) => f.world.distanceTo(head) < 0.34 && f.world.z < head.z + 0.06 && f.world.y > head.y - 0.42);
+}
+function updateGuards(dt, xr, head) {
+  for (let i = guards.length - 1; i >= 0; i--) {
+    const g = guards[i];
+    g.group.position.z += g.speed * dt;
+    g.core.rotation.x += dt * 5; g.core.rotation.y += dt * 3;
+    g.halo.scale.setScalar(1 + 0.15 * Math.sin(gameTime * 18 + i));
+    g.icon.lookAt(camera.getWorldPosition(new THREE.Vector3()));
+    if (!g.announced && g.group.position.z > head.z - 7) { g.announced = true; say('Incoming! GUARD UP - both fists by your chin'); audio.sfx('alert'); }
+    if (g.group.position.z < g.hitZ) continue;
+    const pos = g.group.position.clone();
+    if (isGuarding(head, xr)) {
+      score.blocks++; score.combo++; score.best = Math.max(score.best, score.combo);
+      const pts = 15 * (score.inZone() ? 2 : 1);
+      score.score += pts;
+      say(`Blocked! +${pts}  COUNTER!`);
+      audio.sfx('block');
+      pulseBoth(1, 90);
+      shatter(pos.add(new THREE.Vector3(0, 0, -0.35)), new THREE.Vector3(0, 0.4, -1), 0xff7a3d, 0.5); // burst away from your face
+      spawnCounter(head, standing);
+    } else {
+      score.guardsMissed++; score.combo = 0;
+      say('Guard up! Both fists by your chin');
+      audio.sfx('wall');
+      pulseBoth(1, 160);
+      hitFlash = 1;
+    }
+    attribution.record('guard', gameTime);
+    scene.remove(g.group);
+    guards.splice(i, 1);
+  }
+}
+let counterHand = 'right';
+function spawnCounter(head, standing) {
+  counterHand = counterHand === 'right' ? 'left' : 'right';
+  const x = counterHand === 'left' ? -0.14 : 0.14;
+  spawnOrb(head, standing, 'guard', {
+    x, y: standing - 0.32, hand: counterHand, dist: COUNTER_DISTANCE, speed: Math.max(2.5, difficulty.orbSpeed), counter: true,
+  });
+}
+
+// ------------------------------------------------------------------ the reactor (charges while you're in the zone)
+
+/**
+ * A core on the right, opposite the heat gauge. It only charges while your heart rate is in the
+ * zone (about a minute of zone time per level). Above the zone it overheats and stops charging;
+ * below it stalls and frosts over. Each full charge is a level and a points bonus.
+ */
+const REACTOR_SECONDS = 60;
+const reactor = (() => {
+  const group = new THREE.Group();
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xffb347, emissiveIntensity: 0.6, roughness: 0.3, flatShading: true });
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15, 1), coreMat);
+  const cage = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(0.24, 0)), new THREE.LineBasicMaterial({ color: 0x9fb3d9, transparent: true, opacity: 0.7 }));
+  const track = new THREE.Mesh(new THREE.RingGeometry(0.29, 0.325, 64), new THREE.MeshBasicMaterial({ color: 0x262a38, side: THREE.DoubleSide }));
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xffc04d, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.29, 0.325, 64, 1, Math.PI / 2, 0.001), ringMat);
+  ring.position.z = 0.002;
+  const lc = document.createElement('canvas'); lc.width = 512; lc.height = 128;
+  const tex = new THREE.CanvasTexture(lc); tex.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.155), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  label.position.y = -0.45;
+  group.add(core, cage, track, ring, label);
+  scene.add(group);
+  return { group, core, coreMat, cage, ring, ringMat, lc, tex, label, charge: 0, level: 0, state: 'idle', pct: -1, key: '', shake: 0, lastWarn: '' };
+})();
+function resetReactor() { reactor.charge = 0; reactor.level = 0; reactor.pct = -1; reactor.key = ''; reactor.lastWarn = ''; }
+const REACTOR_LOOK = {
+  zone: { color: 0xffb347, ring: 0xffc04d, text: '#ffd27a' },
+  overheat: { color: 0xff2a1a, ring: 0xff5a3d, text: '#ff7a5c' },
+  stalled: { color: 0x5fb8ff, ring: 0x5fb8ff, text: '#9fd4ff' },
+  idle: { color: 0x8d95a5, ring: 0x8d95a5, text: '#b8bfcc' },
+};
+const tmpColor = new THREE.Color();
+function updateReactor(dt, rawDt, status, running) {
+  const r = reactor;
+  r.state = status === 'InZone' ? 'zone' : status === 'Above' || status === 'SafetyBrake' ? 'overheat' : status === 'Below' ? 'stalled' : 'idle';
+  if (running) {
+    if (r.state === 'zone') {
+      r.charge += dt / REACTOR_SECONDS;
+      if (r.charge >= 1) {
+        r.charge = 0; r.level++;
+        const bonus = 250 * r.level;
+        score.score += bonus;
+        say(`REACTOR CHARGED! Level ${r.level}  +${bonus}`);
+        audio.sfx('zone');
+        pulseBoth(0.7, 120);
+        shatter(r.group.position.clone(), new THREE.Vector3(0, 1, 0), 0xffc04d, 1);
+      }
+    }
+    if (r.state === 'overheat' && r.lastWarn !== 'overheat') say('Reactor overheating - ease off, slow your breathing');
+    r.lastWarn = r.state;
+  }
+  const look = REACTOR_LOOK[r.state];
+  r.coreMat.color.lerp(tmpColor.set(look.color), 1 - Math.exp(-rawDt * 4));
+  r.coreMat.emissive.copy(r.coreMat.color);
+  r.ringMat.color.set(look.ring);
+  const beat = Math.exp(-6 * (beatPhase % 1));
+  r.coreMat.emissiveIntensity = r.state === 'zone' ? 0.7 + 0.8 * beat : r.state === 'overheat' ? 0.6 + 0.6 * Math.random() : 0.25;
+  r.core.rotation.y += rawDt * (r.state === 'zone' ? 2.2 : r.state === 'overheat' ? 4 : 0.4);
+  r.cage.rotation.y -= rawDt * 0.5; r.cage.rotation.x += rawDt * 0.2;
+  r.core.position.x = r.state === 'overheat' ? (Math.random() - 0.5) * 0.02 : 0;
+  r.core.scale.setScalar(1 + (r.state === 'zone' ? 0.12 * beat : 0));
+  const pct = Math.floor(r.charge * 100);
+  if (pct !== r.pct) {
+    r.pct = pct;
+    r.ring.geometry.dispose();
+    r.ring.geometry = new THREE.RingGeometry(0.29, 0.325, 64, 1, Math.PI / 2, -Math.max(0.001, r.charge * Math.PI * 2));
+  }
+  const key = `${pct}|${r.level}|${r.state}`;
+  if (key !== r.key) {
+    r.key = key;
+    const g = r.lc.getContext('2d');
+    g.clearRect(0, 0, 512, 128);
+    g.fillStyle = 'rgba(8,10,18,0.6)'; g.beginPath(); g.roundRect(4, 4, 504, 120, 26); g.fill();
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = look.text; g.font = '700 46px system-ui, sans-serif';
+    const word = { zone: `REACTOR ${pct}%`, overheat: 'OVERHEATING', stalled: 'REACTOR STALLED', idle: 'REACTOR' }[r.state];
+    g.fillText(word, 256, 50);
+    g.fillStyle = '#c9ced8'; g.font = '30px system-ui, sans-serif';
+    g.fillText(r.state === 'stalled' ? 'get into your zone to charge' : r.state === 'overheat' ? 'ease off to cool it' : `level ${r.level}`, 256, 98);
+    r.tex.needsUpdate = true;
+  }
+}
+
+// ------------------------------------------------------------------ in-the-zone world (equalizer pillars, embers, fist trails)
+
+let zoneAmt = 0;        // 0..1, eases in when you're in the zone
+let beatPhase = 0;      // music beats, for pulsing things to the tempo
+let hitFlash = 0;       // red flash when a guard shot gets through
+const eqMats = [0xff8a3d, 0xff4fa3].map((c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.9, roughness: 0.5 }));
+const eqGeo = new THREE.BoxGeometry(0.28, 1, 0.28);
+eqGeo.translate(0, 0.5, 0); // grow up from the floor
+const eqPillars = [];
+for (const side of [-1, 1]) {
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.Mesh(eqGeo, eqMats[(i + (side > 0 ? 1 : 0)) % 2]);
+    m.position.set(side * (2.9 + (i % 2) * 0.4), 0, -6 - i * 2.6);
+    m.scale.y = 0.001;
+    m.visible = false;
+    scene.add(m);
+    eqPillars.push({ m, i, side });
+  }
+}
+const EMBERS = 260;
+const emberPos = new Float32Array(EMBERS * 3);
+const emberSpeed = new Float32Array(EMBERS);
+for (let i = 0; i < EMBERS; i++) {
+  emberPos[i * 3] = (Math.random() - 0.5) * 7; emberPos[i * 3 + 1] = Math.random() * 4; emberPos[i * 3 + 2] = 1 - Math.random() * 30;
+  emberSpeed[i] = 0.3 + Math.random() * 0.8;
+}
+const emberGeo = new THREE.BufferGeometry();
+emberGeo.setAttribute('position', new THREE.BufferAttribute(emberPos, 3));
+const emberTex = (() => { // soft round glow instead of square points
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(0.35, 'rgba(255,200,120,0.6)'); grad.addColorStop(1, 'rgba(255,140,40,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const emberMat = new THREE.PointsMaterial({ color: 0xffa040, map: emberTex, size: 0.07, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+const embers = new THREE.Points(emberGeo, emberMat);
+embers.frustumCulled = false;
+embers.visible = false;
+scene.add(embers);
+const TRAIL = 14;
+const trailGeo = new THREE.SphereGeometry(0.028, 8, 6);
+const trails = fists.map((f) => {
+  const mat = new THREE.MeshBasicMaterial({ color: HAND_COLOR[f.hand], transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false });
+  const mesh = new THREE.InstancedMesh(trailGeo, mat, TRAIL);
+  mesh.frustumCulled = false;
+  mesh.visible = false;
+  scene.add(mesh);
+  return { f, mesh, mat };
+});
+const railBase = new THREE.Color(0x1a3d80), railZone = new THREE.Color(0xff7a1f);
+const zoneSky = new THREE.Color(0x1a0e14); // warm dark sky while you're in the zone
+const trailDummy = new THREE.Object3D();
+function updateZoneWorld(rawDt, inZone, paused, head) {
+  zoneAmt += ((inZone ? 1 : 0) - zoneAmt) * (1 - Math.exp(-rawDt / (inZone ? 0.8 : 1.5)));
+  const on = zoneAmt > 0.02;
+  for (const p of eqPillars) {
+    p.m.visible = on;
+    if (!on) continue;
+    const env = Math.exp(-5 * ((beatPhase + (p.i % 4) * 0.25) % 1));
+    const h = 0.1 + zoneAmt * (0.4 + 1.5 * env * (0.6 + 0.4 * Math.sin(p.i * 1.7 + p.side)));
+    p.m.scale.y = h;
+    p.m.position.z = head.z - 6 - p.i * 2.6;
+  }
+  for (const m of eqMats) m.emissiveIntensity = 0.5 + 0.8 * Math.exp(-5 * (beatPhase % 1));
+  embers.visible = on;
+  emberMat.opacity = 0.85 * zoneAmt;
+  if (on && !paused) {
+    for (let i = 0; i < EMBERS; i++) {
+      emberPos[i * 3 + 1] += emberSpeed[i] * rawDt;
+      emberPos[i * 3] += Math.sin(beatPhase * 0.5 + i) * 0.1 * rawDt;
+      if (emberPos[i * 3 + 1] > 4.2) emberPos[i * 3 + 1] = 0;
+    }
+    emberGeo.attributes.position.needsUpdate = true;
+  }
+  embers.position.z = head.z;
+  for (const t of trails) {
+    t.mesh.visible = on && t.f.hist.length > 2;
+    if (!t.mesh.visible) continue;
+    const h = t.f.hist;
+    for (let i = 0; i < TRAIL; i++) {
+      const e = h[Math.max(0, h.length - 1 - Math.round((i / (TRAIL - 1)) * (h.length - 1)))];
+      trailDummy.position.copy(e[1]);
+      trailDummy.scale.setScalar(1 - i / TRAIL);
+      trailDummy.updateMatrix();
+      t.mesh.setMatrixAt(i, trailDummy.matrix);
+    }
+    t.mesh.instanceMatrix.needsUpdate = true;
+    t.mat.opacity = 0.75 * zoneAmt;
+  }
+  railMat.emissive.copy(railBase).lerp(railZone, zoneAmt);
 }
 
 // ------------------------------------------------------------------ hit feel: flash, shatter along your punch
@@ -806,7 +1072,6 @@ function spawnTrace(head, standing) {
     group, core, glow, ring, samples, hand, length, speed, planeZ: head.z - 0.5, contact: new THREE.Vector3(),
     started: false, onTime: 0, totalTime: 0,
   });
-  wallCooldown = Math.max(wallCooldown, 1.0);
 }
 /** Rope position at a given local depth z (0 = front end, -length = tail). */
 function ropeAt(t, localZ, out) {
@@ -900,6 +1165,7 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
   let power = fist ? punchPower(speed, travel) : 0.6;
   if (!punchMode) power = Math.max(0.35, power * 0.7);
   let bonus = 1, label = '';
+  if (orb.counter) { bonus = 2; label = 'COUNTER! '; }
   if (orb.power) {
     bonus = 1.5 + 1.5 * power;
     label = `POWER ${Math.round(power * 100)}%  `;
@@ -1021,7 +1287,7 @@ function drawHud(xr) {
     const pctZone = Math.round((c.secondsInZone / Math.max(1, c.s.trainingSeconds)) * 100);
     const top = attribution.ranking()[0];
     g.font = '600 32px system-ui, sans-serif';
-    g.fillText(`Score ${score.score}  ·  ${score.hits} hits (${score.perfect} perfect)  ·  ${score.dodges} dodges`, W / 2, 392);
+    g.fillText(`Score ${score.score}  ·  ${score.hits} hits (${score.perfect} perfect)  ·  ${score.dodges} dodges  ·  reactor level ${reactor.level}`, W / 2, 392);
     g.fillText(`Time in zone ${pctZone}%  ·  avg ${avgN ? Math.round(avgSum / avgN) : '--'} BPM  ·  best for you: ${top.label}`, W / 2, 436);
     g.fillText(xr ? 'Press A to go again' : 'Press R to go again', W / 2, 480);
   } else if (fresh) {
@@ -1131,7 +1397,7 @@ function buildMovesUI() {
       <label><input type="radio" name="gtype" value="punch"> Punch (hit hard)</label>
       <label><input type="radio" name="gtype" value="touch"> Touch (just hold your hand there)</label>
     </div>
-    ${group('Orbs', ['jab', 'low', 'swing', 'power', 'pair', 'trace'])}
+    ${group('Orbs', ['jab', 'low', 'swing', 'power', 'pair', 'guard', 'trace'])}
     ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes'])}
     ${group('Walls', ['duck', 'squatSide', 'lean', 'pillar'])}
     <div class="muted" id="movesNote" style="font-size:12px"></div>`;
@@ -1344,8 +1610,10 @@ function updateDesktop(dt, head) {
   if (keys.has('ArrowDown')) manualWorkload = Math.max(0, manualWorkload - dt * 0.3);
 
   punchTimer -= dt;
+  const guarding = keys.has('KeyG');
   for (const f of fists) {
-    const rest = new THREE.Vector3(f.hand === 'left' ? -0.24 : 0.24, -0.3, -0.38);
+    const rest = guarding ? new THREE.Vector3(f.hand === 'left' ? -0.09 : 0.09, -0.12, -0.22)
+      : new THREE.Vector3(f.hand === 'left' ? -0.24 : 0.24, -0.3, -0.38);
     const jabbing = punchTimer > 0 && f.hand === punchHand;
     const goal = jabbing ? camera.worldToLocal(punchPoint.clone()) : rest;
     f.mesh.position.lerp(goal, 1 - Math.exp(-dt * (jabbing ? 30 : 10)));
@@ -1370,6 +1638,33 @@ function xrButtons() {
     }
   }
   return { a, b };
+}
+
+// ------------------------------------------------------------------ sending things down the lane
+
+/** Send `activity` if its arrival slot is free. Returns false to try again a moment later. */
+function trySpawn(activity) {
+  if (activity === 'bag' || activity === 'ropes') {
+    pendingBurst = activity;
+    say(activity === 'bag' ? 'Speed bag coming...' : 'Battle ropes coming...');
+    return true;
+  }
+  const wallType = wallTypeFor(activity, Math.random, settings.moves);
+  const kind = ACTIVITIES.find((a) => a.key === activity)?.kind;
+  if (kind === 'wall' && !wallType) return true; // no wall shape allowed for this one: skip it
+  const speed = difficulty.orbSpeed;
+  const plan = lanePlan(activity, {
+    now: gameTime, speed, intensity: difficulty.intensity,
+    depth: wallType ? wallDepth(wallType, speed * 0.8) : 0,
+  });
+  if (!laneFree(lane, plan)) return false;
+  if (plan) lane.push(plan);
+  if (wallType) spawnWall(head, standing, wallType, activity);
+  else if (activity === 'trace') spawnTrace(head, standing);
+  else if (activity === 'pair') spawnPair(head, standing);
+  else if (activity === 'guard') spawnGuard(head, standing);
+  else spawnOrb(head, standing, activity);
+  return true;
 }
 
 // ------------------------------------------------------------------ main loop
@@ -1447,32 +1742,35 @@ function frame(time) {
   // Spawning: the activity mix adapts to what raises YOUR heart rate.
   if (!paused && controller.phase !== Phase.Finished) {
     spawnTimer += gdt;
-    wallCooldown -= gdt;
-    const ropeNear = traces.some((t) => t.group.position.z > t.planeZ - t.speed * 2.5); // keep the lane clear around a rope
+    lane = lane.filter((r) => r.end > gameTime);
     if (pendingBurst) {
       // A burst waits until the lane is clear, then takes over for a few seconds.
-      if (!orbs.length && !walls.length && !traces.length) {
+      if (!orbs.length && !walls.length && !traces.length && !guards.length) {
         if (pendingBurst === 'bag') spawnBag(head, standing); else spawnRopes(head, standing);
         pendingBurst = null;
         spawnTimer = 0;
       }
-    } else if (!bag && !ropes && spawnTimer >= difficulty.spawnInterval && wallCooldown <= 0 && !ropeNear) {
-      spawnTimer = 0;
-      const activity = chooseActivity({
+    } else if (!bag && !ropes && spawnTimer >= difficulty.spawnInterval) {
+      // Pick what's next (or keep waiting for the move already picked), then only send it once its
+      // arrival slot is free, so nothing crowds a rope, a wall box, a pair or a guard shot.
+      const activity = queuedActivity || chooseActivity({
         intensity: difficulty.intensity, status: controller.status, boost: boost.value, gains: attribution.w,
         baseWeights: tuning.weights, enabled: enabledActivities(true),
       });
-      const wallType = wallTypeFor(activity, Math.random, settings.moves);
-      if (wallType) spawnWall(head, standing, wallType, activity);
-      else if (activity === 'trace') spawnTrace(head, standing);
-      else if (activity === 'pair') { spawnPair(head, standing); spawnTimer = -0.9; }
-      else if (activity === 'bag' || activity === 'ropes') { pendingBurst = activity; say(activity === 'bag' ? 'Speed bag coming...' : 'Battle ropes coming...'); }
-      else if (ACTIVITIES.find((a) => a.key === activity).kind === 'orb') spawnOrb(head, standing, activity);
+      if (trySpawn(activity)) {
+        queuedActivity = null; queuedFor = 0;
+        spawnTimer = 0;
+      } else {
+        queuedActivity = activity;
+        queuedFor += gdt;
+        if (queuedFor > 10) { queuedActivity = null; queuedFor = 0; } // give up and pick something else
+      }
     }
   }
 
   if (!paused) {
     updateTraces(gdt, xr);
+    updateGuards(gdt, xr, head);
     if (bag) updateBag(gdt, xr);
     if (ropes) updateRopes(gdt, xr, head);
   }
@@ -1545,13 +1843,19 @@ function frame(time) {
     if (s.position.z > 1) s.position.z -= 28;
   }
 
-  const zc = new THREE.Color(ZONE_COLOR[controller.phase === Phase.Finished ? 'NoSignal' : controller.status]).multiplyScalar(0.03).add(skyBase);
+  if (!paused) beatPhase += rawDt * (audio.tempo || 120) / 60;
+  const inZoneNow = controller.status === Zone.InZone && controller.phase !== Phase.Finished;
+  updateZoneWorld(rawDt, inZoneNow, paused, head);
+  updateReactor(gdt, rawDt, controller.phase === Phase.Finished ? 'NoSignal' : controller.status, !paused && controller.phase !== Phase.Finished && controller.phase !== Phase.WarmUp);
+  const zc = new THREE.Color(ZONE_COLOR[controller.phase === Phase.Finished ? 'NoSignal' : controller.status]).multiplyScalar(0.03 * (1 - 0.5 * zoneAmt)).add(skyBase).lerp(zoneSky, 0.5 * zoneAmt);
   scene.background.lerp(zc, 1 - Math.exp(-rawDt * 2));
+  if (hitFlash > 0) { scene.background.lerp(new THREE.Color(0x5a0a0a), hitFlash * 0.6); hitFlash = Math.max(0, hitFlash - rawDt * 3); }
   scene.fog.color.copy(scene.background);
 
   // Layout: scoreboard ahead, heat gauge and options tab to its left, options board on the left.
   hud.position.set(centerX, standing + 0.35, head.z - 3.2);
   thermo.mesh.position.set(centerX - 1.65, standing + 0.3, head.z - 3.1);
+  reactor.group.position.set(centerX + 1.65, standing + 0.45, head.z - 3.1);
   options.tab.position.set(centerX - 1.65, standing - 0.85, head.z - 3.05);
   if (xr) { // on your left, angled toward you
     options.mesh.position.set(centerX - 1.05, standing - 0.15, head.z - 1.55);
@@ -1616,7 +1920,9 @@ window.pz = {
       optionsOpen: options.open, logRows: sessionLog.length, traces: traces.length, gameType: settings.gameType,
       powerOrbs: orbs.filter((o) => o.power).length, pairOrbs: orbs.filter((o) => o.activity === 'pair').length, shards: shards.length,
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
-      pendingBurst,
+      pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
+      lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };
@@ -1647,10 +1953,28 @@ window.pz = {
   /** Test helper: force the next thing the game sends (e.g. 'bag', 'ropes', 'pair', 'power'). */
   force(activity) {
     clearObstacles();
-    if (activity === 'bag' || activity === 'ropes') pendingBurst = activity;
-    else if (activity === 'pair') spawnPair(head, standing);
-    else spawnOrb(head, standing, activity);
+    trySpawn(activity);
     return this.state;
+  },
+  /** Test helper: is anything about to reach the player at the same time as something else? */
+  overlaps() {
+    // Arrival windows of everything currently in the lane, from live positions and speeds.
+    const items = [
+      ...orbs.filter((o) => !o.dying).map((o) => ({ what: o.counter ? 'counter' : o.activity, a: (head.z - 0.5 - o.group.position.z) / o.speed, b: (head.z - 0.5 - o.group.position.z) / o.speed })),
+      ...walls.map((w) => ({ what: 'wall', a: (head.z - w.mesh.position.z - w.depth) / w.speed, b: (head.z - w.mesh.position.z) / w.speed })),
+      ...traces.map((t) => ({ what: 'rope', a: (t.planeZ - t.group.position.z) / t.speed, b: (t.planeZ - t.group.position.z + t.length) / t.speed })),
+      ...guards.map((g) => ({ what: 'guard', a: (g.hitZ - g.group.position.z) / g.speed, b: (g.hitZ - g.group.position.z) / g.speed })),
+    ];
+    const plain = new Set(['jab', 'low', 'swing']);
+    const out = [];
+    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+      const p = items[i], q = items[j];
+      if (plain.has(p.what) && plain.has(q.what)) continue;
+      if (p.what === 'pair' && q.what === 'pair') continue;
+      if ((p.what === 'counter' && q.what === 'guard') || (q.what === 'counter' && p.what === 'guard')) continue;
+      if (p.a < q.b + 0.25 && q.a < p.b + 0.25) out.push(`${p.what}~${q.what}`);
+    }
+    return out;
   },
   act: (id) => options.hooks.act(id),
   logRows: () => sessionLog,

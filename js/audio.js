@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo } from './core.js?v9';
+import { musicTempo } from './core.js?v10';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
@@ -324,6 +324,11 @@ export class AudioEngine {
         this.tone(t, opts.hand === 'left' ? 240 : 280, 'sine', 0.22, 0.06, 140);
         break;
       }
+      case 'block': // guard shot blocked: deep thunk + metallic ring
+        this.noiseHit(t, 'lowpass', 900, 0.8, 0.6, 0.12, this.fx);
+        this.tone(t, 95, 'sine', 0.45, 0.22, 55);
+        this.tone(t, 740, 'triangle', 0.1, 0.35, 700);
+        break;
       case 'burst': // a speed bag / battle ropes is coming: two quick rising blips
         this.tone(t, 660, 'square', 0.12, 0.08, 990);
         this.tone(t + 0.12, 880, 'square', 0.12, 0.1, 1320);

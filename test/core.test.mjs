@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, minPunchTravel, powerPunchSpeed, punchPower, bagPoints,
+  wallDepth, tracePath, traceSeconds, tracePoints, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -188,7 +188,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
   // Learning: a synthetic player whose heart responds strongly to side squats and barely to punches.
   // Generated with a slightly different lag than the learner assumes, plus noise.
-  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5 };
+  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9 };
   const att = new HeartRateAttribution({ weights: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 1.0])) });
   const rng = mulberry32(7);
   const tr = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
@@ -237,6 +237,24 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(tp.length === 5 && tp.every(([x, y]) => Math.abs(x) <= 0.5 && y >= 1.7 - 0.95 && y <= 1.7 - 0.05) && Math.min(...tp.map((p) => p[1])) < 1.45,
     'trace path stays within reach and dips low');
   check(traceSeconds(0) > traceSeconds(1) && tracePoints(1) === 50 && tracePoints(0.5) < 25, 'traces get quicker when hard; accuracy drives points');
+
+  // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
+  {
+    const sp = 3;
+    const rope = lanePlan('trace', { now: 0, speed: sp, intensity: 0.5 });
+    const lane = [rope];
+    check(!laneFree(lane, lanePlan('jab', { now: 0.5, speed: sp })), 'an orb that would arrive during a rope has to wait');
+    check(!laneFree(lane, lanePlan('duck', { now: 1, speed: sp, depth: wallDepth('duck', sp * 0.8) })), 'a wall that would arrive during a rope has to wait');
+    let t = 0; while (!laneFree(lane, lanePlan('jab', { now: t, speed: sp }))) t += 0.1;
+    const orb = lanePlan('jab', { now: t, speed: sp });
+    check(orb.start >= rope.end && orb.start - rope.end < 0.2, `the next orb arrives just after the rope (${(orb.start + 0.3 - (rope.end - 0.7)).toFixed(1)} s after its tail)`);
+    const orbs = [lanePlan('jab', { now: 0, speed: sp })];
+    check(laneFree(orbs, lanePlan('low', { now: 0.4, speed: sp })), 'plain orbs can share the lane');
+    check(!laneFree(orbs, lanePlan('power', { now: 0.4, speed: sp })) && !laneFree(orbs, lanePlan('guard', { now: 0.2, speed: sp })),
+      'power orbs and guard shots get the lane to themselves');
+    const wall = lanePlan('duck', { now: 0, speed: sp, depth: wallDepth('duck', sp * 0.8) });
+    check(!laneFree([wall], lanePlan('jab', { now: 0.5, speed: sp })), 'a faster orb sent just after a wall would fly through it, so it waits');
+  }
 
   // Punch quality: wrist flicks don't count, power orbs need a full punch, strength scales feedback.
   check(minPunchTravel(0) < minPunchTravel(1) && minPunchTravel(1) <= 0.25 && minPunchTravel(0.5, true) >= 0.3,
