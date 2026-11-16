@@ -935,6 +935,16 @@ export class HeartRateAttribution {
     return ACTIVITY_KEYS.reduce((s, k) => s + this.w[k] * this.fast[k], this.base);
   }
 
+  /**
+   * How much heart rate should still rise (or fall) because the last ~12 s of effort differs from
+   * the last ~35 s: sum of gain x (fast rate - slow rate). Added to your CURRENT heart rate this
+   * gives where it's heading, and any constant error in the model (e.g. a baseline that hasn't
+   * settled yet) cancels out, unlike projected().
+   */
+  projectedRise() {
+    return ACTIVITY_KEYS.reduce((s, k) => s + this.w[k] * (this.fast[k] - this.rate[k]), 0);
+  }
+
   /** Activities sorted by estimated effect: BPM added per 10 reps/minute, plus this session's reps. */
   ranking() {
     return ACTIVITIES.map((a) => ({ key: a.key, label: a.label, bpmPer10: this.w[a.key] * 10, reps: this.counts[a.key] }))

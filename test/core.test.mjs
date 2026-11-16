@@ -269,6 +269,12 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
       && heartTrend({ status: 'InZone', bpm: 120, projected: 140, target: 120 }) === null
       && heartTrend({ status: 'Below', bpm: 105, projected: null, target: 120 }) === null,
       'climbing / easing only when effort already points into the zone');
+    // Bias-free version: steady effort predicts no further rise, a fresh burst predicts one, whatever the baseline.
+    const st = new HeartRateAttribution();
+    for (let t = 0; t < 120; t += 0.5) { if (Math.round(t * 2) % 4 === 0) st.record('jab', t); st.update(t, 110, 1); }
+    const steadyRise = st.projectedRise();
+    for (let t = 120; t < 132; t += 0.5) { st.record('squatSide', t); st.update(t, 111, 1); }
+    check(Math.abs(steadyRise) < 3 && st.projectedRise() > 10, `projected rise: ~0 when effort is steady (${steadyRise.toFixed(1)}), up after a burst (${st.projectedRise().toFixed(1)})`);
     check(streakMilestone(14.9, 15.1) === 1 && streakMilestone(29, 31) === 2 && streakMilestone(15.2, 16) === 0 && streakMilestone(0, 0.5) === 0,
       'zone streak milestones every 15 s');
   }

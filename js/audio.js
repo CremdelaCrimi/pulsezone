@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo, songTone } from './core.js?v27';
+import { musicTempo, songTone } from './core.js?v30';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]

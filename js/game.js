@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v27';
+} from './core.js?v30';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v27';
+import { AudioEngine } from './audio.js?v30';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v27';
-import { loadTuning, createDevPanel } from './dev.js?v27';
+import { OptionsPanel } from './options.js?v30';
+import { loadTuning, createDevPanel } from './dev.js?v30';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -30,6 +30,7 @@ const settings = {
   targetBpm: 120, age: 30, trainingMinutes: 15, warmUpSeconds: 30, coolDownMinutes: 2, sound: true, volume: 0.8, challenge: 'normal',
   gameType: 'punch',   // 'punch' = hit hard enough; 'touch' = just hold your hand where the orb arrives
   musicStyle: 'song',
+  diag: false,         // show the diagnostics line (what the game is doing) on the scoreboard
   profile: 'steady',   // workout shape: 'steady' | 'waves' (target rolls +/-5 BPM) | 'build' (climbs to a peak)  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
   // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
   moves: {
@@ -313,6 +314,7 @@ function startWorkout() {
   shiftReadyAt = 0;
   waveState = 0;
   spotlight = null; spotlightStarted = null;
+  lastPick = lastReason = ''; forceShiftNext = false; testQueued = false;
   zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
   summaryBoard.visible = false; lastSummary = null;
   clearObstacles();
@@ -362,6 +364,18 @@ function setProfile(p) {
   waveState = 0; // start the call-outs fresh for the new shape
   document.querySelectorAll('input[name=profile]').forEach((r) => { r.checked = r.value === p; });
   saveSettings();
+}
+/** Test buttons (VR board): queue that exact move for the next free lane slot. */
+function testMove(key) {
+  if (controller.phase === Phase.Finished) startWorkout();
+  if (key === 'shift') { forceShiftNext = true; say('Test: side shift coming', 2); return; }
+  if (key === 'combo') {
+    const en = enabledActivities();
+    const list = availableCombos({ swing: settings.gameType === 'punch', low: true });
+    queuedCombo = list[Math.floor(Math.random() * list.length)];
+  }
+  queuedActivity = key; queuedFor = 0; testQueued = true;
+  say(`Test: ${key === 'sweep' ? 'two-hand rope + slam' : key} coming`, 2);
 }
 function setSound(on) { settings.sound = on; audio.setEnabled(on); $('sound').checked = on; saveSettings(); }
 
@@ -505,6 +519,8 @@ let spawnTimer = 0;
 let lane = [];
 let queuedActivity = null, queuedFor = 0;
 let shiftPlan = null, shiftReadyAt = 0, shiftSaid = '';      // side shift (footwork) window, in arrival time
+let lastPick = '', lastReason = '';  // what the spawner sent last, and why (diagnostics / CSV)
+let forceShiftNext = false, testQueued = false;          // a 'Test: Shift' press: plan a shift as soon as the lane allows
 let standNext = false;                                // a squat box was sent: a "Stand tall!" box comes next
 let bag = null, ropes = null, pendingBurst = null;   // speed bag / battle ropes (one at a time)
 let bagReadyAt = 0, ropesReadyAt = 0;                // burst cooldowns (game seconds)
@@ -1436,7 +1452,7 @@ function comboResult(orb, hit) {
   say(`${c.name.toUpperCase()} COMBO!  +${pts}`);
   audio.sfx('streak', { level: c.n });
   // Finisher: the last punch gets a big pop-up and a strong buzz on both hands.
-  popText(`COMBO CLEAR +${pts}`, orb.group.position);
+  popText(`COMBO CLEAR +${pts}`, orb.group.position, '#ffc04d', 0.32); // above the hit's own points
   pulseBoth(0.9, 120);
 }
 
@@ -1482,16 +1498,16 @@ const pops = Array.from({ length: 3 }, () => {
   return { canvas, tex, mat, mesh, age: 0 };
 });
 let popNext = 0;
-function popText(text, pos, color = '#ffc04d') {
+function popText(text, pos, color = '#ffc04d', lift = 0.12) {
   if (!text) return;
   const p = pops[popNext]; popNext = (popNext + 1) % pops.length;
   const g = p.canvas.getContext('2d');
   g.clearRect(0, 0, 512, 128);
   g.font = '800 64px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.lineWidth = 10; g.strokeStyle = 'rgba(0,0,0,0.6)'; g.strokeText(text, 256, 64);
-  g.fillStyle = color; g.fillText(text, 256, 64);
+  g.lineWidth = 10; g.strokeStyle = 'rgba(0,0,0,0.6)'; g.strokeText(text, 256, 64, 490); // squeeze long text instead of clipping
+  g.fillStyle = color; g.fillText(text, 256, 64, 490);
   p.tex.needsUpdate = true;
-  p.mesh.position.set(pos.x, pos.y + 0.12, pos.z);
+  p.mesh.position.set(pos.x, pos.y + lift, pos.z);
   p.mesh.visible = true; p.age = 0;
 }
 function updatePop(rawDt) {
@@ -1717,7 +1733,9 @@ const ZONE_COLOR = {
 };
 /** Is your heart rate on its way into the zone (or back down to it)? Shown after it holds 2 s. */
 function updateTrend(rawDt, src) {
-  const p = attribution.projected();   // effort-based estimate, steadied over ~4 s (single reps make it jumpy)
+  // Where heart rate is heading: current BPM + the rise still to come from the last ~12 s of effort
+  // (bias-free), steadied over ~4 s because single reps make it jumpy.
+  const p = src.hasReading && controller.status !== Zone.NoSignal ? src.currentBpm + attribution.projectedRise() : null;
   projSmooth = p == null ? null : projSmooth == null ? p : projSmooth + (p - projSmooth) * (1 - Math.exp(-rawDt / 4));
   const t = controller.phase === Phase.Training || controller.phase === Phase.WarmUp ? heartTrend({
     status: controller.status, bpm: src.hasReading ? src.currentBpm : 0, projected: projSmooth,
@@ -1782,7 +1800,7 @@ function drawHud(xr) {
   const boostPct = Math.round(boost.value * 100);
   const key = [bpmText, c.status, c.phase, Math.floor(remaining), Math.round(c.intensity * 100), score.score, score.combo,
     fresh ? lastEvent : '', statusLine, sourceKind, phoneFallback, workloadMode, link.code, xr, Math.round(c.currentSetpoint), c.s.targetBpm,
-    Math.round(boostPct / 5), options.open, trendShown, Math.floor(zoneStreak), !!breathCue, spotlight && spotlight.key,
+    Math.round(boostPct / 5), options.open, trendShown, settings.diag && `${lastPick}|${lastReason}|${projSmooth == null ? '' : Math.round(projSmooth)}`, Math.floor(zoneStreak), !!breathCue, spotlight && spotlight.key,
     spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds)].join('|');
   if (key === hudKey) return;
   hudKey = key;
@@ -1855,9 +1873,17 @@ function drawHud(xr) {
     g.fillStyle = ok ? '#b8bfcc' : '#ffd34d'; g.font = '26px system-ui, sans-serif';
     wrapText(g, statusLine, W / 2, 520, 900, 30);
   }
+  if (settings.diag && c.phase !== Phase.Finished) {
+    // Diagnostics: what the game is doing right now (for test sessions).
+    const top = attribution.ranking()[0];
+    const proj = projSmooth == null ? '--' : Math.round(projSmooth);
+    g.fillStyle = '#9fe8ff'; g.font = '22px ui-monospace, Consolas, monospace';
+    g.fillText(`int ${Math.round(c.intensity * 100)}%  boost ${boostPct}%  effort->${proj} vs ${src.hasReading ? src.currentBpm : '--'}  sent: ${lastPick || '-'} (${lastReason || '-'})  learned top: ${top.key}  lr x${(attribution.learningRateNow() / attribution.lr).toFixed(1)}`, W / 2, 595, W - 40);
+  } else {
   g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
   g.fillText(xr ? `${settings.gameType === 'touch' ? 'TOUCH MODE' : 'blue = left · orange = right'} · white curve = swing path · Y = options · code ${link.code}`
     : `blue = left click · orange = right click · O = options · phone code ${link.code}`, W / 2, 595);
+  }
 
   g.textAlign = 'left'; g.fillStyle = '#ffffff'; g.font = '600 30px system-ui, sans-serif';
   g.fillText(`SCORE ${score.score}`, 760, 60);
@@ -1887,7 +1913,7 @@ function wrapText(g, text, x, y, maxWidth, lineHeight) {
 
 const options = new OptionsPanel({
   getState: () => ({
-    target: settings.targetBpm, minutes: settings.trainingMinutes, warmUp: settings.warmUpSeconds, profile: settings.profile, source: sourceKind, sound: settings.sound,
+    target: settings.targetBpm, minutes: settings.trainingMinutes, warmUp: settings.warmUpSeconds, profile: settings.profile, diag: settings.diag, source: sourceKind, sound: settings.sound,
     volume: Math.round(settings.volume * 10), challenge: settings.challenge,
     gameType: settings.gameType, moves: { ...settings.moves },
     musicStyle: settings.musicStyle, songAvailable,
@@ -1927,6 +1953,8 @@ const options = new OptionsPanel({
         if (id.startsWith('move-')) toggleMove(id.slice(5));
         break;
       case 'restart': startWorkout(); options.toggle(false); break;
+      case 'diag': settings.diag = !settings.diag; saveSettings(); break;
+      case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift': testMove(id.slice(5)); options.toggle(false); break;
       case 'end': controller.beginCoolDown(); options.toggle(false); break;
       case 'close': options.toggle(false); break;
     }
@@ -2029,6 +2057,8 @@ function logRow() {
     status: controller.status, target: Math.round(controller.currentSetpoint), intensity: controller.intensity.toFixed(3), boost: boost.value.toFixed(2),
     ...Object.fromEntries(ACTIVITIES.map((a) => [`reps_${a.key}`, attribution.counts[a.key]])),
     hits: score.hits, misses: score.misses, dodges: score.dodges, wallHits: score.wallHits,
+    last_sent: lastPick, reason: lastReason, effort_bpm: projSmooth == null ? '' : Math.round(projSmooth), trend: trendShown || '',
+    spotlight: spotlight ? spotlight.key : '', shift: shiftPlan ? 1 : 0, learned_top: attribution.ranking()[0].key,
   });
 }
 function saveSession() {
@@ -2286,14 +2316,19 @@ function updateDrift(head, xr, paused) {
 }
 /** Plan a shift when you're stuck below the zone, if no wall/rope/etc. would arrive during it. */
 function maybePlanShift() {
-  if (!settings.moves.shift || shiftPlan || bag || ropes || pendingBurst) return;
-  if (!PLAIN_ORBS.some((k) => enabledActivities(true)[k])) return; // shifts are plain punches only
-  if (trendShown === 'climbing') return; // already working hard enough: your heart just needs time
-  if (!shiftWanted({ status: controller.status, phase: controller.phase, intensity: controller.intensity, boost: boost.value, now: gameTime, readyAt: shiftReadyAt })) return;
+  if (shiftPlan || bag || ropes || pendingBurst) return;
+  if (!forceShiftNext) {
+    if (!settings.moves.shift) return;
+    if (!PLAIN_ORBS.some((k) => enabledActivities(true)[k])) return; // shifts are plain punches only
+    if (trendShown === 'climbing') return; // already working hard enough: your heart just needs time
+  }
+  if (!forceShiftNext && !shiftWanted({ status: controller.status, phase: controller.phase, intensity: controller.intensity, boost: boost.value, now: gameTime, readyAt: shiftReadyAt })) return;
   const start = gameTime + (SPAWN_DISTANCE - 0.5) / difficulty.orbSpeed + 0.4;
   const slot = { kind: 'orb', start: start - SHIFT.margin, end: start + SHIFT.seconds + SHIFT.margin, shift: true };
   if (!laneFree(lane, slot)) return;  // something solo is on its way: try again later
   lane.push(slot);
+  forceShiftNext = false;
+  lastPick = 'shift'; lastReason = 'shift';
   shiftPlan = { start, end: start + SHIFT.seconds, offset: (Math.random() < 0.5 ? -1 : 1) * SHIFT.offset };
   shiftReadyAt = shiftPlan.end + SHIFT.cooldown;
 }
@@ -2430,16 +2465,21 @@ function frame(time) {
         const list = availableCombos({ swing: en.swing, low: en.low });
         if (list.length) { queuedCombo = list[Math.floor(Math.random() * list.length)]; pick = 'combo'; }
       }
+      const reason = inShift ? 'shift' : standNext ? 'stand-up' : queuedActivity ? (testQueued ? 'test' : 'queued')
+        : pick === 'combo' ? 'combo' : spotlight && activity === spotlight.key ? 'spotlight'
+          : boost.value > 0.2 && controller.status === Zone.Below ? 'boost' : 'mix';
       if (inShift) {
         trySpawn(activity, { shift: shiftOffsetAt(shiftPlan, arrive) });
+        lastPick = activity; lastReason = reason;
         spawnTimer = 0;
       } else if (trySpawn(pick)) {
-        queuedActivity = null; queuedFor = 0;
+        lastPick = pick === 'combo' && queuedCombo ? `combo ${queuedCombo.name}` : pick; lastReason = reason;
+        queuedActivity = null; queuedFor = 0; testQueued = false;
         spawnTimer = 0;
       } else {
         queuedActivity = pick;
         queuedFor += gdt;
-        if (queuedFor > 10) { queuedActivity = null; queuedFor = 0; } // give up and pick something else
+        if (queuedFor > (testQueued ? 30 : 10)) { queuedActivity = null; queuedFor = 0; testQueued = false; } // give up and pick something else
       }
     }
   }

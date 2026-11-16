@@ -74,6 +74,7 @@ Press **Y** (or **B**) to open the options board on your left, point at it with 
 - Turn music on or off and change the volume.
 - Set the challenge level: **Gentle / Normal / Hard** changes how hard the game pushes and how fast the boost builds.
 - Choose the game type (Punch or Touch).
+- **Test tools** ("Test" row): **Diag** shows a diagnostics line on the scoreboard (intensity, challenge boost, where your heart rate is heading vs now, what was just sent and why, the move the game has learned works best for you, and the current learning speed). **Guard**, **2 ropes**, **Shift** and **Combo** send that move at the next free slot, so you can try it straight away.
 - Pick your **moveset**: orbs (**Punch**, **Squat punch**, **Hook/uppercut**, **Rope**), more (**Power**, **Squat+reach**, **Guard**, **2 ropes**), bursts (**Speed bag**, **Battle ropes**) and walls & footwork (**Duck**, **Side squat**, **Lean**, **Pillar**, **Shift**). Highlighted means on. Hooks, uppercuts and power orbs need Punch mode. The same checklist is on the game page under **Moveset**, and the two stay in sync. If you pick moves that normally unlock later (e.g. only ducks), you get them straight away.
 - See the "what raises your heart rate" chart.
 - Restart, end the workout, or close the board.
@@ -96,7 +97,7 @@ Left click = left punch · right click = right punch · hold **G** guard · hold
 | `js/dev.js` | Developer tuning panel |
 | `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
 | `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
-| `test/core.test.mjs` | 115 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
+| `test/core.test.mjs` | 116 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
 
@@ -105,7 +106,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 **No code: the Developer tools panel.** On desktop, click **Developer tools** on the game page, or open the game with `?dev` at the end of the address. From there you can:
 
 - Change the difficulty (the easy and hard ends of spawn rate, orb speed, spread and punch speed), the activity mix, the heart-rate controller, and how fast the challenge boost builds. **Apply & restart** saves the settings in that browser.
-- **Download last workout (CSV)**, which has one row per second: heart rate, intensity, boost, and reps of each activity. Open it in Excel or Google Sheets to see what moved your heart rate.
+- **Download last workout (CSV)**, which has one row per second: heart rate, intensity, boost, reps of each activity, and what was just sent and why (with the effort estimate, trend, spotlight and shift). Open it in Excel or Google Sheets to see what moved your heart rate.
 - **Copy settings JSON** to share a setup, or **Reset** to defaults.
 
 **Code: the GitHub web editor, with nothing to install.**
@@ -129,7 +130,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v27` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v30` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 
