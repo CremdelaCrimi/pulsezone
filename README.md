@@ -74,7 +74,7 @@ Press **Y** (or **B**) to open the options board on your left, point at it with 
 - Turn music on or off and change the volume.
 - Set the challenge level: **Gentle / Normal / Hard** changes how hard the game pushes and how fast the boost builds.
 - Choose the game type (Punch or Touch).
-- **Test tools** ("Test" row): **Diag** shows a diagnostics line on the scoreboard (intensity, challenge boost, where your heart rate is heading vs now, what was just sent and why, the move the game has learned works best for you, and the current learning speed). **Guard**, **2 ropes**, **Shift** and **Combo** send that move at the next free slot, so you can try it straight away. With Diag on, the end-of-workout board shows a test report (slams landed, guard blocks, walls hit, time above the zone, stuck-sensor time, notes).
+- **Test tools** ("Test" row; the test buttons and the Note row only appear once **Diag** is on, so normal workouts get a tidy board): **Diag** shows a diagnostics line on the scoreboard (intensity, challenge boost, where your heart rate is heading vs now, what was just sent and why, the move the game has learned works best for you, and the current learning speed). **Guard**, **2 ropes**, **Shift** and **Combo** send that move at the next free slot, so you can try it straight away. With Diag on, the end-of-workout board shows a test report (slams landed, guard blocks, walls hit, time above the zone, stuck-sensor time, notes).
 - **Note** row: **Slam missed**, **Guard picky**, **Too fast**, **Felt great** bookmark the current second in the workout CSV (column `note`). See `docs/HEADSET_TEST_PLAN.md` for a 20-minute test plan.
 - Pick your **moveset**: orbs (**Punch**, **Squat punch**, **Hook/uppercut**, **Rope**), more (**Power**, **Squat+reach**, **Guard**, **2 ropes**), bursts (**Speed bag**, **Battle ropes**) and walls & footwork (**Duck**, **Side squat**, **Lean**, **Pillar**, **Shift**). Highlighted means on. Hooks, uppercuts and power orbs need Punch mode. The same checklist is on the game page under **Moveset**, and the two stay in sync. If you pick moves that normally unlock later (e.g. only ducks), you get them straight away.
 - See the "what raises your heart rate" chart.
@@ -131,7 +131,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v34` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v35` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

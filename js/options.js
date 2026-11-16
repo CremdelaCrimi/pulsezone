@@ -115,10 +115,14 @@ export class OptionsPanel {
     label(s.songAvailable ? 'Music style' : 'Music style (no song file yet)');
     button('music-song', 'Song', 520, 215, s.musicStyle === 'song' && s.songAvailable); button('music-synth', 'Synth', 755, 215, s.musicStyle === 'synth' || !s.songAvailable); y += R;
     // Test tools for headset sessions: a diagnostics line on the scoreboard, and send-me-this-move buttons.
-    label('Test'); button('diag', s.diag ? 'Diag on' : 'Diag', 175, 150, s.diag); button('test-guard', 'Guard', 335, 150);
-    button('test-sweep', '2 ropes', 495, 150); button('test-shift', 'Shift', 655, 150); button('test-combo', 'Combo', 815, 160); y += R;
-    label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Guard picky', 385, 200, false);
-    button('note-fast', 'Too fast', 595, 180, false); button('note-great', 'Felt great', 785, 190, false); y += R;
+    // Test tools only show when Diag is on, so normal workouts get a tidy board.
+    label('Test'); button('diag', s.diag ? 'Diag on' : 'Diag (test tools)', 175, s.diag ? 150 : 300, s.diag);
+    if (s.diag) {
+      button('test-guard', 'Guard', 335, 150); button('test-sweep', '2 ropes', 495, 150); button('test-shift', 'Shift', 655, 150); button('test-combo', 'Combo', 815, 160); y += R;
+      label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Guard picky', 385, 200, false);
+      button('note-fast', 'Too fast', 595, 180, false); button('note-great', 'Felt great', 785, 190, false);
+    }
+    y += R;
     label('Challenge'); button('ch-gentle', 'Gentle', 430, 170, s.challenge === 'gentle'); button('ch-normal', 'Normal', 615, 170, s.challenge === 'normal'); button('ch-hard', 'Hard', 800, 170, s.challenge === 'hard'); y += R + 10;
 
     // What raises your heart rate (learned).

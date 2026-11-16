@@ -114,3 +114,8 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
   5. A simulator workout ended during warm-up still counted toward personal bests (0 ≥ 0). Now requires training time.
 - Also from the "plausible" list: the 30 s learning saves no longer stall in back-to-back workouts; Test: Combo respects your move switches (and says so if none fit); the stuck-sensor timer is 25 s instead of 18 s, for fewer false alarms when your heart rate is steady.
 - Checked: all checks pass; auto-play with 0 overlaps, no console errors, no gains saved in simulator mode.
+
+## Cycle 19 (11:07 AM)
+- Asked Gemini for round 8, polish only. Its three: a calmer first 2 minutes (no predictive arrows in warm-up, hide the pairing code once the phone is live), one colour language (guard shots shouldn't use a hand colour), and test/note buttons hidden unless Diag is on.
+- **Built all three:** CLIMBING/SETTLING arrows only appear in training; the scoreboard footer says "phone live" instead of the pairing code once the phone's heart rate is coming in; guard shots are now a white core with a teal shield glow (was red-orange with an orange halo, too close to the right hand's orange), and block shards are teal; the VR board shows just a "Diag (test tools)" button until Diag is on, then the Test and Note rows.
+- Checked: all checks pass; snapshots of the guard shot and the tidy board; no console errors.

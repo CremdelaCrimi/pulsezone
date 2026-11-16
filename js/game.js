@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v34';
+} from './core.js?v35';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v34';
+import { AudioEngine } from './audio.js?v35';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v34';
-import { loadTuning, createDevPanel } from './dev.js?v34';
+import { OptionsPanel } from './options.js?v35';
+import { loadTuning, createDevPanel } from './dev.js?v35';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -670,8 +670,9 @@ function spawnPair(head, standing) {
 const guards = [];
 const guardGeo = new THREE.IcosahedronGeometry(0.15, 1);
 const guardHaloGeo = new THREE.SphereGeometry(0.24, 18, 12);
-const guardMat = new THREE.MeshStandardMaterial({ color: 0xff3b1f, emissive: 0xff3b1f, emissiveIntensity: 1, roughness: 0.4, flatShading: true });
-const guardHaloMat = new THREE.MeshBasicMaterial({ color: 0xff7a1f, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false });
+// Guard shots use no hand colour (blue/orange mean 'punch with this hand'): a white core with a teal shield glow.
+const guardMat = new THREE.MeshStandardMaterial({ color: 0xf2f5ff, emissive: 0xdfe8ff, emissiveIntensity: 0.9, roughness: 0.4, flatShading: true });
+const guardHaloMat = new THREE.MeshBasicMaterial({ color: 0x4fd1c5, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false });
 const guardIcon = (() => { // a shield badge floating above the shot
   const c = document.createElement('canvas'); c.width = 256; c.height = 128;
   const g = c.getContext('2d');
@@ -717,7 +718,7 @@ function updateGuards(dt, xr, head) {
       say(`Blocked! +${pts}  COUNTER!`);
       audio.sfx('block');
       pulseBoth(1, 90);
-      shatter(pos.add(new THREE.Vector3(0, 0, -0.35)), new THREE.Vector3(0, 0.4, -1), 0xff7a3d, 0.5); // burst away from your face
+      shatter(pos.add(new THREE.Vector3(0, 0, -0.35)), new THREE.Vector3(0, 0.4, -1), 0x4fd1c5, 0.5); // burst away from your face
       spawnCounter(head, standing);
       attribution.record('guard', gameTime); // only reps you actually did teach the model
     } else {
@@ -1768,7 +1769,7 @@ function updateTrend(rawDt, src) {
   // (bias-free), steadied over ~4 s because single reps make it jumpy.
   const p = src.hasReading && controller.status !== Zone.NoSignal ? src.currentBpm + attribution.projectedRise() : null;
   projSmooth = p == null ? null : projSmooth == null ? p : projSmooth + (p - projSmooth) * (1 - Math.exp(-rawDt / 4));
-  const t = controller.phase === Phase.Training || controller.phase === Phase.WarmUp ? heartTrend({
+  const t = controller.phase === Phase.Training ? heartTrend({ // warm-up stays calm: no arrows yet
     status: controller.status, bpm: src.hasReading ? src.currentBpm : 0, projected: projSmooth,
     target: controller.currentSetpoint, half: controller.s.zoneHalfWidth,
   }) : null;
@@ -1912,8 +1913,10 @@ function drawHud(xr) {
     g.fillText(`int ${Math.round(c.intensity * 100)}%  boost ${boostPct}%  effort->${proj} vs ${src.hasReading ? src.currentBpm : '--'}  sent: ${lastPick || '-'} (${lastReason || '-'})  learned top: ${top.key}  lr x${(attribution.learningRateNow() / attribution.lr).toFixed(1)}${sensorFlat ? '  SENSOR FLAT' : ''}`, W / 2, 595, W - 40);
   } else {
   g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
-  g.fillText(xr ? `${settings.gameType === 'touch' ? 'TOUCH MODE' : 'blue = left · orange = right'} · white curve = swing path · Y = options · code ${link.code}`
-    : `blue = left click · orange = right click · O = options · phone code ${link.code}`, W / 2, 595);
+  const phoneLive = sourceKind === 'phone' && !phoneFallback && src.hasReading; // linked: no need to show the code
+  const codeText = phoneLive ? 'phone live' : `code ${link.code}`;
+  g.fillText(xr ? `${settings.gameType === 'touch' ? 'TOUCH MODE' : 'blue = left · orange = right'} · white curve = swing path · Y = options · ${codeText}`
+    : `blue = left click · orange = right click · O = options · ${phoneLive ? 'phone live' : `phone code ${link.code}`}`, W / 2, 595);
   }
 
   g.textAlign = 'left'; g.fillStyle = '#ffffff'; g.font = '600 30px system-ui, sans-serif';
