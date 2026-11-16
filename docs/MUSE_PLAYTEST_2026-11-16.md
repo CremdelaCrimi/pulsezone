@@ -113,4 +113,4 @@ Build confirmed: "PulseZone VR v48" by the title.
 
 **Minor:**
 - The version stamp isn't on screen mid-workout when the Diag line replaces the bottom line.
-- The in-zone counter read 0:51 during cool-down, then 0:43 at the end. The corner counter counts cool-down time in the zone; the end board counts training only.
+- The in-zone counter read 0:51 during cool-down, then 0:43 at the end. Both count training only, but the live counter adds up game time while the end board counts the once-a-second log rows; at sped-up play (`speed=4`) those can drift apart. Worth making the live counter use the log too.
