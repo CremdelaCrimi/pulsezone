@@ -412,8 +412,8 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   }
 
   // Song breakdowns: every 24 bars, never above the zone, once per bar boundary.
-  check(breakdownDue(24, 0, 'InZone') && breakdownDue(48, 24, 'Below') && !breakdownDue(24, 24, 'InZone') && !breakdownDue(25, 0, 'InZone')
-    && !breakdownDue(24, 0, 'Above') && !breakdownDue(0, null, 'InZone'), 'song breakdowns every 24 bars, never above the zone');
+  check(breakdownDue(24, 0, 'InZone') && breakdownDue(48, 24, 'InZone') && !breakdownDue(48, 24, 'Below') && !breakdownDue(24, 24, 'InZone') && !breakdownDue(25, 0, 'InZone')
+    && !breakdownDue(24, 0, 'Above') && !breakdownDue(0, null, 'InZone'), 'song breakdowns every 24 bars, only in the zone');
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
   {

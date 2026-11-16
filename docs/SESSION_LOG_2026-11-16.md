@@ -154,3 +154,12 @@ Longest quiet stretch in training: 11 s (during a two-hand rope); longest a move
 
 ## Cycle 25 (12:09 PM)
 - Documentation: brought `docs/GAME_DESIGN_BRIEF.md` up to 12:10 (call-out tiers, test tools, real-reps-only learning, stuck-sensor guard, guard colours, spotlight unlock rule, combo cooldown, breakdowns, robustness checks, postponed ideas) and added a fourth notebook source, "changes on 2026-11-16 (10:35 AM to 12:10 PM)", so Gemini has the full picture.
+
+## Cycle 26 (12:36 PM)
+- Asked Gemini (round 11) to review all four notebook sources together for contradictions and risky interactions. Five points; checked each against the code:
+  - Touch mode vs combos/slams: already handled (Touch-mode combos use only plain/low punches; the slam needs only a touch in Touch mode).
+  - Drift guard vs side shift: already handled (drift is measured from the side-shift spot).
+  - Stand-up box stealing a queued move: already fixed in the second review.
+  - **Song breakdowns below the zone** (thinning the music right when you need to push): valid. Breakdowns now only happen in the zone, and leaving the zone ends one.
+  - **Phone asleep**: valid. While the heart rate is only estimated from movement, the challenge boost now holds still (as it does for a stuck sensor), so a locked iPhone can't cause runaway escalation on a guess.
+- Checked: all checks pass; 3-minute auto-play, 0 overlaps, no console errors.

@@ -40,7 +40,7 @@ A PID controller turns "how far am I from the target heart rate" into a single *
 Spawn interval, orb speed, how widely orbs are spread, how likely walls are, minimum punch speed and travel, how often orbs need a directional swing or a cross-body punch, which moves are unlocked.
 
 ### 4.3 Challenge boost (when heart rate stalls)
-If the player sits below the zone for about 15 seconds without heart rate rising (or intensity is already maxed), a **challenge boost** builds over about 45 seconds: faster spawns, faster orbs, more of the moves that work for this player, and **bursts** (speed bag, battle ropes) become the main tool. It fades once the player reaches the zone. It never builds while the effort estimate says the player is already climbing into the zone (it drains instead), to avoid overshooting above the zone.
+If the player sits below the zone for about 15 seconds without heart rate rising (or intensity is already maxed), a **challenge boost** builds over about 45 seconds: faster spawns, faster orbs, more of the moves that work for this player, and **bursts** (speed bag, battle ropes) become the main tool. It fades once the player reaches the zone. It never builds while the effort estimate says the player is already climbing into the zone (it drains instead), to avoid overshooting above the zone, and it holds still while the heart rate is only estimated (phone asleep) or the sensor looks stuck.
 
 ### 4.4 Learning what raises THIS player's heart rate
 - Model: heart rate ≈ baseline + Σ (gain × recent reps per minute of each activity), rep rates smoothed over ~35 s for heart lag, updated online (NLMS).
@@ -124,7 +124,7 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 
 ## 8. Music and sound (pace-leading audio)
 - **Song mode:** "Hard-Knuckle Focus" (121 BPM), time-stretched 0.78×–1.25× with pitch preserved to lead the player's pace. On Quest it starts from a button press (enter VR / trigger); if blocked, the synth plays instead.
-- The song is filtered by zone (muffled well below, opening as you climb, +4 dB bass in the zone) and ducks under big hits. Every 24 bars a 4-bar breakdown thins it out (high-pass ~380 Hz, no bass boost); the next big hit slams it back in. Never above the zone; tempo and spawns untouched.
+- The song is filtered by zone (muffled well below, opening as you climb, +4 dB bass in the zone) and ducks under big hits. Every 24 bars a 4-bar breakdown thins it out (high-pass ~380 Hz, no bass boost); the next big hit slams it back in. Only in the zone (below it the music keeps driving urgency); tempo and spawns untouched.
 - **Synth mode:** live procedural music (kick, clap, hats, bass, pad, arpeggio); icy bells below the zone, bright arpeggio in it, a soft heartbeat at the real BPM.
 - Sound effects for hits (scaled by power), power smash, block, bag taps, burst warning, perfect swing, weak punch, wrong hand, miss, wall hit, dodge, entering the zone, finishing.
 

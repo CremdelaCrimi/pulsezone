@@ -65,7 +65,7 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 
 ### Sound
 
-- **Soundtrack:** "Hard-Knuckle Focus", an instrumental track made with Gemini's music tool (`assets/music/hard-knuckle-focus.mp3`, 121 BPM). The game **time-stretches it to your pace** with the pitch preserved, from 0.78× to 1.25×. It loops over 87 whole bars and skips the intro and the silent ending. The song also changes colour with your zone: muffled when you're well below, opening up as you climb, with extra bass in the zone; big hits briefly duck the music. Every 24 bars (about 48 seconds) the song thins out for a few bars (a "breakdown"), and the full sound slams back in on your next big hit (power orb, slam, combo clear, zone streak) or after 4 bars. Never above the zone. Switch between **Song** and **Synth** on the options board. On the Quest the song can only start from a button press, so it starts when you enter VR or pull a trigger. If it's ever blocked, the synth music plays instead and the game says so.
+- **Soundtrack:** "Hard-Knuckle Focus", an instrumental track made with Gemini's music tool (`assets/music/hard-knuckle-focus.mp3`, 121 BPM). The game **time-stretches it to your pace** with the pitch preserved, from 0.78× to 1.25×. It loops over 87 whole bars and skips the intro and the silent ending. The song also changes colour with your zone: muffled when you're well below, opening up as you climb, with extra bass in the zone; big hits briefly duck the music. Every 24 bars (about 48 seconds) the song thins out for a few bars (a "breakdown"), and the full sound slams back in on your next big hit (power orb, slam, combo clear, zone streak) or after 4 bars. Only while you're in the zone (below it the music keeps driving you). Switch between **Song** and **Synth** on the options board. On the Quest the song can only start from a button press, so it starts when you enter VR or pull a trigger. If it's ever blocked, the synth music plays instead and the game says so.
 - **Music & sound (Synth):** synthesized live. The **tempo leads you**: it speeds up when you need to pick it up and slows when you need to ease off. You also get icy bells below your zone, a bright arpeggio in it, a soft heartbeat at your real BPM, and a sound for every hit, dodge and wall.
 ### When your heart rate won't climb
 
@@ -146,7 +146,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v37` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v38` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

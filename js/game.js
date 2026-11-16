@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v37';
+} from './core.js?v38';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v37';
+import { AudioEngine } from './audio.js?v38';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v37';
-import { loadTuning, createDevPanel } from './dev.js?v37';
+import { OptionsPanel } from './options.js?v38';
+import { loadTuning, createDevPanel } from './dev.js?v38';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -2447,7 +2447,7 @@ function frame(time) {
   const src = source();
   if (!paused && controller.phase !== Phase.Finished) {
     gameTime += gdt;
-    if (controller.phase !== Phase.CoolDown) boost.update(gdt, { status: controller.status, intensity: controller.intensity, bpmTrend: controller.bpmTrend, climbing: trendShown === 'climbing', hold: sensorFlat });
+    if (controller.phase !== Phase.CoolDown) boost.update(gdt, { status: controller.status, intensity: controller.intensity, bpmTrend: controller.bpmTrend, climbing: trendShown === 'climbing', hold: sensorFlat || phoneFallback }); // don't escalate on a guessed heart rate
     else boost.value = Math.max(0, boost.value - gdt / 10);
     // Watch for a stuck sensor: the same BPM for a long time while you're clearly working.
     if (sourceKind === 'phone' && !phoneFallback && src.hasReading) {

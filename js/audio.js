@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo, songTone, breakdownDue, BREAKDOWN_BARS } from './core.js?v37';
+import { musicTempo, songTone, breakdownDue, BREAKDOWN_BARS } from './core.js?v38';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
@@ -157,7 +157,7 @@ export class AudioEngine {
     if (on && !s.breakdown && !this.state.paused && breakdownDue(bar, s.lastBreakBar, this.state.status)) {
       s.breakdown = { until: bar + BREAKDOWN_BARS }; s.lastBreakBar = bar;
     }
-    if (s.breakdown && (bar >= s.breakdown.until || bar < s.lastBreakBar || this.state.status === 'Above' || this.state.status === 'SafetyBrake')) this.dropIn();
+    if (s.breakdown && (bar >= s.breakdown.until || bar < s.lastBreakBar || this.state.status !== 'InZone')) this.dropIn(); // leaving the zone ends it
     s.filter.frequency.setTargetAtTime(tone.cutoff, this.ctx.currentTime, 1.5);
     s.shelf.gain.setTargetAtTime(s.breakdown ? 0 : tone.bassDb, this.ctx.currentTime, s.breakdown ? 0.3 : 1.5);
     s.hp.frequency.setTargetAtTime(s.breakdown ? 380 : 20, this.ctx.currentTime, s.breakdown ? 0.25 : 0.03);

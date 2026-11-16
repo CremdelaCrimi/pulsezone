@@ -1046,11 +1046,12 @@ export function songTone({ status, bpm, target }) {
 /**
  * Song breakdowns (variety without new audio files): every 24 bars the song thins out for up
  * to 4 bars (low end cut, no bass boost), then the full sound slams back on the next big hit.
- * Never above the zone (it would cheer you on when you should ease off).
+ * Only in the zone: below it the music should keep driving you, above it a slam-back would cheer
+ * you on when you should ease off.
  */
 export const BREAKDOWN_EVERY = 24, BREAKDOWN_BARS = 4;
 export function breakdownDue(bar, lastBar, status) {
-  return bar > 0 && bar % BREAKDOWN_EVERY === 0 && bar !== lastBar && status !== 'Above' && status !== 'SafetyBrake';
+  return bar > 0 && bar % BREAKDOWN_EVERY === 0 && bar !== lastBar && status === 'InZone';
 }
 
 /**
