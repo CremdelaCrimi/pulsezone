@@ -102,7 +102,7 @@ export class OptionsPanel {
     label('Orbs'); button('move-jab', 'Punch', 175, 165, s.moves.jab); button('move-low', 'Squat punch', 350, 230, s.moves.low);
     button('move-swing', 'Hook/upper', 590, 215, s.moves.swing && s.gameType === 'punch'); button('move-trace', 'Rope', 815, 160, s.moves.trace); y += R;
     label('More'); button('move-power', 'Power', 175, 165, s.moves.power && s.gameType === 'punch'); button('move-pair', 'Squat+reach', 350, 230, s.moves.pair);
-    button('move-guard', 'Guard', 590, 215, s.moves.guard); y += R;
+    button('move-guard', 'Guard', 590, 215, s.moves.guard); button('move-sweep', '2 ropes', 815, 160, s.moves.sweep); y += R;
     label('Bursts'); button('move-bag', 'Speed bag', 175, 390, s.moves.bag); button('move-ropes', 'Battle ropes', 580, 395, s.moves.ropes); y += R;
     label('Walls'); button('move-duck', 'Duck', 175, 165, s.moves.duck); button('move-squatSide', 'Side squat', 350, 230, s.moves.squatSide);
     button('move-lean', 'Lean', 590, 215, s.moves.lean); button('move-pillar', 'Pillar', 815, 160, s.moves.pillar); y += R;

@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -160,7 +160,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(Object.keys(easy).length === 1 && easy.jab, 'very low intensity: only plain punches');
   const mid = count({ intensity: 0.5, status: 'InZone' });
   check(ACTIVITY_KEYS.every((k) => mid[k] > 0), `mid intensity: every activity appears (${JSON.stringify(mid)})`);
-  const gains = { jab: 0.05, low: 0.3, swing: 0.1, duck: 0.3, lateral: 0.2, squatSide: 0.9 };
+  const gains = { jab: 0.05, low: 0.3, swing: 0.1, duck: 0.3, lateral: 0.2, squatSide: 0.9, trace: 0.15, sweep: 0.3, power: 0.2, pair: 0.35, guard: 0.15 };
   const noBursts = { bag: false, ropes: false };
   const stuck = count({ intensity: 0.9, status: 'Below', boost: 1, gains, enabled: noBursts });
   const normal = count({ intensity: 0.9, status: 'InZone', gains, enabled: noBursts });
@@ -188,7 +188,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
   // Learning: a synthetic player whose heart responds strongly to side squats and barely to punches.
   // Generated with a slightly different lag than the learner assumes, plus noise.
-  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9 };
+  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9 };
   const att = new HeartRateAttribution({ weights: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 1.0])) });
   const rng = mulberry32(7);
   const tr = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
@@ -237,6 +237,22 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(tp.length === 5 && tp.every(([x, y]) => Math.abs(x) <= 0.5 && y >= 1.7 - 0.95 && y <= 1.7 - 0.05) && Math.min(...tp.map((p) => p[1])) < 1.45,
     'trace path stays within reach and dips low');
   check(traceSeconds(0) > traceSeconds(1) && tracePoints(1) === 50 && tracePoints(0.5) < 25, 'traces get quicker when hard; accuracy drives points');
+
+  // Looser rope catch: within 20 cm sideways, anywhere within 35 cm in front of/behind the ring, and a wobble doesn't drop you.
+  check(onRope(false, 0.18, 0.3) && !onRope(false, 0.22, 0) && onRope(true, 0.24, 0) && !onRope(true, 0.3, 0) && !onRope(false, 0.1, 0.5),
+    'rope catch: 20 cm to get on, 27 cm before you drop off, 35 cm of depth either side');
+  const sw = sweepPath(1.7, mulberry32(5));
+  check(sw.length === 6 && sw.slice(1).every(([x], i) => Math.abs(x) >= 0.35 && Math.sign(x) !== Math.sign(sw[i][0]))
+    && Math.min(...sw.map((p) => p[1])) <= 1.1 && sw.every(([x]) => Math.abs(x) + SWEEP_HALF_GAP <= 0.85),
+    'two-hand rope sweeps side to side, dips into a squat and stays within reach');
+  check(sweepSeconds(0.5) > traceSeconds(0.5), 'two-hand rope lasts a little longer');
+  // Stand-up boxes: after a duck or squat box you have to stand tall.
+  const rise = wallPolygon('rise', 1.7);
+  check(wallFor('stand') === 'rise' && LOW_WALLS.includes('duck') && LOW_WALLS.includes('squatLeft') && !LOW_WALLS.includes('pillar'),
+    'squat boxes are followed by a stand-up box');
+  check(!wallHitsHead(rise, 0, 1.68) && wallHitsHead(rise, 0, 1.5) && wallHitsHead(rise, 0.4, 1.2), 'stand-up box: hits you if you stay low, clear when standing tall');
+  check(!wallHitsHead(wallPolygon('duck', 1.7), 0, 1.35) && !wallHitsHead(rise, 0, 1.6), 'duck then stand: both passable from a normal duck and a normal stance');
+  { const seen = new Set(); for (let i = 0; i < 300; i++) seen.add(pickWallType(1)); check(!seen.has('rise'), 'stand-up boxes only come after a squat, never at random'); }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
   {

@@ -387,11 +387,16 @@ export const WALL_TYPES = Object.freeze([
   { type: 'dodgeRight', label: 'Lean right!', from: 0.4 },
   { type: 'squatLeft', label: 'Squat left!', from: 0.55 },
   { type: 'squatRight', label: 'Squat right!', from: 0.55 },
+  // Follow-up only (never picked at random): a low box after every squat box, so you have to
+  // stand all the way up instead of staying down for the next one.
+  { type: 'rise', label: 'Stand tall!', from: 0, followUp: true },
 ]);
+/** Boxes you get under by squatting or ducking: each one is followed by a "Stand tall!" box. */
+export const LOW_WALLS = Object.freeze(['duck', 'squatLeft', 'squatRight']);
 
 /** Which wall to send at this intensity (rng returns 0..1). Unlocked types are equally likely. */
 export function pickWallType(intensity, rng = Math.random) {
-  const open = WALL_TYPES.filter((w) => intensity >= w.from);
+  const open = WALL_TYPES.filter((w) => !w.followUp && intensity >= w.from);
   if (!open.length) return null;
   return open[Math.min(open.length - 1, Math.floor(rng() * open.length))].type;
 }
@@ -401,6 +406,7 @@ export function wallPolygon(type, standing) {
   const W = 1.3, TOP = Math.max(2.4, standing + 0.6);
   const duckY = standing - 0.22;   // head must drop ~30 cm
   const squatY = standing - 0.32;  // a bit deeper for the side squats
+  const riseY = standing - 0.25;   // stand tall: head (radius 9 cm) clears it within ~16 cm of full height
   switch (type) {
     case 'duck': return [[-W, duckY], [W, duckY], [W, TOP], [-W, TOP]];
     case 'pillar': return [[-0.22, 0], [0.22, 0], [0.22, TOP], [-0.22, TOP]];
@@ -408,6 +414,7 @@ export function wallPolygon(type, standing) {
     case 'dodgeRight': return [[-W, 0], [0.12, 0], [0.12, TOP], [-W, TOP]];  // wall on the left: go right
     case 'squatLeft': return [[-W, squatY], [-0.05, squatY], [-0.05, 0], [W, 0], [W, TOP], [-W, TOP]]; // open low-left
     case 'squatRight': return [[W, squatY], [0.05, squatY], [0.05, 0], [-W, 0], [-W, TOP], [W, TOP]];   // open low-right
+    case 'rise': return [[-W, 0], [W, 0], [W, riseY], [-W, riseY]];                                   // keep your head above it
     default: return null;
   }
 }
@@ -503,6 +510,8 @@ export const ACTIVITIES = Object.freeze([
   { key: 'lateral', label: 'Side steps', kind: 'wall', from: 0.25, base: 0.35, prior: 1.0 },
   { key: 'squatSide', label: 'Side squats', kind: 'wall', from: 0.4, base: 0.3, prior: 1.6 },
   { key: 'trace', label: 'Rope tracing', kind: 'orb', from: 0.2, base: 0.35, prior: 0.8 },
+  // Two ropes side by side, one per hand, sweeping wide left/right and dipping low: whole-body.
+  { key: 'sweep', label: 'Two-hand rope', kind: 'orb', from: 0.3, base: 0.25, prior: 1.2 },
   // Full-body power moves. Bursts (speed bag, battle ropes) are short all-out efforts
   // that the challenge boost leans on when your heart rate is stuck.
   { key: 'power', label: 'Power punches', kind: 'orb', from: 0.3, base: 0.3, prior: 0.9 },
@@ -570,11 +579,12 @@ export function wallTypeFor(activity, rng = Math.random, allow = { lean: true, p
     return shapes.length ? shapes[Math.floor(rng() * shapes.length) % shapes.length] : null;
   }
   if (activity === 'squatSide') return rng() < 0.5 ? 'squatLeft' : 'squatRight';
+  if (activity === 'stand') return 'rise';
   return null;
 }
 
 /** Walls are boxes: their length is how long you must hold the position (seconds at wall speed). */
-export const WALL_HOLD_SECONDS = Object.freeze({ duck: 1.2, squatLeft: 1.0, squatRight: 1.0, dodgeLeft: 0.8, dodgeRight: 0.8, pillar: 0.6 });
+export const WALL_HOLD_SECONDS = Object.freeze({ rise: 0.6, duck: 1.2, squatLeft: 1.0, squatRight: 1.0, dodgeLeft: 0.8, dodgeRight: 0.8, pillar: 0.6 });
 export const wallDepth = (type, speed) => Math.max(0.4, (WALL_HOLD_SECONDS[type] ?? 0.8) * speed);
 
 // ---------------------------------------------------------------- tracing orbs (follow the string)
@@ -594,8 +604,37 @@ export function tracePath(standing, rng = Math.random, points = 5) {
   return out;
 }
 
-/** How long a trace lasts: slower when easy, quicker when hard. */
+/**
+ * Centre line for the two-hand rope: big sweeps from one side to the other (you step and shift
+ * your weight) with dips that need a squat. Each hand follows a rope SWEEP_HALF_GAP either side.
+ */
+export const SWEEP_HALF_GAP = 0.22;
+export function sweepPath(standing, rng = Math.random, points = 6) {
+  const out = [];
+  let side = rng() < 0.5 ? -1 : 1;
+  for (let i = 0; i < points; i++) {
+    const x = i === 0 ? side * 0.15 : side * (0.35 + rng() * 0.25);
+    const y = i % 2 ? standing - 0.6 - rng() * 0.25 : standing - 0.25 - rng() * 0.15;
+    out.push([x, y]);
+    side = -side;
+  }
+  return out;
+}
+
+/** How long a trace lasts: slower when easy, quicker when hard. The two-hand rope runs a bit longer. */
 export const traceSeconds = (intensity) => lerp(4.5, 2.6, clamp01(intensity));
+export const sweepSeconds = (intensity) => traceSeconds(intensity) * 1.3;
+
+/**
+ * How close your hand must be to count as "on the rope": within TRACE_RADIUS (sideways/up-down)
+ * of the rope, measured anywhere within TRACE_DEPTH in front of or behind the ring. Once on, you
+ * stay on until you drift past TRACE_RELEASE, so a wobble doesn't break the streak.
+ */
+export const TRACE_RADIUS = 0.2, TRACE_RELEASE = 0.27, TRACE_DEPTH = 0.35;
+export function onRope(wasOn, dxy, dz) {
+  if (Math.abs(dz) > TRACE_DEPTH + (wasOn ? 0.1 : 0)) return false;
+  return dxy < (wasOn ? TRACE_RELEASE : TRACE_RADIUS);
+}
 
 /** Points for a trace from the fraction of time your hand stayed on the orb. */
 export const tracePoints = (fraction) => Math.round(50 * clamp01(fraction) ** 1.5);
@@ -624,13 +663,13 @@ export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0 
       const arrive = now + (SPAWN_DISTANCE - 0.35) / gs;
       return { kind: 'solo', start: arrive - 0.8, end: arrive + COUNTER_DISTANCE / cs + 0.6 };
     }
-    case 'trace': {
+    case 'trace': case 'sweep': {
       const ts = Math.max(2.2, speed * 0.85);
       const front = now + (SPAWN_DISTANCE - 0.5) / ts;
-      const tail = front + traceSeconds(intensity);
+      const tail = front + (activity === 'sweep' ? sweepSeconds : traceSeconds)(intensity);
       return { kind: 'solo', start: front - 0.9, end: tail + 0.7 };
     }
-    case 'duck': case 'lateral': case 'squatSide': {
+    case 'duck': case 'lateral': case 'squatSide': case 'stand': {
       const ws = speed * 0.8;
       return { kind: 'solo', start: now + SPAWN_DISTANCE / ws - 0.7, end: now + (SPAWN_DISTANCE + depth) / ws + 0.6 };
     }

@@ -29,14 +29,15 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 - **Guard & counter:** a red-hot shot with a GUARD badge flies at your face. Don't punch it: bring both fists up by your chin and hold them there as it arrives. Block it and a counter orb comes straight in from close range for double points. Miss the guard and the sky flashes red.
 - **Hit feel:** a hit orb flashes white for a split second, then shatters, with the pieces flying the way your fist was going. Harder punches throw more pieces, sound bigger (a soft punch is a hollow thud, a hard one adds a bass thump and a glassy crack) and buzz harder.
 - **Swing orbs** have a glowing **white curve** through them, with a "ghost fist" sliding along it. Swing along the curve (an uppercut, or a hook from the outside in) for **double points**. Any solid punch still counts, so you're never punished for an imperfect angle.
-- **Walls (purple boxes):** get your head into the open gap: **duck**, **step aside** from a centre pillar, **lean left or right**, or **squat left or right**. Each wall is a box, and its length shows how long to hold the position (about 1.2 s for a duck).
-- **Rope tracing:** a long glowing rope in your hand's colour flows toward you along the lane, curving left, right, up and down (low dips mean squats). Where it crosses arm's length there's a ring: keep that hand on the rope as it slides past, and the ring turns green while you're on it. Points depend on how closely you followed the whole rope.
+- **Walls (purple boxes):** get your head into the open gap: **duck**, **step aside** from a centre pillar, **lean left or right**, or **squat left or right**. Each wall is a box, and its length shows how long to hold the position (about 1.2 s for a duck). After every duck or squat box comes a low **Stand tall!** box, so you have to stand all the way back up instead of staying down.
+- **Rope tracing:** a long glowing rope in your hand's colour flows toward you along the lane, curving left, right, up and down (low dips mean squats). Where it crosses arm's length there's a ring: keep that hand on the rope as it slides past, and the ring turns green while you're on it. The catch is forgiving: your hand counts as on the rope within 20 cm of it, anywhere from 35 cm in front of the ring to 35 cm behind it (shown by a faint sleeve), and a small wobble won't knock you off. Points depend on how much of the rope you stayed on.
+- **Two-hand rope:** two ropes side by side, one per hand, that sweep wide from side to side and dip low, so you step, shift your weight and squat while following them. Score is the average of both hands.
 - **Game type:** **Punch** (hit hard enough to pop orbs) or **Touch** (just hold your hand where the orb arrives and it pops on contact). Choose it on the options board.
 - **Heat gauge (left):** frosty when you're below your zone, a lively flame in it, and a hyper flame above it.
 - **Reactor (right):** a core that only charges while you're in your zone (about a minute of zone time per level, with a points bonus each level). Above the zone it overheats and stops charging until you ease off; below it stalls and turns icy. The end screen shows your reactor level.
 - **In the zone, the world lights up:** equalizer pillars rise along the lane to the music's beat, embers drift up, your fists leave glowing trails, and the lane rails turn from blue to orange.
 - **Spacing:** everything shares one lane, so the game books a time slot for when each thing reaches you. Plain orbs can come in groups, but a rope, a wall box, a power orb, a squat-and-reach pair or a guard shot always gets the lane to itself, with a short gap before and after. Nothing flies through anything else.
-- **Soundtrack:** "Hard-Knuckle Focus", an instrumental track made with Gemini's music tool (`assets/music/hard-knuckle-focus.mp3`, 121 BPM). The game **time-stretches it to your pace** with the pitch preserved, from 0.78× to 1.25×. It loops over 87 whole bars and skips the intro and the silent ending. Switch between **Song** and **Synth** on the options board.
+- **Soundtrack:** "Hard-Knuckle Focus", an instrumental track made with Gemini's music tool (`assets/music/hard-knuckle-focus.mp3`, 121 BPM). The game **time-stretches it to your pace** with the pitch preserved, from 0.78× to 1.25×. It loops over 87 whole bars and skips the intro and the silent ending. Switch between **Song** and **Synth** on the options board. On the Quest the song can only start from a button press, so it starts when you enter VR or pull a trigger. If it's ever blocked, the synth music plays instead and the game says so.
 - **Music & sound (Synth):** synthesized live. The **tempo leads you**: it speeds up when you need to pick it up and slows when you need to ease off. You also get icy bells below your zone, a bright arpeggio in it, a soft heartbeat at your real BPM, and a sound for every hit, dodge and wall.
 
 ### When your heart rate won't climb
@@ -47,7 +48,7 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
   - **Speed bag:** a bag hangs in front of your chest for 4–5 seconds. Hit it as many times as you can (5 points a hit, more for a big flurry). No aiming or reaction time needed, just effort.
   - **Battle ropes:** two ropes run from your hands down the lane for 6 seconds. Pump both arms up and down fast; the waves you make travel down the ropes. Staying low (half squat) scores 1.5×.
   - Each can come at most every 20 s (speed bag) or 30 s (ropes). You'll see the odd one in the zone too, for variety, and hardly any above it.
-- **What works for you:** the game **learns what raises YOUR heart rate**. It compares your heart rate with how many of each activity you've recently done (punches, squat punches, hooks and uppercuts, power punches, squat-and-reach pairs, guard and counter, rope tracing, speed bag, battle ropes, ducks, side steps, side squats), allowing for the heart's 30–40 second lag. When you're below the zone, it sends more of whatever works for you. When you're above it, it sends easier punches. The estimates are saved in the browser and refine over several workouts.
+- **What works for you:** the game **learns what raises YOUR heart rate**. It compares your heart rate with how many of each activity you've recently done (punches, squat punches, hooks and uppercuts, power punches, squat-and-reach pairs, guard and counter, rope tracing, two-hand rope, speed bag, battle ropes, ducks, side steps, side squats), allowing for the heart's 30–40 second lag. When you're below the zone, it sends more of whatever works for you. When you're above it, it sends easier punches. The estimates are saved in the browser and refine over several workouts.
 - **Where to see it:** in VR it's on the options board, and the end screen names your best activity.
 
 ### Options (in VR)
@@ -59,7 +60,7 @@ Press **Y** (or **B**) to open the options board on your left, point at it with 
 - Turn music on or off and change the volume.
 - Set the challenge level: **Gentle / Normal / Hard** changes how hard the game pushes and how fast the boost builds.
 - Choose the game type (Punch or Touch).
-- Pick your **moveset**: orbs (**Punch**, **Squat punch**, **Hook/uppercut**, **Rope**), more (**Power**, **Squat+reach**, **Guard**), bursts (**Speed bag**, **Battle ropes**) and walls (**Duck**, **Side squat**, **Lean**, **Pillar**). Highlighted means on. Hooks, uppercuts and power orbs need Punch mode. The same checklist is on the game page under **Moveset**, and the two stay in sync. If you pick moves that normally unlock later (e.g. only ducks), you get them straight away.
+- Pick your **moveset**: orbs (**Punch**, **Squat punch**, **Hook/uppercut**, **Rope**), more (**Power**, **Squat+reach**, **Guard**, **2 ropes**), bursts (**Speed bag**, **Battle ropes**) and walls (**Duck**, **Side squat**, **Lean**, **Pillar**). Highlighted means on. Hooks, uppercuts and power orbs need Punch mode. The same checklist is on the game page under **Moveset**, and the two stay in sync. If you pick moves that normally unlock later (e.g. only ducks), you get them straight away.
 - See the "what raises your heart rate" chart.
 - Restart, end the workout, or close the board.
 
@@ -81,7 +82,7 @@ Left click = left punch · right click = right punch · hold **G** guard · hold
 | `js/dev.js` | Developer tuning panel |
 | `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
 | `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
-| `test/core.test.mjs` | 82 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
+| `test/core.test.mjs` | 90 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
 
@@ -114,7 +115,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v10` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v11` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

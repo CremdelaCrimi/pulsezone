@@ -5,15 +5,16 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, estimatedMaxBpm, EASY, HARD, WALL_TYPES, wallPolygon, wallHitsHead,
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
-  HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints,
+  HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
+  TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v10';
+} from './core.js?v11';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v10';
+import { AudioEngine } from './audio.js?v11';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v10';
-import { loadTuning, createDevPanel } from './dev.js?v10';
+import { OptionsPanel } from './options.js?v11';
+import { loadTuning, createDevPanel } from './dev.js?v11';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -29,7 +30,7 @@ const settings = {
   musicStyle: 'song',  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
   // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
   moves: {
-    jab: true, low: true, swing: true, power: true, pair: true, guard: true, trace: true,
+    jab: true, low: true, swing: true, power: true, pair: true, guard: true, trace: true, sweep: true,
     bag: true, ropes: true, duck: true, squatSide: true, lean: true, pillar: true,
   },
 };
@@ -42,7 +43,7 @@ try {
 } catch { /* ignore */ }
 const MOVE_LABELS = {
   jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then reach up', guard: 'Guard & counter',
-  trace: 'Rope tracing', bag: 'Speed bag', ropes: 'Battle ropes',
+  trace: 'Rope tracing', sweep: 'Two-hand rope', bag: 'Speed bag', ropes: 'Battle ropes',
   duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar',
 };
 /** Which activities the moveset allows right now (forSpawn: also respect burst cooldowns). */
@@ -54,6 +55,7 @@ const enabledActivities = (forSpawn = false) => ({
   pair: settings.moves.pair,
   guard: settings.moves.guard,
   trace: settings.moves.trace,
+  sweep: settings.moves.sweep,
   bag: settings.moves.bag && (!forSpawn || gameTime >= bagReadyAt),
   ropes: settings.moves.ropes && (!forSpawn || gameTime >= ropesReadyAt),
   duck: settings.moves.duck,
@@ -139,6 +141,7 @@ fetch(SONG.url, { method: 'HEAD' }).then((r) => {
   audio.setMusicMode(songAvailable && settings.musicStyle === 'song' ? 'song' : 'synth');
 }).catch(() => { /* offline: synth only */ });
 const unlockAudio = () => audio.unlock();
+let songWarned = false;
 document.addEventListener('pointerdown', unlockAudio, true);
 document.addEventListener('keydown', unlockAudio, true);
 
@@ -184,6 +187,9 @@ function attachFistsForMode() {
 renderer.xr.addEventListener('sessionstart', () => {
   audio.unlock();
   setTimeout(() => { attachFistsForMode(); recenterSoon = true; }, 300);
+  // In VR there are no page taps: a controller trigger or grip is the gesture that can start audio.
+  const session = renderer.xr.getSession();
+  for (const ev of ['selectstart', 'squeezestart']) session?.addEventListener(ev, unlockAudio);
 });
 renderer.xr.addEventListener('sessionend', () => { camera.position.set(0, 1.6, 0); camera.rotation.set(0, 0, 0); attachFistsForMode(); centerX = 0; });
 attachFistsForMode();
@@ -440,6 +446,7 @@ let spawnTimer = 0;
 // Lane timeline: booked arrival slots so obstacles never crowd each other (see lanePlan in core.js).
 let lane = [];
 let queuedActivity = null, queuedFor = 0;
+let standNext = false;                                // a squat box was sent: a "Stand tall!" box comes next
 let bag = null, ropes = null, pendingBurst = null;   // speed bag / battle ropes (one at a time)
 let bagReadyAt = 0, ropesReadyAt = 0;                // burst cooldowns (game seconds)
 let centerX = 0;
@@ -447,7 +454,7 @@ let recenterSoon = true;
 
 function clearObstacles() {
   for (const o of [...orbs, ...walls, ...bursts, ...shards]) scene.remove(o.group || o.mesh);
-  for (const t of traces) scene.remove(t.group, t.ring);
+  for (const t of traces) scene.remove(t.group, ...t.strands.map((r) => r.marker));
   orbs.length = walls.length = bursts.length = traces.length = shards.length = 0;
   if (bag) { scene.remove(bag.group); bag = null; }
   if (ropes) { endRopes(false); }
@@ -458,6 +465,7 @@ function clearObstacles() {
   spawnTimer = 0;
   lane = [];
   queuedActivity = null; queuedFor = 0;
+  standNext = false;
 }
 
 /**
@@ -476,8 +484,10 @@ function spawnWall(head, standing, type, activity) {
   group.add(fill, edge);
   group.position.z = head.z - 14 - depth; // geometry spans z..z+depth (near face = z+depth)
   scene.add(group);
+  if (LOW_WALLS.includes(type)) standNext = true;   // you'll have to stand back up for the next box
+  if (type === 'rise') standNext = false;
   walls.push({
-    mesh: group, fill, poly, type, activity, depth, speed, passZ: head.z + 0.3, hit: false, announced: false,
+    mesh: group, fill, poly, type, activity: activity === 'stand' ? null : activity, depth, speed, passZ: head.z + 0.3, hit: false, announced: false,
     label: WALL_TYPES.find((w) => w.type === type).label,
   });
 }
@@ -1039,25 +1049,23 @@ function endRopes(award) {
 /**
  * Tracing rope: a long glowing rope that curves left/right and up/down as it flows toward you
  * along the lane. Where it crosses your "hand plane" (arm's reach) there's a ring: keep the
- * matching hand on the rope at that point while it passes. Points = how closely you followed.
+ * matching hand on the rope there while it passes. Points = how much of it you stayed on.
+ * Two-hand rope: two ropes side by side (one per hand) that sweep wide and dip low.
  */
 const traces = [];
-const ringGeo = new THREE.RingGeometry(0.1, 0.125, 32);
 const beadGeo = new THREE.SphereGeometry(0.06, 16, 12);
-const TRACE_RADIUS = 0.13;
+// The catch zone, drawn where the rope meets you: a ring (how far off the rope you can be) and a
+// faint sleeve along the lane (how far in front of or behind the ring your hand can be).
+const ringGeo = new THREE.RingGeometry(TRACE_RADIUS - 0.03, TRACE_RADIUS, 40);
+const discGeo = new THREE.CircleGeometry(TRACE_RADIUS - 0.03, 40);
+// The sleeve is drawn mostly beyond the ring (35 cm back, 15 cm forward) so it never crowds your face;
+// the catch itself reaches TRACE_DEPTH either way.
+const sleeveGeo = new THREE.CylinderGeometry(TRACE_RADIUS, TRACE_RADIUS, TRACE_DEPTH + 0.15, 40, 1, true)
+  .rotateX(Math.PI / 2).translate(0, 0, (0.15 - TRACE_DEPTH) / 2);
 const ROPE_SAMPLES = 160;
-function spawnTrace(head, standing) {
-  const speed = Math.max(2.2, difficulty.orbSpeed * 0.85);
-  const length = speed * traceSeconds(difficulty.intensity);        // rope length in metres
-  const ctrl = tracePath(standing, Math.random, 7);
-  // Control points run from the rope's front end (local z = 0) back to its tail (local z = -length).
-  const pts = ctrl.map(([x, y], i) => new THREE.Vector3(centerX + x, y, -length * (i / (ctrl.length - 1))));
+function makeStrand(group, pts, hand) {
   const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
-  const hand = ctrl.reduce((s, [x]) => s + x, 0) < 0 ? 'left' : 'right';
-  // Samples sorted by z, for "where is the rope at this depth?" lookups.
-  const samples = curve.getSpacedPoints(ROPE_SAMPLES).sort((a, b) => b.z - a.z);
-  const group = new THREE.Group();
-  group.position.z = head.z - 14;                                    // front end starts 14 m away
+  const samples = curve.getSpacedPoints(ROPE_SAMPLES).sort((a, b) => b.z - a.z); // sorted by z for depth lookups
   const core = new THREE.Mesh(new THREE.TubeGeometry(curve, 220, 0.028, 10, false),
     new THREE.MeshStandardMaterial({ color: HAND_COLOR[hand], emissive: HAND_COLOR[hand], emissiveIntensity: 0.6, roughness: 0.4 }));
   const glow = new THREE.Mesh(new THREE.TubeGeometry(curve, 220, 0.06, 10, false),
@@ -1065,17 +1073,33 @@ function spawnTrace(head, standing) {
   const bead = new THREE.Mesh(beadGeo, MAT[hand]);                   // the rope's leading end
   bead.position.copy(pts[0]);
   group.add(core, glow, bead);
-  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
-  ring.visible = false;
-  scene.add(group, ring);
-  traces.push({
-    group, core, glow, ring, samples, hand, length, speed, planeZ: head.z - 0.5, contact: new THREE.Vector3(),
-    started: false, onTime: 0, totalTime: 0,
-  });
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
+  const fillMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false });
+  const marker = new THREE.Group();
+  const face = new THREE.Group();                                    // ring + disc turn to face you
+  face.add(new THREE.Mesh(ringGeo, ringMat), new THREE.Mesh(discGeo, fillMat));
+  marker.add(new THREE.Mesh(sleeveGeo, fillMat), face);
+  marker.visible = false;
+  scene.add(marker);
+  return { hand, samples, core, glow, marker, face, ringMat, fillMat, contact: new THREE.Vector3(), on: false, onTime: 0 };
+}
+function spawnTrace(head, standing, two = false) {
+  const speed = Math.max(2.2, difficulty.orbSpeed * 0.85);
+  const length = speed * (two ? sweepSeconds : traceSeconds)(difficulty.intensity); // metres
+  const ctrl = two ? sweepPath(standing, Math.random, 6) : tracePath(standing, Math.random, 7);
+  // Control points run from the rope's front end (local z = 0) back to its tail (local z = -length).
+  const ptsAt = (dx) => ctrl.map(([x, y], i) => new THREE.Vector3(centerX + x + dx, y, -length * (i / (ctrl.length - 1))));
+  const group = new THREE.Group();
+  group.position.z = head.z - 14;                                    // front end starts 14 m away
+  const strands = two
+    ? [makeStrand(group, ptsAt(-SWEEP_HALF_GAP), 'left'), makeStrand(group, ptsAt(SWEEP_HALF_GAP), 'right')]
+    : [makeStrand(group, ptsAt(0), ctrl.reduce((sum, [x]) => sum + x, 0) < 0 ? 'left' : 'right')];
+  scene.add(group);
+  traces.push({ group, strands, two, length, speed, planeZ: head.z - 0.5, started: false, totalTime: 0 });
 }
 /** Rope position at a given local depth z (0 = front end, -length = tail). */
-function ropeAt(t, localZ, out) {
-  const s = t.samples;
+function ropeAt(strand, localZ, out) {
+  const s = strand.samples;
   let i = 0;
   while (i < s.length - 2 && s[i + 1].z > localZ) i++;
   const a = s[i], b = s[i + 1];
@@ -1083,46 +1107,65 @@ function ropeAt(t, localZ, out) {
   return out.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, 0);
 }
 function endTrace(t, i) {
-  const frac = t.totalTime > 0 ? t.onTime / t.totalTime : 0;
-  const pts = tracePoints(frac) * (score.inZone() ? 2 : 1);
+  // Two ropes: your score is the average of both hands.
+  const frac = t.totalTime > 0 ? t.strands.reduce((sum, r) => sum + r.onTime, 0) / t.strands.length / t.totalTime : 0;
+  const pts = Math.round(tracePoints(frac) * (t.two ? 1.5 : 1)) * (score.inZone() ? 2 : 1);
   score.score += pts;
   if (frac >= 0.6) { score.hits++; score.combo++; score.best = Math.max(score.best, score.combo); } else score.combo = 0;
-  say(`Rope ${Math.round(frac * 100)}%  +${pts}`);
-  audio.sfx(frac >= 0.8 ? 'perfect' : frac >= 0.5 ? 'hit' : 'miss', { hand: t.hand });
-  attribution.record('trace', gameTime);
-  scene.remove(t.group, t.ring);
-  t.core.geometry.dispose();
-  t.glow.geometry.dispose();
+  say(`${t.two ? 'Two ropes' : 'Rope'} ${Math.round(frac * 100)}%  +${pts}`);
+  audio.sfx(frac >= 0.8 ? 'perfect' : frac >= 0.5 ? 'hit' : 'miss', { hand: t.strands[0].hand });
+  attribution.record(t.two ? 'sweep' : 'trace', gameTime);
+  scene.remove(t.group);
+  for (const r of t.strands) {
+    scene.remove(r.marker);
+    r.core.geometry.dispose(); r.glow.geometry.dispose(); r.ringMat.dispose(); r.fillMat.dispose();
+  }
   traces.splice(i, 1);
 }
 /** Where the player's hand is for tracing: the matching fist in VR, the mouse on desktop. */
 const tracePlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-function traceHandPos(t, xr) {
-  if (xr) return fistByHand[t.hand].world;
-  if (SMOKE) return t.contact;
+const traceTmp = new THREE.Vector3(), camTmp = new THREE.Vector3();
+function traceHandPos(t, strand, xr) {
+  if (xr) return fistByHand[strand.hand].world;
+  if (SMOKE) return strand.contact;
   tracePlane.constant = -t.planeZ;
   raycaster.setFromCamera(pointer, camera);
-  return raycaster.ray.intersectPlane(tracePlane, new THREE.Vector3()) || fistByHand[t.hand].world;
+  const p = raycaster.ray.intersectPlane(tracePlane, new THREE.Vector3());
+  if (!p) return fistByHand[strand.hand].world;
+  if (t.two) p.x += strand.hand === 'left' ? -SWEEP_HALF_GAP : SWEEP_HALF_GAP; // desktop: the mouse steers the middle
+  return p;
 }
 function updateTraces(dt, xr) {
+  camera.getWorldPosition(camTmp);
   for (let i = traces.length - 1; i >= 0; i--) {
     const t = traces[i];
     t.group.position.z += t.speed * dt;
     const localZ = t.planeZ - t.group.position.z;   // which part of the rope is at your hand plane
     if (localZ > 0) continue;                        // front end hasn't reached you yet
-    if (!t.started) { t.started = true; say('Ride the rope!'); }
+    if (!t.started) { t.started = true; say(t.two ? 'Both hands on the ropes!' : 'Ride the rope!'); }
     if (localZ < -t.length) { endTrace(t, i); continue; } // tail has passed
-    ropeAt(t, localZ, t.contact);
-    t.contact.z = t.planeZ;
-    const on = traceHandPos(t, xr).distanceTo(t.contact) < TRACE_RADIUS;
     t.totalTime += dt;
-    if (on) t.onTime += dt;
-    t.ring.visible = true;
-    t.ring.position.copy(t.contact);
-    t.ring.lookAt(camera.getWorldPosition(new THREE.Vector3()));
-    t.ring.material.color.set(on ? 0x4dff73 : 0xffffff);
-    t.glow.material.opacity = on ? 0.32 : 0.18;
-    if (on && xr && Math.random() < 0.3) pulse(fistByHand[t.hand], 0.15, 15);
+    for (const r of t.strands) {
+      ropeAt(r, localZ, r.contact);
+      r.contact.z = t.planeZ;
+      // Judge against the rope at the depth your hand is at (anywhere in the sleeve), sideways and
+      // up/down only, so reaching a bit short or long doesn't matter.
+      const hand = traceHandPos(t, r, xr);
+      const dz = hand.z - t.planeZ;
+      const handLocalZ = Math.min(0, Math.max(-t.length, localZ + Math.max(-TRACE_DEPTH, Math.min(TRACE_DEPTH, dz))));
+      ropeAt(r, handLocalZ, traceTmp);
+      r.on = onRope(r.on, Math.hypot(hand.x - traceTmp.x, hand.y - traceTmp.y), dz);
+      if (r.on) r.onTime += dt;
+      r.marker.visible = true;
+      r.marker.position.copy(r.contact);
+      r.face.lookAt(camTmp);
+      const col = r.on ? 0x4dff73 : 0xffffff;
+      r.ringMat.color.set(col);
+      r.fillMat.color.set(col);
+      r.fillMat.opacity = r.on ? 0.16 : 0.07;
+      r.glow.material.opacity = r.on ? 0.32 : 0.18;
+      if (r.on && xr && Math.random() < 0.3) pulse(fistByHand[r.hand], 0.15, 15);
+    }
   }
 }
 
@@ -1397,7 +1440,7 @@ function buildMovesUI() {
       <label><input type="radio" name="gtype" value="punch"> Punch (hit hard)</label>
       <label><input type="radio" name="gtype" value="touch"> Touch (just hold your hand there)</label>
     </div>
-    ${group('Orbs', ['jab', 'low', 'swing', 'power', 'pair', 'guard', 'trace'])}
+    ${group('Orbs', ['jab', 'low', 'swing', 'power', 'pair', 'guard', 'trace', 'sweep'])}
     ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes'])}
     ${group('Walls', ['duck', 'squatSide', 'lean', 'pillar'])}
     <div class="muted" id="movesNote" style="font-size:12px"></div>`;
@@ -1660,7 +1703,7 @@ function trySpawn(activity) {
   if (!laneFree(lane, plan)) return false;
   if (plan) lane.push(plan);
   if (wallType) spawnWall(head, standing, wallType, activity);
-  else if (activity === 'trace') spawnTrace(head, standing);
+  else if (activity === 'trace' || activity === 'sweep') spawnTrace(head, standing, activity === 'sweep');
   else if (activity === 'pair') spawnPair(head, standing);
   else if (activity === 'guard') spawnGuard(head, standing);
   else spawnOrb(head, standing, activity);
@@ -1736,14 +1779,17 @@ function frame(time) {
   if (controller.phase === Phase.Finished && !finishedPlayed) { finishedPlayed = true; audio.sfx('finish'); saveSession(); }
   audio.update({
     intensity: controller.intensity, status: controller.status, bpm: src.hasReading ? src.currentBpm : 0,
-    phase: paused ? 'Finished' : controller.phase, target: controller.s.targetBpm,
+    phase: controller.phase, paused, target: controller.s.targetBpm,
   });
+  audio.schedule();   // also driven from here: timers can run slow while in VR
+  if (audio.song?.silentFor > 5 && !songWarned) { songWarned = true; say('Song blocked: synth music instead. Pull a trigger to retry'); }
+  if (audio.songLive) songWarned = false;
 
   // Spawning: the activity mix adapts to what raises YOUR heart rate.
   if (!paused && controller.phase !== Phase.Finished) {
     spawnTimer += gdt;
     lane = lane.filter((r) => r.end > gameTime);
-    if (pendingBurst) {
+    if (pendingBurst && !standNext) {
       // A burst waits until the lane is clear, then takes over for a few seconds.
       if (!orbs.length && !walls.length && !traces.length && !guards.length) {
         if (pendingBurst === 'bag') spawnBag(head, standing); else spawnRopes(head, standing);
@@ -1753,7 +1799,7 @@ function frame(time) {
     } else if (!bag && !ropes && spawnTimer >= difficulty.spawnInterval) {
       // Pick what's next (or keep waiting for the move already picked), then only send it once its
       // arrival slot is free, so nothing crowds a rope, a wall box, a pair or a guard shot.
-      const activity = queuedActivity || chooseActivity({
+      const activity = standNext ? 'stand' : queuedActivity || chooseActivity({
         intensity: difficulty.intensity, status: controller.status, boost: boost.value, gains: attribution.w,
         baseWeights: tuning.weights, enabled: enabledActivities(true),
       });
@@ -1817,13 +1863,13 @@ function frame(time) {
       w.hit = true;
       w.fill.material = MAT.wallHit;
       score.wallHit();
-      say(w.type === 'duck' || w.type.startsWith('squat') ? 'Get lower!' : 'Move over!');
+      say(w.type === 'rise' ? 'Stand up!' : w.type === 'duck' || w.type.startsWith('squat') ? 'Get lower!' : 'Move over!');
       audio.sfx('wall');
       pulseBoth(1, 120);
     }
     if (far > w.passZ) {
       if (!w.hit) { score.dodge(); audio.sfx('dodge'); }
-      attribution.record(w.activity, gameTime); // you moved either way
+      if (w.activity) attribution.record(w.activity, gameTime); // you moved either way (standing up is part of the squat)
       scene.remove(w.mesh);
       walls.splice(i, 1);
     }

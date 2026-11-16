@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo } from './core.js?v10';
+import { musicTempo } from './core.js?v11';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
@@ -18,7 +18,7 @@ export class AudioEngine {
   constructor() {
     this.ctx = null;
     this.enabled = true;
-    this.state = { intensity: 0.15, status: 'NoSignal', bpm: 0, phase: 'WarmUp', target: 120 };
+    this.state = { intensity: 0.15, status: 'NoSignal', bpm: 0, phase: 'WarmUp', target: 120, paused: false };
     this.smoothIntensity = 0.15;
     this.smoothTempo = 100;
     this.volume = 0.8;
@@ -30,7 +30,11 @@ export class AudioEngine {
     this.timer = 0;
   }
 
-  /** Must be called from a user gesture (tap / click / Enter VR). Safe to call repeatedly. */
+  /**
+   * Call from every user gesture (tap / click / key / Enter VR / controller trigger). Safe to call
+   * repeatedly: it creates or resumes the audio context and starts the song inside the gesture,
+   * because the Quest browser refuses to start media from a timer.
+   */
   unlock() {
     if (!this.ctx) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -38,8 +42,22 @@ export class AudioEngine {
       this.ctx = new Ctx();
       this.build();
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
     if (!this.timer) this.timer = setInterval(() => this.schedule(), 25);
+    this.playSong();
+  }
+
+  /** Start the song element if it should be playing. Only reliable inside a user gesture. */
+  playSong() {
+    const s = this.song;
+    if (!s?.el || !s.el.paused || this.musicMode !== 'song' || this.state.phase === 'Finished') return;
+    s.el.play().then(() => { s.error = ''; }).catch((e) => { s.error = e?.name || 'blocked'; });
+  }
+
+  /** True once the song is actually producing sound (not blocked, loading or stalled). */
+  get songLive() {
+    const el = this.song?.el;
+    return !!el && !el.paused && el.readyState >= 3;
   }
 
   build() {
@@ -101,6 +119,7 @@ export class AudioEngine {
     el.loop = !s.loopEnd;          // with loop points we jump back ourselves (bar-aligned, skips intro/outro)
     el.preload = 'auto';
     el.addEventListener('ended', () => { el.currentTime = s.loopStart; el.play().catch(() => {}); });
+    el.addEventListener('error', () => { s.error = 'load failed'; });
     el.preservesPitch = true;
     el.webkitPreservesPitch = true;
     s.el = el;
@@ -110,10 +129,10 @@ export class AudioEngine {
     s.node.connect(s.gain).connect(this.music);
   }
 
-  setMusicMode(mode) { this.musicMode = mode; }
+  setMusicMode(mode) { this.musicMode = mode; this.playSong(); }
 
   /** Keep the song's speed and volume in step with the game (called from the scheduler). */
-  driveSong(playing) {
+  driveSong(playing, ended) {
     const s = this.song;
     if (!s?.el) return;
     const on = this.musicMode === 'song' && playing;
@@ -123,8 +142,14 @@ export class AudioEngine {
     // Bar-aligned loop: jump back by exactly the loop length so the beat carries straight through.
     if (s.loopEnd && s.el.currentTime >= s.loopEnd) s.el.currentTime = s.loopStart + (s.el.currentTime - s.loopEnd);
     s.gain.gain.setTargetAtTime(on ? 1.6 : 0, this.ctx.currentTime, on ? 0.4 : 0.25);
-    if (on && s.el.paused) s.el.play().catch(() => { /* waits for a user gesture */ });
-    if (!on && !s.el.paused && s.gain.gain.value < 0.02) s.el.pause();
+    // Retry now and then (works on desktop; on Quest the next gesture starts it, see unlock()).
+    const t = this.ctx.currentTime;
+    if (on && s.el.paused && t - (s.lastTry || 0) > 2) { s.lastTry = t; this.playSong(); }
+    // Only pause for good at the end; pausing between moves would need another gesture to restart.
+    if (ended && !s.el.paused && s.gain.gain.value < 0.02) s.el.pause();
+    // How long the song has been wanted but silent (the game says so and the synth fills in).
+    s.silentFor = on && !this.songLive ? (s.silentFor || 0) + (t - (s.lastDrive ?? t)) : 0;
+    s.lastDrive = t;
   }
 
   setEnabled(on) {
@@ -145,23 +170,37 @@ export class AudioEngine {
 
   // ------------------------------------------------------------ scheduler
 
+  /**
+   * Runs from a 25 ms timer and also from the game's frame loop (timers can be slowed down while
+   * the headset is in VR). Everything is based on the audio clock, so extra calls are harmless.
+   */
   schedule() {
     const c = this.ctx;
-    if (!c || c.state !== 'running') return;
+    if (!c) return;
+    if (c.state !== 'running') {
+      const now = performance.now();
+      if (now - (this.lastResume || 0) > 2000) { this.lastResume = now; c.resume().catch(() => {}); }
+      return;
+    }
     const s = this.state;
-    this.smoothIntensity += (s.intensity - this.smoothIntensity) * 0.02;
+    const dt = Math.min(0.25, Math.max(0, c.currentTime - (this.lastSchedule ?? c.currentTime)));
+    this.lastSchedule = c.currentTime;
+    this.smoothIntensity += (s.intensity - this.smoothIntensity) * (1 - Math.exp(-dt / 1.25));
     // Glide to the new tempo over a few seconds so the beat never lurches.
-    this.smoothTempo += (musicTempo({ ...s, intensity: this.smoothIntensity }) - this.smoothTempo) * 0.012;
-    const playing = s.phase !== 'Finished';
+    this.smoothTempo += (musicTempo({ ...s, intensity: this.smoothIntensity }) - this.smoothTempo) * (1 - Math.exp(-dt / 2.1));
+    const ended = s.phase === 'Finished';
+    const playing = !ended && !s.paused;   // paused (options open): the song keeps running silently
 
     // Pad follows the zone colour.
     const bright = s.status === 'InZone' ? 1500 : s.status === 'Above' || s.status === 'SafetyBrake' ? 2200 : 700;
     this.padFilter.frequency.setTargetAtTime(bright + 600 * this.smoothIntensity, c.currentTime, 0.8);
-    const songMode = this.musicMode === 'song' && this.song?.el;
+    // The synth fills in whenever the song isn't actually playing, so there's never silence.
+    const songMode = this.musicMode === 'song' && this.songLive;
     this.padGain.gain.setTargetAtTime(songMode ? 0 : playing ? 0.05 : 0.025, c.currentTime, 1.5);
-    this.driveSong(playing);
+    this.driveSong(playing, ended);
 
     const sixteenth = 60 / this.tempo / 4;
+    if (this.nextStepTime < c.currentTime - 0.5) this.nextStepTime = c.currentTime + 0.05; // after a stall
     while (this.nextStepTime < c.currentTime + 0.12) {
       if (playing && !songMode) this.playStep(this.step, this.nextStepTime, sixteenth);
       this.nextStepTime += sixteenth;
@@ -170,6 +209,7 @@ export class AudioEngine {
 
     // Heartbeat at the real BPM (lub-dub), quiet; louder when the safety brake is on.
     if (s.bpm >= 35 && s.status !== 'NoSignal') {
+      if (this.nextBeatTime < c.currentTime - 0.5) this.nextBeatTime = c.currentTime + 0.05;
       while (this.nextBeatTime < c.currentTime + 0.12) {
         const vol = s.status === 'SafetyBrake' ? 0.5 : 0.18;
         this.thump(this.nextBeatTime, vol);
