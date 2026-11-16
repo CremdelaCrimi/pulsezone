@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v45';
+} from './core.js?v46';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v45';
+import { AudioEngine } from './audio.js?v46';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v45';
-import { loadTuning, createDevPanel } from './dev.js?v45';
+import { OptionsPanel } from './options.js?v46';
+import { loadTuning, createDevPanel } from './dev.js?v46';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -555,7 +555,7 @@ function clearObstacles() {
   for (const p of shardPool) p.alive = false;
   for (const t of traces) scene.remove(t.group, ...t.strands.map((r) => r.marker));
   orbs.length = walls.length = bursts.length = traces.length = shards.length = 0;
-  if (bag) { scene.remove(bag.group); bag = null; }
+  if (bag) disposeBag();
   if (ropes) { endRopes(false); }
   if (heavy) endHeavy(false);
   if (sled) endSled(false);
@@ -1028,7 +1028,7 @@ function spawnBag(head, standing) {
   group.position.set(station.x, station.y, head.z - 10);
   scene.add(group);
   bag = {
-    group, body, mat, label, lc, tex, station, startZ: head.z - 10, age: 0, duration: 4 + 1 * (1 - difficulty.intensity),
+    group, body, cord, mat, label, lc, tex, station, startZ: head.z - 10, age: 0, duration: 4 + 1 * (1 - difficulty.intensity),
     hits: 0, armed: { left: true, right: true }, off: new THREE.Vector3(), offV: new THREE.Vector3(), labelKey: '', smokeT: 0,
   };
   say('SPEED BAG! Hit it fast!', 1);
@@ -1090,6 +1090,12 @@ function updateBag(dt, xr) {
   drawBagLabel();
   if (bag.age >= BAG_ARRIVE + bag.duration) endBag();
 }
+function disposeBag() {
+  scene.remove(bag.group);
+  bag.mat.dispose(); bag.tex.dispose();
+  for (const m of [bag.cord, bag.label]) if (m) { m.geometry.dispose(); if (m !== bag.cord) m.material.dispose(); }
+  bag = null;
+}
 function endBag() {
   const pts = bagPoints(bag.hits) * (score.inZone() ? 2 : 1);
   score.score += pts;
@@ -1098,9 +1104,7 @@ function endBag() {
   audio.sfx(bag.hits >= 15 ? 'perfect' : 'hit', { hand: 'right', power: 1 });
   bag.body.getWorldPosition(bagCenter);
   shatter(bagCenter, new THREE.Vector3(0, 0.3, -1), 0xff5a6e, 1);
-  scene.remove(bag.group);
-  bag.mat.dispose(); bag.tex.dispose();
-  bag = null;
+  disposeBag();
   bagReadyAt = gameTime + 20;
 }
 
@@ -1405,7 +1409,7 @@ function updateBombs(dt, head) {
     const b = bombs[i];
     b.group.position.z += b.speed * dt;
     // Aimed at your head: each bomb follows you until it's 0.7 s out, then locks, so you dodge by moving.
-    if (!b.passed && (head.z - b.group.position.z) / b.speed > BOMB_LOCK) {
+    if (!b.passed && !b.locked && (head.z - b.group.position.z) / b.speed > BOMB_LOCK) {
       const k = Math.min(1, dt * 3);
       const tx = Math.max(centerX - 0.4, Math.min(centerX + 0.4, head.x + b.ox));
       const ty = Math.max(0.7, head.y + b.oy);
@@ -1413,7 +1417,7 @@ function updateBombs(dt, head) {
       b.group.position.y += (ty - b.group.position.y) * k;
     } else if (!b.passed && !b.locked) {
       b.locked = true; // stops following you now: whistle from its side so you know to move
-      audio.sfx('incoming', { pan: (b.group.position.x - head.x) / 0.4 });
+      audio.sfx('incoming', { pan: (b.group.position.x - head.x) / 0.12 }); // offsets are within 12 cm: full left/right
     }
     b.group.rotation.x += dt * 4; b.group.rotation.y += dt * 3;
     if (!b.passed && b.group.position.z >= head.z) {

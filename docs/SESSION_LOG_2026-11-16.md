@@ -215,3 +215,13 @@ Brief updated (moves table, second feedback round, untested thresholds, third re
 ## 14:25 — Heavy-bag target telegraph (v45)
 
 Gemini's idea (a) from round 12: each new heavy-bag target now appears as a big white flash that closes onto its spot over 0.3 s, then settles in the hand's colour. You see where the next punch goes a beat early and can load the hook or uppercut. Hits during the flash still count. Smoke: heavy bag ran, scored, no overlaps or errors.
+
+## 14:20 — Final review of v42–v45 (v46)
+
+A last independent review of v42–v45 found no confirmed bugs (lane timing, one whistle per bomb, telegraph colour, disposal and board layout all checked). Its three minor notes, done:
+
+- A bomb's lock is now permanent (it could resume tracking if you moved backward quickly right after the whistle).
+- The whistle pans fully left/right (it was only ~30% to the side).
+- The speed bag now releases its cord and label on end and on restart, same as the heavy bag.
+
+Smoke: speed bag → bombs → heavy → sled → ropes in sequence plus a restart mid speed bag: 0 overlaps, no errors.
