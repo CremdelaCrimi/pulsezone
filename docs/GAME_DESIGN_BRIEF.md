@@ -69,6 +69,7 @@ Everything flies down one lane. Each thing books a time slot for when it reaches
 | Stand tall (auto) | After every duck/squat box: a low box you must stand fully up over | follows squats | — |
 | Speed bag (burst) | 4–5 s of rapid alternating punches on a bag | 0.35, or early when stuck | 0.3 per punch |
 | Battle ropes (burst) | 6 s of pumping both arms; staying low scores 1.5× | 0.45, or early when stuck | 1.6 per second |
+| Boxing combo | 2–4 orbs one beat apart (1-2, 1-1-2, 1-2-hook, 1-2-1-upper, squat-squat-hook-hook); bonus for clearing it | replaces a plain punch, 25–60% chance from intensity 0.25 | (counts as its punches) |
 | Side shift (footwork) | Below the zone: for 8 s plain orbs come 35 cm to one side; a floor pad shows where to step; walls/ropes/bursts wait | below zone, intensity ≥ 0.35 or boost | — (part of the orbs) |
 | Finishing slam (auto) | After battle ropes and two-hand ropes: a wide gold bar at head height; smash it DOWN with both fists together (within 0.3 s) | follows ropes | — |
 

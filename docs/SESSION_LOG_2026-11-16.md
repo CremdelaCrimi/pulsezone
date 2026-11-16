@@ -45,3 +45,8 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - Measured on this PC (not the Quest): speed-bag scene 4.1 → 2.6 ms per frame. Draw calls peak at 64 during play (now visible as `pz.state.draws`).
 - Caught and fixed during testing: the shard colour buffer has to exist before the first render (white shards otherwise). Power/bonus hits are white on purpose; normal hits are the hand's colour.
 - Checked: 102 checks pass; 2-minute auto-play, 0 overlaps, no console errors; snapshots of normal and power-orb shards.
+
+## Cycle 8 (9:59 AM)
+- **Built:** Gemini's round-3 (4). Boxing combos on the beat: from intensity 25%, a plain punch has a 25–60% chance to become a combo (1-2, 1-1-2, 1-2-hook, 1-2-1-upper, squat-squat-hook-hook), using only moves you have on. One orb per beat of the current music tempo (two beats if that's under 0.45 s), the first one snapped to land on a beat. A combo is a solo lane slot and queues like power orbs and pairs. Clearing all of it pays 15 points per punch (×2 in the zone) with a chime; missing one cancels the bonus. Hook/uppercut orbs in combos keep their set hand and direction (fixed a spot where swing orbs always picked their own).
+- The overlap checker now knows combo orbs belong together and checks them against everything else.
+- Checked: 106 checks pass; 2.5-minute auto-play with 6 combos, 0 overlaps, 0 misses, no console errors.

@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -328,6 +328,16 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     const c = new ChallengeBoost();
     for (let i = 0; i < 70 * 10; i++) c.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0, climbing: true });
     check(built > 0.9 && b.value < built - 0.3 && c.value === 0, `boost drains while climbing and never builds (${built.toFixed(2)} -> ${b.value.toFixed(2)}, climbing only: ${c.value})`);
+  }
+
+  // Boxing combos on the beat.
+  {
+    check(availableCombos({ swing: false, low: false }).every((c) => c.steps.every(([, k]) => k === 'jab')) && availableCombos().length === COMBOS.length,
+      'combos only use moves you have (no hooks without swings, no squats without squat punches)');
+    check(Math.abs(comboGap(120) - 0.5) < 1e-9 && Math.abs(comboGap(160) - 0.75) < 1e-9 && comboGap(90) > 0.6, 'combo punches one beat apart (two when the music is fast)');
+    check(comboChance(0.1) === 0 && comboChance(0.9) > comboChance(0.4), 'no combos when easy; more as intensity rises');
+    const cp = comboPlan(10, 4, 0.5);
+    check(cp.kind === 'solo' && cp.start === 9.5 && cp.end === 12, 'a combo gets the lane to itself');
   }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.

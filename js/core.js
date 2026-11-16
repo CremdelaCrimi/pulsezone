@@ -709,6 +709,31 @@ export function shiftWanted({ status, phase, intensity, boost = 0, now, readyAt 
 /** How far sideways an orb arriving at time t should be (0 outside the shift window). */
 export const shiftOffsetAt = (plan, t) => (plan && t >= plan.start && t <= plan.end ? plan.offset : 0);
 
+/**
+ * Boxing combos: instead of one plain punch, sometimes a short combination lands on the music's
+ * beat (one orb per beat). Each step is [hand, kind] with kind jab / hook / upper / low.
+ */
+export const COMBOS = Object.freeze([
+  { name: '1-2', steps: [['left', 'jab'], ['right', 'jab']] },
+  { name: '1-1-2', steps: [['left', 'jab'], ['left', 'jab'], ['right', 'jab']] },
+  { name: '1-2-hook', steps: [['left', 'jab'], ['right', 'jab'], ['left', 'hook']] },
+  { name: '1-2-1-upper', steps: [['left', 'jab'], ['right', 'jab'], ['left', 'jab'], ['right', 'upper']] },
+  { name: 'squat-squat-hook-hook', steps: [['left', 'low'], ['right', 'low'], ['left', 'hook'], ['right', 'hook']] },
+]);
+/** Combos that only use moves you have (hooks/uppercuts need swings; squat combos need squat punches). */
+export function availableCombos({ swing = true, low = true } = {}) {
+  return COMBOS.filter((c) => c.steps.every(([, k]) => (k === 'hook' || k === 'upper' ? swing : k === 'low' ? low : true)));
+}
+/** Seconds between combo punches: one beat, or two when the music is fast (never under 0.45 s). */
+export function comboGap(tempo) {
+  const beat = 60 / Math.max(60, tempo || 120);
+  return beat < 0.45 ? beat * 2 : beat;
+}
+/** Chance that a plain punch becomes a combo: none when it's easy, more as intensity rises. */
+export const comboChance = (intensity) => (intensity < 0.25 ? 0 : 0.25 + 0.35 * clamp01(intensity));
+/** Lane slot for a combo whose first punch arrives at `first` (gameTime) with `n` punches `gap` apart. */
+export const comboPlan = (first, n, gap) => ({ kind: 'solo', start: first - 0.5, end: first + gap * (n - 1) + 0.5 });
+
 /** Can `plan` be added to the booked `lane` slots without crowding anything? */
 export function laneFree(lane, plan) {
   if (!plan) return true;

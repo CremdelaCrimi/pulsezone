@@ -8,15 +8,15 @@ import {
   HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
-  SHIFT, shiftWanted, shiftOffsetAt,
+  SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v19';
+} from './core.js?v20';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v19';
+import { AudioEngine } from './audio.js?v20';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v19';
-import { loadTuning, createDevPanel } from './dev.js?v19';
+import { OptionsPanel } from './options.js?v20';
+import { loadTuning, createDevPanel } from './dev.js?v20';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -489,6 +489,7 @@ function clearObstacles() {
   lane = [];
   queuedActivity = null; queuedFor = 0;
   standNext = false;
+  combos.clear();
   shiftPlan = null; shiftSaid = ''; shiftPad.visible = false;
 }
 
@@ -528,7 +529,7 @@ function spawnOrb(head, standing, activity, opts = {}) {
   const x = opts.x ?? (Math.random() * 2 - 1) * d.horizontalSpread * (power ? 0.7 : 1);
   let hand = opts.hand ?? planOrb(x, d).hand;
   let swing = opts.swing ?? null;
-  if (activity === 'swing') {
+  if (activity === 'swing' && !opts.swing) {
     hand = x < 0 ? 'left' : 'right';
     swing = Math.random() < 0.5 ? 'up' : (hand === 'right' ? 'left' : 'right');
   }
@@ -561,7 +562,7 @@ function spawnOrb(head, standing, activity, opts = {}) {
   scene.add(group);
   const orb = {
     group, mesh, shell, baseMat, r, hand, swing, guide, activity, power, counter: !!opts.counter, speed: opts.speed ?? d.orbSpeed, minPunch: d.minPunchSpeed,
-    immuneUntil: 0, flashUntil: 0, passZ: head.z + 0.6, dying: 0,
+    immuneUntil: 0, flashUntil: 0, passZ: head.z + 0.6, dying: 0, combo: opts.combo || 0,
   };
   orbs.push(orb);
   return orb;
@@ -1346,6 +1347,50 @@ function updateTeach(head) {
   }
 }
 
+// ------------------------------------------------------------------ boxing combos on the beat
+
+const combos = new Map(); // id -> { name, n, hit, failed }
+let comboSeq = 0, queuedCombo = null;
+/** Send a combo (one orb per beat, first one landing on a beat). False if the lane isn't free. */
+function spawnCombo(head, standing, tpl) {
+  const speed = difficulty.orbSpeed;
+  const tempo = audio.tempo || 120;
+  const gap = comboGap(tempo), beat = 60 / tempo;
+  let first = gameTime + (SPAWN_DISTANCE - 0.5) / speed;
+  const phaseAt = beatPhase + (first - gameTime) / beat;
+  const snap = ((1 - (phaseAt % 1)) % 1) * beat;  // wait for the next beat
+  first += snap;
+  const plan = comboPlan(first, tpl.steps.length, gap);
+  if (!laneFree(lane, plan)) return false;
+  lane.push(plan);
+  const id = ++comboSeq;
+  combos.set(id, { name: tpl.name, n: tpl.steps.length, hit: 0, failed: false });
+  const chest = standing - 0.35;
+  tpl.steps.forEach(([hand, kind], i) => {
+    const side = hand === 'left' ? -1 : 1;
+    const x = side * (kind === 'hook' ? 0.28 : 0.17);
+    const y = kind === 'low' ? Math.max(0.55, standing - 0.85) : kind === 'upper' ? chest - 0.08 : chest + (i % 2 ? 0.05 : -0.02);
+    const swing = kind === 'hook' ? (hand === 'left' ? 'right' : 'left') : kind === 'upper' ? 'up' : null;
+    const activity = kind === 'low' ? 'low' : swing ? 'swing' : 'jab';
+    spawnOrb(head, standing, activity, { x, y, hand, swing, behind: (snap + gap * i) * speed, combo: id });
+  });
+  say(`COMBO  ${tpl.name.toUpperCase()}`);
+  return true;
+}
+/** A combo orb was hit or missed: pay the bonus when the whole combo is cleared. */
+function comboResult(orb, hit) {
+  const c = combos.get(orb.combo);
+  if (!c) return;
+  if (!hit) { c.failed = true; combos.delete(orb.combo); return; }
+  c.hit++;
+  if (c.hit < c.n || c.failed) return;
+  combos.delete(orb.combo);
+  const pts = 15 * c.n * (score.inZone() ? 2 : 1);
+  score.score += pts;
+  say(`${c.name.toUpperCase()} COMBO!  +${pts}`);
+  audio.sfx('streak', { level: c.n });
+}
+
 function removeOrb(orb) {
   scene.remove(orb.group);
   const i = orbs.indexOf(orb);
@@ -1409,6 +1454,7 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
   score.hit(bonus, label);
   audio.sfx(orb.power ? 'power' : bonus > 1 ? 'perfect' : 'hit', { hand, power });
   attribution.record(orb.activity, gameTime);
+  if (orb.combo) comboResult(orb, true);
   // Hit feel: the orb freezes and flashes white for a split second, then shatters along your punch.
   orb.dying = 0.035;
   orb.mesh.material = MAT.flash;
@@ -2012,6 +2058,7 @@ function xrButtons() {
 /** Send `activity` if its arrival slot is free. Returns false to try again a moment later. */
 const SLAM_DIST = 7; // after battle ropes the slam comes from 7 m, so it arrives in ~2 s
 function trySpawn(activity, extra = {}) {
+  if (activity === 'combo') return queuedCombo ? spawnCombo(head, standing, queuedCombo) : true;
   if (activity === 'bag' || activity === 'ropes') {
     pendingBurst = activity;
     say(activity === 'bag' ? 'Speed bag coming...' : 'Battle ropes coming...');
@@ -2209,14 +2256,21 @@ function frame(time) {
         intensity: difficulty.intensity, status: controller.status, boost: boost.value, gains: attribution.w,
         baseWeights: tuning.weights, enabled: enabledActivities(true),
       });
+      // A plain punch sometimes becomes a combo; like other solo moves it waits for a free lane slot.
+      let pick = activity;
+      if (!inShift && !standNext && !queuedActivity && activity === 'jab' && Math.random() < comboChance(difficulty.intensity)) {
+        const en = enabledActivities(true);
+        const list = availableCombos({ swing: en.swing, low: en.low });
+        if (list.length) { queuedCombo = list[Math.floor(Math.random() * list.length)]; pick = 'combo'; }
+      }
       if (inShift) {
         trySpawn(activity, { shift: shiftOffsetAt(shiftPlan, arrive) });
         spawnTimer = 0;
-      } else if (trySpawn(activity)) {
+      } else if (trySpawn(pick)) {
         queuedActivity = null; queuedFor = 0;
         spawnTimer = 0;
       } else {
-        queuedActivity = activity;
+        queuedActivity = pick;
         queuedFor += gdt;
         if (queuedFor > 10) { queuedActivity = null; queuedFor = 0; } // give up and pick something else
       }
@@ -2261,6 +2315,7 @@ function frame(time) {
     if (orbs[i] === o && !o.dying && o.group.position.z > o.passZ) {
       score.miss(); audio.sfx('miss');
       attribution.record(o.activity, gameTime);
+      if (o.combo) comboResult(o, false);
       removeOrb(o);
     }
   }
@@ -2382,7 +2437,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, drifting, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, drifting, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };
@@ -2420,7 +2475,7 @@ window.pz = {
   overlaps() {
     // Arrival windows of everything currently in the lane, from live positions and speeds.
     const items = [
-      ...orbs.filter((o) => !o.dying).map((o) => ({ what: o.counter ? 'counter' : o.activity, a: (head.z - 0.5 - o.group.position.z) / o.speed, b: (head.z - 0.5 - o.group.position.z) / o.speed })),
+      ...orbs.filter((o) => !o.dying).map((o) => ({ what: o.counter ? 'counter' : o.combo ? `combo${o.combo}` : o.activity, a: (head.z - 0.5 - o.group.position.z) / o.speed, b: (head.z - 0.5 - o.group.position.z) / o.speed })),
       ...walls.map((w) => ({ what: 'wall', a: (head.z - w.mesh.position.z - w.depth) / w.speed, b: (head.z - w.mesh.position.z) / w.speed })),
       ...slams.map((s) => ({ what: 'slam', a: (head.z - 0.8 - s.group.position.z) / s.speed, b: (head.z - 0.2 - s.group.position.z) / s.speed })),
       ...traces.map((t) => ({ what: 'rope', a: (t.planeZ - t.group.position.z) / t.speed, b: (t.planeZ - t.group.position.z + t.length) / t.speed })),
@@ -2432,6 +2487,7 @@ window.pz = {
       const p = items[i], q = items[j];
       if (plain.has(p.what) && plain.has(q.what)) continue;
       if (p.what === 'pair' && q.what === 'pair') continue;
+      if (p.what === q.what && p.what.startsWith('combo')) continue; // punches of the same combo
       if ((p.what === 'counter' && q.what === 'guard') || (q.what === 'counter' && p.what === 'guard')) continue;
       if (p.a < q.b + 0.25 && q.a < p.b + 0.25) out.push(`${p.what}~${q.what}`);
     }
