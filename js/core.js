@@ -479,6 +479,7 @@ export const SWING = Object.freeze({
   up: [0, 1, 0],     // uppercut
   left: [-1, 0, 0],  // hook travelling right-to-left
   right: [1, 0, 0],  // hook travelling left-to-right
+  down: [0, -1, 0],  // hammer fist: bring the bottom of your fist straight down
 });
 
 /**
@@ -543,6 +544,8 @@ export const ACTIVITIES = Object.freeze([
   { key: 'power', label: 'Power punches', kind: 'orb', from: 0.3, base: 0.3, prior: 0.9 },
   { key: 'pair', label: 'Squat + reach', kind: 'orb', from: 0.3, base: 0.3, prior: 1.4 },
   { key: 'guard', label: 'Guard & counter', kind: 'orb', from: 0.3, base: 0.25, prior: 0.9 },
+  // A drum pad at chest height: strike DOWN onto it with the bottom of your fist.
+  { key: 'hammer', label: 'Hammer fists', kind: 'orb', from: 0.25, base: 0.35, prior: 1.0 },
   { key: 'bag', label: 'Speed bag', kind: 'burst', from: 0.35, base: 0.1, prior: 0.3 },     // per punch on the bag
   { key: 'ropes', label: 'Battle ropes', kind: 'burst', from: 0.45, base: 0.1, prior: 1.6 }, // per second of pumping
   { key: 'heavy', label: 'Heavy bag', kind: 'burst', from: 0.4, base: 0.1, prior: 0.9 },    // per strong punch (hooks, uppercuts)
@@ -679,11 +682,13 @@ export const tracePoints = (fraction) => Math.round(50 * clamp01(fraction) ** 1.
  * after every solo thing already on its way, or it would fly through it.
  */
 export const SPAWN_DISTANCE = 14;
-export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0, dist = SPAWN_DISTANCE }) {
+export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0, dist = SPAWN_DISTANCE, shots = 1 }) {
   const orbArrive = now + (SPAWN_DISTANCE - 0.5) / speed;
   switch (activity) {
-    case 'jab': case 'low': case 'swing':
+    case 'jab': case 'low':
       return { kind: 'orb', start: orbArrive - 0.3, end: orbArrive + 0.3 };
+    case 'swing': case 'hammer': // hooks, uppercuts and hammer fists get the lane to themselves, so you can recover
+      return { kind: 'solo', start: orbArrive - 0.45, end: orbArrive + 0.55 };
     case 'power':
       return { kind: 'solo', start: orbArrive - 0.7, end: orbArrive + 0.6 };
     case 'pair':   // low orb, then the high one 0.85 s later
@@ -691,7 +696,7 @@ export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0,
     case 'guard': { // the hot shot, then a counter orb from close range
       const gs = speed * 0.9, cs = Math.max(2.5, speed);
       const arrive = now + (SPAWN_DISTANCE - 0.35) / gs;
-      return { kind: 'solo', start: arrive - 0.8, end: arrive + COUNTER_DISTANCE / cs + 0.6 };
+      return { kind: 'solo', start: arrive - 0.8, end: arrive + GUARD_SEQ_GAP * (shots - 1) + COUNTER_DISTANCE / cs + 0.6 };
     }
     case 'trace': case 'sweep': {
       const ts = Math.max(2.2, speed * 0.85);
@@ -771,7 +776,7 @@ export const comboPlan = (first, n, gap) => ({ kind: 'solo', start: first - 0.5,
 export const SPOTLIGHT = Object.freeze({ first: 180, every: 240, seconds: 60, boost: 2.5 });
 export const SPOTLIGHT_MOVES = Object.freeze(['power', 'guard', 'low', 'swing', 'pair', 'sweep', 'trace', 'duck', 'squatSide', 'lateral']);
 export const SPOTLIGHT_NAMES = Object.freeze({
-  power: 'POWER ROUND', guard: 'DEFENCE DRILL', low: 'SQUAT ROUND', swing: 'HOOKS & UPPERCUTS', pair: 'SQUAT + REACH',
+  power: 'POWER ROUND', guard: 'DEFENCE DRILL', low: 'SQUAT ROUND', swing: 'HOOKS & UPPERCUTS', pair: 'SQUAT + PUNCH UP', hammer: 'HAMMER FISTS',
   sweep: 'TWO-HAND ROPES', trace: 'ROPE ROUND', duck: 'DUCK & WEAVE', squatSide: 'SIDE SQUATS', lateral: 'FOOTWORK',
 });
 /** Is a spotlight due at this many seconds into training (given when the last one started)? */
@@ -823,6 +828,34 @@ export function laneFree(lane, plan) {
   return lane.every((r) => (r.kind === 'orb' && plan.kind === 'orb') || plan.start >= r.end);
 }
 export const COUNTER_DISTANCE = 3.5;
+
+// ---------------------------------------------------------------- directional guard
+
+/** Where a guard shot is aimed, relative to your head (x right, y up), and what to call it. */
+export const GUARD_ZONES = {
+  high: { dx: 0, dy: -0.08, label: 'FACE', tip: 'both fists by your chin' },
+  left: { dx: -0.2, dy: -0.02, label: 'LEFT', tip: 'left fist up by your left temple' },
+  right: { dx: 0.2, dy: -0.02, label: 'RIGHT', tip: 'right fist up by your right temple' },
+  body: { dx: 0, dy: -0.55, label: 'BODY', tip: 'elbows in, fists down by your ribs' },
+};
+/** Seconds between the two shots of a 1-2 guard. */
+export const GUARD_SEQ_GAP = 0.75;
+/** Early on every shot is at your face; side and body shots unlock with intensity. */
+export const guardZonesFor = (intensity) => (intensity < 0.25 ? ['high'] : ['high', 'left', 'right', 'body']);
+/**
+ * Is this zone covered? L and R are your fists relative to your head (metres; x right, y up,
+ * z toward you, so in front of your face is z < 0).
+ */
+export function guardCovers(zone, L, R) {
+  const near = (f, r) => Math.hypot(f.x, f.y, f.z) < r;
+  const upFront = (f) => near(f, 0.34) && f.z < 0.06 && f.y > -0.42;
+  switch (zone) {
+    case 'left': return near(L, 0.34) && L.x < -0.1 && L.y > -0.3 && L.y < 0.15 && L.z < 0.1;
+    case 'right': return near(R, 0.34) && R.x > 0.1 && R.y > -0.3 && R.y < 0.15 && R.z < 0.1;
+    case 'body': return [L, R].every((f) => f.y < -0.3 && f.y > -0.8 && Math.abs(f.x) < 0.35 && f.z < 0.15 && Math.hypot(f.x, f.z) < 0.45);
+    default: return upFront(L) && upFront(R);
+  }
+}
 
 // ---------------------------------------------------------------- punch quality (anti wrist-flick)
 
@@ -891,7 +924,10 @@ export function boostDifficulty(d, boost) {
 /**
  * Online estimate of how much each activity raises YOUR heart rate.
  * Model: heart rate ~= resting level + sum over activities of gain x recent rate of that activity
- * (reps per minute, smoothed over ~35 s because the heart lags effort). Every couple of seconds
+ * (reps per minute). Heart rate doesn't jump when you move: it climbs over the next ~15-40 s. So
+ * each rep's effect is passed through two smoothing stages in a row (each tau/2): its credit
+ * starts at zero, peaks ~17 s later and fades, with an average delay of ~35 s. A rise in heart rate
+ * is therefore credited to what you did 15-40 s ago, not to the move you're doing now. Every couple of seconds
  * the gains are nudged to explain the current BPM (normalised least-mean-squares). Gains read as
  * "BPM added per 1 rep/minute sustained". Noisy by nature: a trend that firms up over workouts.
  */
@@ -905,7 +941,8 @@ export class HeartRateAttribution {
     // Saved estimates are blended 70/30 with the starting guesses so one odd workout can't dominate.
     this.prior = Object.fromEntries(ACTIVITIES.map((a) => [a.key, a.prior]));
     this.w = Object.fromEntries(ACTIVITIES.map((a) => [a.key, weights?.[a.key] != null ? 0.7 * weights[a.key] + 0.3 * a.prior : a.prior]));
-    this.rate = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0])); // smoothed reps/min
+    this.rate = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0])); // delayed reps/min (what your heart is responding to now)
+    this.rate1 = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0])); // first smoothing stage
     // Same, but over ~12 s: "how hard you're working right now", before your heart has caught up.
     this.fastTau = 12;
     this.fast = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
@@ -918,9 +955,15 @@ export class HeartRateAttribution {
 
   decayTo(t) {
     if (this.lastT != null && t > this.lastT) {
-      const f = Math.exp(-(t - this.lastT) / this.tau);
-      const ff = Math.exp(-(t - this.lastT) / this.fastTau);
-      for (const k of ACTIVITY_KEYS) { this.rate[k] *= f; this.fast[k] *= ff; }
+      const dt = t - this.lastT, half = this.tau / 2;
+      const f = Math.exp(-dt / half);
+      const ff = Math.exp(-dt / this.fastTau);
+      for (const k of ACTIVITY_KEYS) {
+        // Two equal stages in a row (exact for any step): the second lags the first.
+        this.rate[k] = (this.rate[k] + this.rate1[k] * (dt / half)) * f;
+        this.rate1[k] *= f;
+        this.fast[k] *= ff;
+      }
     }
     this.lastT = t;
   }
@@ -928,7 +971,7 @@ export class HeartRateAttribution {
   record(key, t) {
     if (!(key in this.w)) return;
     this.decayTo(t);
-    this.rate[key] += 60 / this.tau; // a steady r reps/min settles at rate = r
+    this.rate1[key] += 60 / (this.tau / 2); // a steady r reps/min settles at rate1 = rate = r
     this.fast[key] += 60 / this.fastTau;
     this.counts[key]++;
   }
@@ -1024,6 +1067,21 @@ export function summarizeWorkout(rows) {
     avgBpm: trainingBeats.length ? Math.round(trainingBeats.reduce((a, b) => a + b, 0) / trainingBeats.length) : 0,
     peakBpm: beats.length ? Math.max(...beats) : 0,
   };
+}
+
+// ---------------------------------------------------------------- calories
+
+/**
+ * Estimated calories burned per minute from heart rate (Keytel et al. 2005, the formula most
+ * heart-rate monitors use). sex: 'male' | 'female' | anything else = the average of both.
+ * Never below a resting ~1 kcal per kg per hour. An estimate: typically within 15-20%.
+ */
+export function kcalPerMinute(bpm, { age = 30, weightKg = 75, sex = '' } = {}) {
+  if (!(bpm > 0)) return 0;
+  const male = (-55.0969 + 0.6309 * bpm + 0.1988 * weightKg + 0.2017 * age) / 4.184;
+  const female = (-20.4022 + 0.4472 * bpm - 0.1263 * weightKg + 0.074 * age) / 4.184;
+  const k = sex === 'male' ? male : sex === 'female' ? female : (male + female) / 2;
+  return Math.max(weightKg / 60, k);
 }
 
 /** Workouts shorter than this (training seconds) don't set records: too easy to fluke 100%. */

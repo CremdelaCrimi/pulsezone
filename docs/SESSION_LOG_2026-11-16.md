@@ -225,3 +225,23 @@ A last independent review of v42–v45 found no confirmed bugs (lane timing, one
 - The speed bag now releases its cord and label on end and on restart, same as the heavy bag.
 
 Smoke: speed bag → bombs → heavy → sled → ropes in sequence plus a restart mid speed bag: 0 overlaps, no errors.
+
+## Evening — headset feedback round 3 + Morty's v48 re-check (v49)
+
+From the player's own headset session ("it's really good"), plus Morty's last re-check:
+
+- **Test burst buttons:** a test press now clears whatever the game had queued itself (automatic burst, queued move, a side shift not yet started); test call-outs are top priority; the Diag line shows what actually came (it used to keep showing the previous pick, so a test burst that did arrive looked like the wrong move). Checked under constant automatic bursts: Sled, Speed, Heavy and Bombs arrived in 2–6 s.
+- **Side shifts off by default** (also switched off in existing saved settings): stepping off the centre line is a safety risk in VR. Step-in / step-back punches were considered and left out for the same reason; a lunge in place is the safer option if wanted.
+- **Heavy bag** moved 16 cm further away (0.78 m) so the lit target is visible.
+- **Hook flow:** hooks, uppercuts and hammer fists get the lane to themselves (~1 s), and a swing straight after another comes off the other hand.
+- **Directional guard:** shots aimed at your FACE, LEFT, RIGHT or BODY (side and body unlock with intensity). The badge says where, a ring marks the spot ~1 s before it lands, and at higher intensity a 1-2 (two zones, 0.75 s apart) comes, with the counter after the last.
+- **Bombs** start off to the left, right, above or low and curve in toward your head before locking, so the danger isn't always on the same path.
+- **Sled run:** ski-pole grips in your hands with shafts down to baskets; each rep is stand tall (arms up), then squat while pushing both poles down.
+- **Hammer fists** (new move): a drum pad at chest height you strike DOWN onto, alternating hands. Toggle on the board's Orbs row; Test row button.
+- **Slam** is now a gold medicine ball on a handle bar with a target ring on the floor, and a shockwave rolls out when you smash it.
+- **Squat then punch up:** the existing "squat then reach" move renamed and called out as a punch up (the high orb already needed an upward punch).
+- **Time left:** big countdown at the top-left of the scoreboard (warm-up / training / cool-down left); heavy bag and sled labels show seconds left.
+- **Heart-rate delay:** the learner now credits each move with a delay (two smoothing stages: credit builds over ~17 s, average delay ~35 s), so a heart-rate rise is credited to what you did 15–40 s earlier rather than the move you're doing now.
+- **Calories (estimate):** Keytel heart-rate formula using age, weight (lb) and optionally sex (new fields on the game page); shown on the scoreboard and the end board.
+
+Checks: core tests pass (new checks for guard zones, swing spacing, the heart-rate delay and calories); auto-play runs to the end board with 0 overlaps and no errors.

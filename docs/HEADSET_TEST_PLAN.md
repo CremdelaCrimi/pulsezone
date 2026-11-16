@@ -18,9 +18,9 @@ Open the options board and press one Test button at a time; the board closes and
 
 | Button | What to try | Write down |
 |---|---|---|
-| **Guard** | Raise both fists to your chin as the shot arrives | Did blocks register? Too picky? (detection: fists within ~34 cm of your head, in front of your face) |
+| **Guard** | Read the badge (FACE / LEFT / RIGHT / BODY) and the ring, and cover that spot: both fists by your chin, one fist by that temple, or both fists down by your ribs. Sometimes a 1-2 | Did each zone register? Enough warning? |
 | **2 ropes** | Follow both ropes, then smash the gold bar down with both fists | Rope catch OK? Slam: did it register? Bar too high/low? (needs both fists moving down ≥ 1.1 m/s within 0.3 s) |
-| **Shift** | Step onto the floor pad when it says STEP LEFT/RIGHT | Comfortable? Pad visible? Did the drift arrow ever appear wrongly? |
+| **Hammer** | Strike DOWN onto the drum pad with the bottom of your fist, alternating hands | Registers coming down? Pad height OK? |
 | **Combo** | Punch the 2–4 orbs on the beat | Did they land on the beat? Did COMBO CLEAR show? |
 | **Heavy** (Test 2 row) | Hit the lit patch with the called punch (hooks on the front corners, uppercut on the lower curve); a white flash shows each new target first | Patches easy to reach? Uppercut patch too low? Did hard punches feel rewarded? |
 | **Sled** | Squat into a tuck and push both fists down together, like ski poles | Strokes registering? Too easy/hard (needs ≥ 1.0 m/s down, both within 0.35 s)? Tuck depth OK (15 cm below standing)? |

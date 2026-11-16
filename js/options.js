@@ -103,8 +103,9 @@ export class OptionsPanel {
     label('Heart rate from'); button('src-phone', 'Phone', 520, 215, s.source === 'phone'); button('src-sim', 'Simulator', 755, 215, s.source === 'sim'); y += R;
     label('Game type'); button('mode-punch', 'Punch', 520, 215, s.gameType === 'punch'); button('mode-touch', 'Touch', 755, 215, s.gameType === 'touch'); y += R;
     // Moveset: tap to switch each move on/off (highlighted = on).
-    label('Orbs'); button('move-jab', 'Punch', 175, 165, s.moves.jab); button('move-low', 'Squat punch', 350, 230, s.moves.low);
-    button('move-swing', 'Hook/upper', 590, 215, s.moves.swing && s.gameType === 'punch'); button('move-trace', 'Rope', 815, 160, s.moves.trace); y += R;
+    label('Orbs'); button('move-jab', 'Punch', 175, 120, s.moves.jab); button('move-low', 'Squat', 305, 130, s.moves.low);
+    button('move-swing', 'Hook/upper', 445, 190, s.moves.swing && s.gameType === 'punch'); button('move-hammer', 'Hammer', 645, 160, s.moves.hammer && s.gameType === 'punch');
+    button('move-trace', 'Rope', 815, 160, s.moves.trace); y += R;
     label('More'); button('move-power', 'Power', 175, 165, s.moves.power && s.gameType === 'punch'); button('move-pair', 'Squat+reach', 350, 230, s.moves.pair);
     button('move-guard', 'Guard', 590, 215, s.moves.guard); button('move-sweep', '2 ropes', 815, 160, s.moves.sweep); y += R;
     label('Bursts'); button('move-bag', 'Speed', 175, 150, s.moves.bag); button('move-ropes', 'Ropes', 335, 150, s.moves.ropes);
@@ -119,7 +120,7 @@ export class OptionsPanel {
     // Test tools only show when Diag is on, so normal workouts get a tidy board.
     label('Test'); button('diag', s.diag ? 'Diag on' : 'Diag (test tools)', 175, s.diag ? 150 : 300, s.diag);
     if (s.diag) {
-      button('test-guard', 'Guard', 335, 150); button('test-sweep', '2 ropes', 495, 150); button('test-shift', 'Shift', 655, 150); button('test-combo', 'Combo', 815, 160); y += R;
+      button('test-guard', 'Guard', 335, 150); button('test-sweep', '2 ropes', 495, 150); button('test-hammer', 'Hammer', 655, 150); button('test-combo', 'Combo', 815, 160); y += R;
       label('Test 2'); button('test-heavy', 'Heavy', 175, 150); button('test-sled', 'Sled', 335, 150); button('test-barrage', 'Bombs', 495, 150);
       button('test-bag', 'Speed', 655, 150); button('test-ropes', 'Ropes', 815, 160); y += R;
       label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Guard picky', 385, 200, false);

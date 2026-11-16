@@ -67,6 +67,8 @@
         <label>Your age <input id="age" type="number" min="12" max="90" /></label>
         <label>Minutes <input id="minutes" type="number" min="1" max="60" /></label>
         <label>Warm-up (seconds) <input id="warmup" type="number" min="0" max="300" step="15" /></label>
+        <label>Weight (lb, for calories) <input id="weight" type="number" min="60" max="500" step="5" /></label>
+        <label>Sex (for calories) <select id="sex"><option value="">Prefer not to say</option><option value="female">Female</option><option value="male">Male</option></select></label>
       </div>
       <div style="margin-top:8px;display:flex;gap:14px;align-items:center"><button id="apply">Apply &amp; restart</button>
         <label style="display:flex;flex-direction:row;gap:6px;align-items:center;font-size:13px;color:#dfe3ea"><input type="checkbox" id="sound" /> Music &amp; sounds</label>
@@ -90,6 +92,6 @@
   <button id="show" class="secondary">Show panel</button>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <script type="module" src="./js/game.js?v48"></script>
+  <script type="module" src="./js/game.js?v49"></script>
 </body>
 </html>

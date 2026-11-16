@@ -5,6 +5,7 @@ import {
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
   wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sensorLooksFlat, breakdownDue, barrageShape, barragePlan, bombHits, heavyPoints, sledTucked, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  GUARD_ZONES, GUARD_SEQ_GAP, guardZonesFor, guardCovers, kcalPerMinute,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -188,7 +189,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
   // Learning: a synthetic player whose heart responds strongly to side squats and barely to punches.
   // Generated with a slightly different lag than the learner assumes, plus noise.
-  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9, heavy: 0.8, sled: 1.6, barrage: 1.2 };
+  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9, heavy: 0.8, sled: 1.6, barrage: 1.2, hammer: 0.9 };
   const att = new HeartRateAttribution({ weights: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 1.0])) });
   const rng = mulberry32(7);
   const tr = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
@@ -456,6 +457,47 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     'music speeds up when you need to pick it up');
   check(musicTempo({ intensity: 0.5, status: 'Above', bpm: 135, target: 120 }) < musicTempo({ intensity: 0.5, status: 'InZone', bpm: 120, target: 120 }) - 15,
     'music slows down when you need to ease off');
+}
+
+{
+  console.log('Directional guard');
+  const chin = { x: -0.08, y: -0.15, z: -0.2 }, chinR = { x: 0.08, y: -0.15, z: -0.2 };
+  const temple = { x: -0.14, y: 0.0, z: -0.08 }, templeR = { x: 0.14, y: 0.0, z: -0.08 };
+  const rib = { x: -0.15, y: -0.5, z: -0.12 }, ribR = { x: 0.15, y: -0.5, z: -0.12 };
+  const down = { x: -0.3, y: -0.9, z: 0.05 }, downR = { x: 0.3, y: -0.9, z: 0.05 };
+  check(guardCovers('high', chin, chinR) && !guardCovers('high', chin, downR), 'face guard needs both fists by the chin');
+  check(guardCovers('left', temple, downR) && !guardCovers('left', chin, templeR), 'left guard: left fist by the left temple (other hand free)');
+  check(guardCovers('right', down, templeR) && !guardCovers('right', templeR, chin), 'right guard: right fist by the right temple');
+  check(guardCovers('body', rib, ribR) && !guardCovers('body', chin, chinR) && !guardCovers('body', down, downR), 'body guard: both fists down by the ribs, not at the chin or hanging');
+  check(guardZonesFor(0.1).join() === 'high' && guardZonesFor(0.5).length === 4, 'side and body shots unlock with intensity');
+  const one = lanePlan('guard', { now: 0, speed: 4 }), two = lanePlan('guard', { now: 0, speed: 4, shots: 2 });
+  check(Math.abs((two.end - one.end) - GUARD_SEQ_GAP) < 1e-9 && two.start === one.start, 'a 1-2 guard books one extra gap in the lane');
+  const sw = lanePlan('swing', { now: 0, speed: 4 });
+  check(sw.kind === 'solo' && sw.end - sw.start >= 1.0, 'hooks and uppercuts get the lane to themselves (~1 s)');
+}
+
+{
+  console.log('Heart-rate delay in the learner');
+  const att = new HeartRateAttribution();
+  for (let i = 0; i < 10; i++) att.record('squatSide', i * 0.5); // 10 reps in 5 s, then stop
+  const at = (t) => { att.decayTo(t); return att.rate.squatSide; };
+  const r5 = at(5), r20 = at(20), r60 = at(60), r120 = at(120);
+  check(r20 > 2 * r5, `credit builds after the move instead of at once (5 s: ${r5.toFixed(2)}, 20 s: ${r20.toFixed(2)})`);
+  check(r60 < r20 && r120 < r60 * 0.5, 'and fades over the next minute or two');
+  const steady = new HeartRateAttribution();
+  for (let t = 0; t < 400; t += 2) steady.record('jab', t); // 30 reps/min for ~7 minutes
+  steady.decayTo(400);
+  check(Math.abs(steady.rate.jab - 30) < 3, `a steady pace still reads as its reps/min (${steady.rate.jab.toFixed(1)} vs 30)`);
+}
+
+{
+  console.log('Calories');
+  const m = kcalPerMinute(140, { age: 30, weightKg: 80, sex: 'male' });
+  const f = kcalPerMinute(140, { age: 30, weightKg: 65, sex: 'female' });
+  check(m > 11 && m < 15, `male 80 kg at 140 BPM burns ~13 kcal/min (got ${m.toFixed(1)})`);
+  check(f > 7 && f < 11, `female 65 kg at 140 BPM burns ~9 kcal/min (got ${f.toFixed(1)})`);
+  check(kcalPerMinute(150, {}) > kcalPerMinute(110, {}), 'higher heart rate, more calories');
+  check(kcalPerMinute(50, { weightKg: 75 }) >= 75 / 60 - 1e-9 && kcalPerMinute(0, {}) === 0, 'never below resting; zero without a reading');
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
