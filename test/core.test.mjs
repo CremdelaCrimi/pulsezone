@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sensorLooksFlat, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sensorLooksFlat, breakdownDue, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -410,6 +410,10 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     const v = built.value; for (let i = 0; i < 30 * 10; i++) built.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0, hold: true });
     check(b.value === 0 && built.value === v && v > 0, 'challenge boost holds still while the sensor looks stuck');
   }
+
+  // Song breakdowns: every 24 bars, never above the zone, once per bar boundary.
+  check(breakdownDue(24, 0, 'InZone') && breakdownDue(48, 24, 'Below') && !breakdownDue(24, 24, 'InZone') && !breakdownDue(25, 0, 'InZone')
+    && !breakdownDue(24, 0, 'Above') && !breakdownDue(0, null, 'InZone'), 'song breakdowns every 24 bars, never above the zone');
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
   {

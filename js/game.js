@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v35';
+} from './core.js?v36';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v35';
+import { AudioEngine } from './audio.js?v36';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v35';
-import { loadTuning, createDevPanel } from './dev.js?v35';
+import { OptionsPanel } from './options.js?v36';
+import { loadTuning, createDevPanel } from './dev.js?v36';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing

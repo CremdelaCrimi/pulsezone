@@ -122,7 +122,7 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 
 ## 8. Music and sound (pace-leading audio)
 - **Song mode:** "Hard-Knuckle Focus" (121 BPM), time-stretched 0.78×–1.25× with pitch preserved to lead the player's pace. On Quest it starts from a button press (enter VR / trigger); if blocked, the synth plays instead.
-- The song is filtered by zone (muffled well below, opening as you climb, +4 dB bass in the zone) and ducks under big hits.
+- The song is filtered by zone (muffled well below, opening as you climb, +4 dB bass in the zone) and ducks under big hits. Every 24 bars a 4-bar breakdown thins it out (high-pass ~380 Hz, no bass boost); the next big hit slams it back in. Never above the zone; tempo and spawns untouched.
 - **Synth mode:** live procedural music (kick, clap, hats, bass, pad, arpeggio); icy bells below the zone, bright arpeggio in it, a soft heartbeat at the real BPM.
 - Sound effects for hits (scaled by power), power smash, block, bag taps, burst warning, perfect swing, weak punch, wrong hand, miss, wall hit, dodge, entering the zone, finishing.
 

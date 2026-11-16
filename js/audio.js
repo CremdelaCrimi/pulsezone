@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo, songTone } from './core.js?v35';
+import { musicTempo, songTone, breakdownDue, BREAKDOWN_BARS } from './core.js?v36';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
@@ -132,7 +132,10 @@ export class AudioEngine {
     s.filter.type = 'lowpass'; s.filter.frequency.value = 18000; s.filter.Q.value = 0.5;
     s.shelf = this.ctx.createBiquadFilter();
     s.shelf.type = 'lowshelf'; s.shelf.frequency.value = 90; s.shelf.gain.value = 0;
-    s.node.connect(s.filter).connect(s.shelf).connect(s.gain).connect(this.music);
+    // High-pass for breakdowns: idles at 20 Hz (inaudible), rises to ~380 Hz to thin the song out.
+    s.hp = this.ctx.createBiquadFilter();
+    s.hp.type = 'highpass'; s.hp.frequency.value = 20; s.hp.Q.value = 0.7;
+    s.node.connect(s.filter).connect(s.shelf).connect(s.hp).connect(s.gain).connect(this.music);
   }
 
   setMusicMode(mode) { this.musicMode = mode; this.playSong(); }
@@ -149,8 +152,15 @@ export class AudioEngine {
     if (s.loopEnd && s.el.currentTime >= s.loopEnd) s.el.currentTime = s.loopStart + (s.el.currentTime - s.loopEnd);
     s.gain.gain.setTargetAtTime(on ? 1.6 : 0, this.ctx.currentTime, on ? 0.4 : 0.25);
     const tone = songTone(this.state);
+    // Breakdowns: count bars in song time (independent of the playback rate).
+    const bar = Math.floor((s.el.currentTime - (s.loopStart || 0)) / (240 / s.bpm));
+    if (on && !s.breakdown && !this.state.paused && breakdownDue(bar, s.lastBreakBar, this.state.status)) {
+      s.breakdown = { until: bar + BREAKDOWN_BARS }; s.lastBreakBar = bar;
+    }
+    if (s.breakdown && (bar >= s.breakdown.until || bar < s.lastBreakBar || this.state.status === 'Above' || this.state.status === 'SafetyBrake')) this.dropIn();
     s.filter.frequency.setTargetAtTime(tone.cutoff, this.ctx.currentTime, 1.5);
-    s.shelf.gain.setTargetAtTime(tone.bassDb, this.ctx.currentTime, 1.5);
+    s.shelf.gain.setTargetAtTime(s.breakdown ? 0 : tone.bassDb, this.ctx.currentTime, s.breakdown ? 0.3 : 1.5);
+    s.hp.frequency.setTargetAtTime(s.breakdown ? 380 : 20, this.ctx.currentTime, s.breakdown ? 0.25 : 0.03);
     // Retry now and then (works on desktop; on Quest the next gesture starts it, see unlock()).
     const t = this.ctx.currentTime;
     if (on && s.el.paused && t - (s.lastTry || 0) > 2) { s.lastTry = t; this.playSong(); }
@@ -159,6 +169,14 @@ export class AudioEngine {
     // How long the song has been wanted but silent (the game says so and the synth fills in).
     s.silentFor = on && !this.songLive ? (s.silentFor || 0) + (t - (s.lastDrive ?? t)) : 0;
     s.lastDrive = t;
+  }
+
+  /** End a song breakdown now: the full sound (bass and all) slams back in. */
+  dropIn() {
+    const s = this.song;
+    if (!s?.breakdown) return;
+    s.breakdown = null;
+    if (s.hp) s.hp.frequency.setTargetAtTime(20, this.ctx.currentTime, 0.03);
   }
 
   /** Dip the music for a moment so a big hit lands harder (like sidechain compression). */
@@ -373,6 +391,7 @@ export class AudioEngine {
       case 'power': { // power orb smashed (or slam bar): big boom + shatter, music ducks under it
         const p = opts.power ?? 1;
         this.duck(0.4, 0.16);
+        this.dropIn(); // a breakdown slams back in on a big hit
         this.tone(t, 110, 'sine', 0.5, 0.35, 38);
         this.tone(t, 70, 'triangle', 0.3, 0.3, 35);
         this.noiseHit(t, 'highpass', 3500, 0.6, 0.45, 0.25, this.fx);
@@ -391,6 +410,7 @@ export class AudioEngine {
         this.tone(t, 740, 'triangle', 0.1, 0.35, 700);
         break;
       case 'burst': // a speed bag / battle ropes is coming: two quick rising blips
+        this.dropIn();
         this.tone(t, 660, 'square', 0.12, 0.08, 990);
         this.tone(t + 0.12, 880, 'square', 0.12, 0.1, 1320);
         break;
@@ -415,7 +435,8 @@ export class AudioEngine {
         src.start(t, 0, 0.35);
         break;
       }
-      case 'streak': { // held the zone another 15 s: a soft bell chord that climbs with the streak
+      case 'streak': { // held the zone another 15 s (or a combo clear): a soft bell chord that climbs
+        this.dropIn();
         const up = Math.pow(2, Math.min(opts.level ?? 1, 8) / 12);
         [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.tone(t + i * 0.03, f * up, 'sine', 0.09, 0.9));
         this.tone(t, 1567.98 * up, 'triangle', 0.05, 1.2);

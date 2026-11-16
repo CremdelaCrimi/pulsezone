@@ -127,3 +127,8 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - Checked the 2D game page (what you see in the Quest browser before Enter VR): the new Workout shape radios, Two-hand rope / Side shifts checkboxes and Warm-up field all render fine.
 - Updated the page's "How to play" text for today's moves (stand-tall box, white/teal guard shot, ropes, gold slam bar, side-shift floor pad, the green climbing arrow) and added **G** = guard to the desktop keys.
 - Fixed: on narrow screens the panel ran ~34 px off the right edge (its width didn't include its padding).
+
+## Cycle 22 (11:18 AM)
+- Asked Gemini (round 9) to choose between song breakdowns and 45-second move-family blocks for faster learning. It chose the breakdowns: no risk to the heart-rate loop with a headset test coming, whereas the blocks touch the spawner and learning.
+- **Built:** every 24 bars of the song (counted in song time, so independent of the playback rate) a breakdown of up to 4 bars thins the song out (a high-pass rises to ~380 Hz, the zone bass boost is off). The full sound slams back in on the next big hit (power orb, slam bar, combo clear, zone streak, burst warning) or after 4 bars. Never starts above the zone or while paused, and ends at once if you go above the zone. Tempo, spawns and the controller are untouched.
+- Checked: new test passes; in the browser a breakdown started at bar 24 (high-pass 376 Hz) and a power hit dropped it straight back (20 Hz); no console errors.
