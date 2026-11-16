@@ -22,6 +22,10 @@ Open the options board and press one Test button at a time; the board closes and
 | **2 ropes** | Follow both ropes, then smash the gold bar down with both fists | Rope catch OK? Slam: did it register? Bar too high/low? (needs both fists moving down ≥ 1.1 m/s within 0.3 s) |
 | **Shift** | Step onto the floor pad when it says STEP LEFT/RIGHT | Comfortable? Pad visible? Did the drift arrow ever appear wrongly? |
 | **Combo** | Punch the 2–4 orbs on the beat | Did they land on the beat? Did COMBO CLEAR show? |
+| **Heavy** (Test 2 row) | Hit the lit patch with the called punch (hooks on the front corners, uppercut on the lower curve); a white flash shows each new target first | Patches easy to reach? Uppercut patch too low? Did hard punches feel rewarded? |
+| **Sled** | Squat into a tuck and push both fists down together, like ski poles | Strokes registering? Too easy/hard (needs ≥ 1.0 m/s down, both within 0.35 s)? Tuck depth OK (15 cm below standing)? |
+| **Bombs** | Keep your head moving: each bomb follows you, whistles from its side when it locks, then you have 0.7 s to lean/duck/step | Fair or unfair? Did the whistle help? Core burn? |
+| **Speed / Ropes** | The original bursts, for comparison | Orbs narrower now: still a good reach? |
 
 Also notice the first time each one appears: see-through ghost fists should demonstrate it (first two times ever).
 
@@ -55,7 +59,8 @@ On the options board, the **Note** row stamps the current second in the workout 
 
 ## Afterwards (write down)
 
-- Thresholds: slam speed (1.1 m/s), guard distance (34 cm), stand-tall gap, ±35 cm side shift.
+- Thresholds: slam speed (1.1 m/s), guard distance (34 cm), stand-tall gap, ±35 cm side shift, sled stroke speed (1.0 m/s) and tuck (15 cm), bomb lock time (0.7 s).
+- Which new move raised your heart rate most: heavy bag, sled or bombs? (The end board's top 3 should agree after a few workouts.)
 - Music on Quest: did it play, any glitches, did the zone filter feel good?
 - HUD: anything still too busy at peak effort?
 - Did the top 3 moves on the end board match what felt hardest?
