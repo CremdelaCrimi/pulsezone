@@ -194,3 +194,12 @@ An independent read-only review of c5e456a (heavy bag, sled run, dodge barrage) 
 
 Checked OK by the review: bomb arrival times match the booked lane slot, all new state resets between workouts, attribution keys match.
 Smoke: stacked test presses ran heavy → heavy → bombs → sled in sequence, 0 overlaps, no errors.
+
+## 14:25 — Bombs aim at you (v43)
+
+From the review's "plausible" list, two changes to the dodge barrage:
+
+- **Bombs track your head** until 0.7 s before arrival, then fly straight. Before, they aimed at your standing height, so a slightly crouched player got free dodges. Now standing still always gets hit and you have to keep moving (lean, duck, shift) through the whole run, like dodging aimed shots.
+- **Separate bomb tally.** Bomb dodges no longer count toward the walls stat or pop "Dodged! +15" on every bomb. The Diag line shows `bombs hit x/y`; dodges still feed the combo and score (+10, x2 in the zone).
+
+Smoke: 3 barrages, 20 dodged, 0 overlaps, no errors.

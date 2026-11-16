@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v42';
+} from './core.js?v43';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v42';
+import { AudioEngine } from './audio.js?v43';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v42';
-import { loadTuning, createDevPanel } from './dev.js?v42';
+import { OptionsPanel } from './options.js?v43';
+import { loadTuning, createDevPanel } from './dev.js?v43';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -436,7 +436,7 @@ function updateMotion(dt, head) {
 // ------------------------------------------------------------------ score
 
 const score = {
-  reset() { Object.assign(this, { score: 0, combo: 0, best: 0, hits: 0, perfect: 0, misses: 0, weak: 0, wrong: 0, dodges: 0, wallHits: 0, blocks: 0, guardsMissed: 0 }); },
+  reset() { Object.assign(this, { score: 0, combo: 0, best: 0, hits: 0, perfect: 0, misses: 0, weak: 0, wrong: 0, dodges: 0, wallHits: 0, blocks: 0, guardsMissed: 0, bombDodges: 0, bombHits: 0 }); },
   inZone: () => controller?.status === Zone.InZone,
   hit(bonus = 1, label = '') {
     this.hits++; this.combo++; this.best = Math.max(this.best, this.combo);
@@ -454,6 +454,9 @@ const score = {
   weakHit(msg = 'Punch harder!') { this.weak++; say(msg); },
   wrongHand(hand) { this.wrong++; say(hand === 'left' ? 'Left hand - blue!' : 'Right hand - orange!'); },
   wallHit() { this.wallHits++; this.combo = 0; },
+  // Bombs keep their own tally (so the walls stat stays about walls) and stay quiet: they come in fast runs.
+  bombDodge() { this.bombDodges++; this.combo++; this.best = Math.max(this.best, this.combo); this.score += 10 * (this.inZone() ? 2 : 1); },
+  bombHit() { this.bombHits++; this.combo = 0; },
 };
 score.reset();
 let lastEvent = '', lastEventAt = -10, lastTier = 3;
@@ -1380,30 +1383,39 @@ function spawnBarrage(head, standing) {
   for (let i = 0; i < n; i++) {
     const g = makeBomb();
     const x = Math.max(centerX - 0.4, Math.min(centerX + 0.4, head.x + offsets[Math.floor(Math.random() * offsets.length)]));
-    const y = standing - 0.04 + (Math.random() * 0.12 - 0.08);
-    g.position.set(x, y, head.z - SPAWN_DISTANCE - gap * i * speed);
+    const oy = Math.random() * 0.12 - 0.08;
+    g.position.set(x, head.y + oy, head.z - SPAWN_DISTANCE - gap * i * speed);
     scene.add(g);
-    bombs.push({ group: g, speed, passed: false, id });
+    bombs.push({ group: g, speed, passed: false, id, ox: x - head.x, oy });
   }
   say('BOMBS! Move your head - lean, duck, shift', 1);
   return true;
 }
+const BOMB_LOCK = 0.7; // seconds before arrival when a bomb stops following your head
 function updateBombs(dt, head) {
   for (let i = bombs.length - 1; i >= 0; i--) {
     const b = bombs[i];
     b.group.position.z += b.speed * dt;
+    // Aimed at your head: each bomb follows you until it's 0.7 s out, then locks, so you dodge by moving.
+    if (!b.passed && (head.z - b.group.position.z) / b.speed > BOMB_LOCK) {
+      const k = Math.min(1, dt * 3);
+      const tx = Math.max(centerX - 0.4, Math.min(centerX + 0.4, head.x + b.ox));
+      const ty = Math.max(0.7, head.y + b.oy);
+      b.group.position.x += (tx - b.group.position.x) * k;
+      b.group.position.y += (ty - b.group.position.y) * k;
+    }
     b.group.rotation.x += dt * 4; b.group.rotation.y += dt * 3;
     if (!b.passed && b.group.position.z >= head.z) {
       b.passed = true;
       const p = b.group.position;
       if (bombHits(head.x - p.x, head.y - p.y)) {
-        score.wallHit();
+        score.bombHit();
         say('Hit! Keep your head moving', 1);
         audio.sfx('wall');
         pulseBoth(1, 120);
         hitFlash = 1;
       } else {
-        score.dodge();
+        score.bombDodge();
         audio.sfx('dodge');
         attribution.record('barrage', gameTime);
       }
@@ -2069,7 +2081,7 @@ function drawSummary(w, records) {
   const short = !w.real ? 'Simulator / estimated heart rate: personal bests not saved'
     : w.trainingSeconds < MIN_RECORD_SECONDS ? 'Workouts under 3 min don\'t set records' : '';
   const report = settings.diag
-    ? `Test: slams ${tstat.slamHits}/${tstat.slams} · guards ${score.blocks}/${score.blocks + score.guardsMissed} · walls hit ${score.wallHits}/${score.wallHits + score.dodges} · above zone ${mmss(tstat.aboveSec)} · stuck sensor ${mmss(tstat.flatSec)} · notes ${tstat.notes.length}`
+    ? `Test: slams ${tstat.slamHits}/${tstat.slams} · guards ${score.blocks}/${score.blocks + score.guardsMissed} · walls hit ${score.wallHits}/${score.wallHits + score.dodges} · bombs hit ${score.bombHits}/${score.bombHits + score.bombDodges} · above zone ${mmss(tstat.aboveSec)} · stuck sensor ${mmss(tstat.flatSec)} · notes ${tstat.notes.length}`
     : '';
   const bestLine = report ? '' : bests ? `Bests: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points · ${bests.workouts} workout${bests.workouts === 1 ? '' : 's'}` : '';
   g.fillText(report || [bestLine, short].filter(Boolean).join('  ·  '), W / 2, 600, W - 60);
@@ -3020,7 +3032,7 @@ window.pz = {
       phase: c.phase, status: c.status, intensity: +c.intensity.toFixed(3), bpm: s.currentBpm, hasReading: s.hasReading,
       sourceKind, phoneFallback, workloadMode, code: link.code, link: link.state, remoteStatus: remote.statusText,
       score: score.score, hits: score.hits, perfect: score.perfect, misses: score.misses, wrong: score.wrong, weak: score.weak,
-      dodges: score.dodges, wallHits: score.wallHits, boost: +boost.value.toFixed(2), spawnInterval: +difficulty.spawnInterval.toFixed(2),
+      dodges: score.dodges, wallHits: score.wallHits, bombDodges: score.bombDodges, bombHits: score.bombHits, boost: +boost.value.toFixed(2), spawnInterval: +difficulty.spawnInterval.toFixed(2),
       orbs: orbs.length, walls: walls.length, swingOrbs: orbs.filter((o) => o.swing).length, secondsInZone: Math.round(c.secondsInZone),
       reps: { ...attribution.counts }, ranking: attribution.ranking().map((r) => `${r.key} ${r.bpmPer10.toFixed(1)}`),
       optionsOpen: options.open, logRows: sessionLog.length, traces: traces.length, gameType: settings.gameType,
