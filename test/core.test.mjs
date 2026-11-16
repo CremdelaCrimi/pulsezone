@@ -401,9 +401,9 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
   // Stuck wrist sensor: don't learn from it or push harder because of it.
   {
-    check(sensorLooksFlat({ flatSeconds: 20, status: 'Below', effortRpm: 20 }) && !sensorLooksFlat({ flatSeconds: 10, status: 'Below', effortRpm: 20 })
+    check(sensorLooksFlat({ flatSeconds: 26, status: 'Below', effortRpm: 20 }) && !sensorLooksFlat({ flatSeconds: 10, status: 'Below', effortRpm: 20 })
       && !sensorLooksFlat({ flatSeconds: 40, status: 'InZone', effortRpm: 20 }) && !sensorLooksFlat({ flatSeconds: 40, status: 'Below', effortRpm: 5 }),
-      'stuck sensor = same BPM > 18 s while below the zone and clearly working');
+      'stuck sensor = same BPM > 25 s while below the zone and clearly working');
     const b = new ChallengeBoost();
     for (let i = 0; i < 70 * 10; i++) b.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0, hold: true });
     const built = new ChallengeBoost(); for (let i = 0; i < 40 * 10; i++) built.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0 });

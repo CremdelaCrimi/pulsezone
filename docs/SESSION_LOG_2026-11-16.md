@@ -104,3 +104,13 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - Asked Gemini (round 7) for a 15–20 minute headset test protocol and its top 2 remaining improvements. Turned the protocol into `docs/HEADSET_TEST_PLAN.md`, corrected to the game's real timings (first WAVE UP ~30 s into training, spotlight at 3:00).
 - **Built (Gemini's two):** a **Note** row on the VR board (Slam missed / Guard picky / Too fast / Felt great) that bookmarks the current second in the workout CSV (new `note` column) with a "Noted" call-out; and a **test report** on the end board when Diag is on: slams landed/attempted, guards blocked, walls hit, time above the zone, stuck-sensor time, number of notes. The learned ranking on the board shows 4 rows instead of 6 so the board doesn't grow.
 - Checked: 116+ checks pass; a short workout with notes and a forced two-hand rope + slam: notes at the right seconds in the CSV, report "slams 2/2 · guards 3/3 …", board snapshot; no console errors.
+
+## Cycle 18 (10:59 AM): second independent review
+- A second read-only review covered everything since cycle 10. Five confirmed bugs, all checked against the code and fixed:
+  1. Simulator heart rate was still being learned; if the phone connected later in the same session, those values were saved. Learning now only runs on phone heart rate (the CLIMBING cue doesn't need it, so it still works on the simulator).
+  2. A Test move was silently dropped when a "Stand tall!" box was due at the same moment. The stand-up box no longer overwrites a queued move (checked: the guard arrived 5 s after the duck/stand pair).
+  3. A spotlight could feature a move that wasn't unlocked yet at the current intensity, so it never came. Spotlights now only pick unlocked moves.
+  4. The stuck-sensor warning could be swallowed by a higher-priority call-out and never repeat. `say()` now reports whether it showed, the warning retries until shown, and it's tier 1 (so is "Phone heart rate is back").
+  5. A simulator workout ended during warm-up still counted toward personal bests (0 ≥ 0). Now requires training time.
+- Also from the "plausible" list: the 30 s learning saves no longer stall in back-to-back workouts; Test: Combo respects your move switches (and says so if none fit); the stuck-sensor timer is 25 s instead of 18 s, for fewer false alarms when your heart rate is steady.
+- Checked: all checks pass; auto-play with 0 overlaps, no console errors, no gains saved in simulator mode.

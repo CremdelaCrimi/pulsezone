@@ -1017,11 +1017,11 @@ export function updateBests(prev, w) {
 
 /**
  * Wrist sensors sometimes "lock" and repeat the same BPM for 20-40 s while sweaty, then jump.
- * If the reading hasn't changed at all for over 18 s while you're below the zone and clearly
+ * If the reading hasn't changed at all for over 25 s while you're below the zone and clearly
  * working (>12 reps/min in the last ~12 s), treat it as stuck: don't learn from it and don't let
  * the challenge boost build on it.
  */
-export const FLAT_SECONDS = 18;
+export const FLAT_SECONDS = 25; // a bit more margin than 18 s: a steady heart can hold one value for a while
 export function sensorLooksFlat({ flatSeconds, status, effortRpm }) {
   return flatSeconds > FLAT_SECONDS && status === 'Below' && effortRpm > 12;
 }

@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v33';
+} from './core.js?v34';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v33';
+import { AudioEngine } from './audio.js?v34';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v33';
-import { loadTuning, createDevPanel } from './dev.js?v33';
+import { OptionsPanel } from './options.js?v34';
+import { loadTuning, createDevPanel } from './dev.js?v34';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -305,6 +305,7 @@ function startWorkout() {
   });
   boost = new ChallengeBoost({ riseSeconds: tuning.boostRiseSeconds * ch.rise });
   attribution = newAttribution();
+  gainsSavedAt = 0;
   realHrSeconds = 0; flatBpm = null; flatFor = 0; flatWarned = false; sensorFlat = false;
   signalLostToggle = false;
   phoneFallback = false;
@@ -380,7 +381,8 @@ function testMove(key) {
   if (key === 'shift') { forceShiftNext = true; say('Test: side shift coming', 2); return; }
   if (key === 'combo') {
     const en = enabledActivities();
-    const list = availableCombos({ swing: settings.gameType === 'punch', low: true });
+    const list = availableCombos({ swing: en.swing, low: en.low });
+    if (!list.length) { say('No combos with your current moves', 2); return; }
     queuedCombo = list[Math.floor(Math.random() * list.length)];
   }
   queuedActivity = key; queuedFor = 0; testQueued = true;
@@ -405,7 +407,7 @@ function updatePhoneFallback(xr, dt) {
     pulseBoth(0.8, 150);
   } else if (phoneFallback && remote.secondsSinceLastReading < 2) {
     phoneFallback = false;
-    say('Phone heart rate is back');
+    say('Phone heart rate is back', 1);
     audio.sfx('reconnect');
   }
   if (phoneFallback) sim.workload = xr ? motion.workload : autoPlayer.tick(controller.intensity, dt);
@@ -460,8 +462,9 @@ const now = () => performance.now() / 1000;
 const SAY_HOLD = { 1: 1.8, 2: 1.8, 3: 0.9 };
 function say(text, tier = 2) {
   const t = now();
-  if (t - lastEventAt < SAY_HOLD[lastTier] && tier > lastTier) return;
+  if (t - lastEventAt < SAY_HOLD[lastTier] && tier > lastTier) return false;
   lastEvent = text; lastEventAt = t; lastTier = tier;
+  return true;
 }
 const sayFresh = () => now() - lastEventAt < SAY_HOLD[lastTier];
 
@@ -1484,7 +1487,9 @@ function updateSpotlight() {
   }
   if (!spotlight && !over && spotlightDue(t, spotlightStarted)) {
     spotlightStarted = t;
-    const key = pickSpotlight({ enabled: enabledActivities(), gains: attribution.w, below: c.status === Zone.Below });
+    const en = enabledActivities();
+    const open = Object.fromEntries(Object.entries(en).map(([k, on]) => [k, on && (ACTIVITIES.find((a) => a.key === k)?.from ?? 0) <= c.intensity]));
+    const key = pickSpotlight({ enabled: open, gains: attribution.w, below: c.status === Zone.Below });
     if (!key) return;
     spotlight = { key, until: t + SPOTLIGHT.seconds };
     say(`SPOTLIGHT: ${SPOTLIGHT_NAMES[key]}  (60 s)`);
@@ -1654,7 +1659,7 @@ function finishWorkout() {
   const w = summarizeWorkout(sessionLog);
   Object.assign(w, { score: score.score, streak: Math.floor(longestStreak), reactor: reactor.level, combo: score.best });
   // Personal bests only count workouts driven mostly by your real heart rate (not the simulator).
-  w.real = realHrSeconds >= 0.5 * w.trainingSeconds;
+  w.real = w.trainingSeconds > 0 && realHrSeconds >= 0.5 * w.trainingSeconds;
   let records = [];
   if (w.real) {
     const r = updateBests(bests, w);
@@ -2444,12 +2449,12 @@ function frame(time) {
     } else { flatBpm = null; flatFor = 0; }
     const effortRpm = Object.values(attribution.fast).reduce((a, b) => a + b, 0);
     sensorFlat = sensorLooksFlat({ flatSeconds: flatFor, status: controller.status, effortRpm });
-    if (sensorFlat && !flatWarned) { flatWarned = true; say('Heart rate looks stuck - check the band is snug', 2); }
+    if (sensorFlat && !flatWarned) flatWarned = say('Heart rate looks stuck - check the band is snug', 1); // retried until shown
     if (!sensorFlat && flatFor === 0) flatWarned = false;
     // Learn only from heart rate the game didn't make up (not while estimating from movement, not while stuck).
-    const realBpm = src.hasReading && controller.status !== Zone.NoSignal && !phoneFallback && !sensorFlat ? src.currentBpm : null;
+    const realBpm = sourceKind === 'phone' && src.hasReading && controller.status !== Zone.NoSignal && !phoneFallback && !sensorFlat ? src.currentBpm : null;
     attribution.update(gameTime, realBpm);
-    if (realBpm != null && sourceKind === 'phone') realHrSeconds += gdt;
+    if (realBpm != null) realHrSeconds += gdt;
     if (controller.phase === Phase.Training && (controller.status === Zone.Above || controller.status === Zone.SafetyBrake)) tstat.aboveSec += gdt;
     if (sensorFlat) tstat.flatSec += gdt;
     updateStreak(gdt);
@@ -2513,9 +2518,9 @@ function frame(time) {
         spawnTimer = 0;
       } else if (trySpawn(pick)) {
         lastPick = pick === 'combo' && queuedCombo ? `combo ${queuedCombo.name}` : pick; lastReason = reason;
-        queuedActivity = null; queuedFor = 0; testQueued = false;
+        if (pick !== 'stand') { queuedActivity = null; queuedFor = 0; testQueued = false; } // a stand-up box keeps whatever was queued
         spawnTimer = 0;
-      } else {
+      } else if (pick !== 'stand') {
         queuedActivity = pick;
         queuedFor += gdt;
         if (queuedFor > (testQueued ? 30 : 10)) { queuedActivity = null; queuedFor = 0; testQueued = false; } // give up and pick something else
