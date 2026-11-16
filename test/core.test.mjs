@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -380,6 +380,17 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     const m = new HeartRateAttribution();
     check(Math.abs(m.learningRateNow() - 0.24) < 1e-9 && new HeartRateAttribution({ experience: 3000 }).learningRateNow() < 0.081 && Math.abs(fresh - 1.6) > Math.abs(veteran - 1.6),
       `new players learn ~3x faster at first (squat gain moved ${(fresh - 1.6).toFixed(2)} vs ${(veteran - 1.6).toFixed(2)})`);
+  }
+
+  // Spotlight rounds.
+  {
+    check(!spotlightDue(170, null) && spotlightDue(180, null) && !spotlightDue(400, 180) && spotlightDue(420, 180), 'spotlight at 3:00, then every 4 minutes');
+    const en = { power: true, guard: true, low: true, swing: false, pair: true, sweep: true, trace: true, duck: true, squatSide: true, lateral: true };
+    const gains = { power: 0.5, guard: 0.4, low: 1.3, pair: 1.5, sweep: 1.1, trace: 0.6, duck: 1.2, squatSide: 1.8, lateral: 0.9 };
+    const picks = new Set(); const rng = mulberry32(9);
+    for (let i = 0; i < 200; i++) picks.add(pickSpotlight({ enabled: en, gains, below: true, rng }));
+    check([...picks].sort().join() === 'low,pair,squatSide' && pickSpotlight({ enabled: { swing: true } }) === 'swing' && pickSpotlight({ enabled: {} }) === null,
+      `below the zone the spotlight is one of YOUR top 3 moves (${[...picks].join(', ')})`);
   }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.

@@ -71,3 +71,7 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - **Built (Gemini round-4 #4):** while the heart rate is estimated, the scoreboard shows "~118" in a muted colour; when the phone comes back a distinct two-tone chime plays (it used to reuse the "entered the zone" sound).
 - Note for the player: data saved before today may already include some simulator/estimate learning; "Reset learned data" in Developer tools starts clean if the ranking looks odd.
 - Checked: 113 checks pass; full 4-minute simulator workout: no gains or bests saved, end-board note shown, 0 overlaps, no console errors.
+
+## Cycle 12 (10:29 AM)
+- **Built:** Gemini's round-4 (2) and (1). **Spotlight rounds:** every 4 minutes of training (first at 3:00), one move (power, guard, squat punches, hooks/uppercuts, squat+reach, two-hand rope, rope, duck, side squat, footwork) is featured for 60 s at 2.5x weight, shown on the scoreboard with a countdown. Below the zone it's one of your top 3 learned heart-raisers (heart-rate first); going above the zone cancels the round. **Combo finisher:** clearing a combo pops a floating "COMBO CLEAR +N" at the last punch with a strong buzz on both hands.
+- Checked: 115 checks pass; 5.5-minute auto-play with a spotlight at 3:00 and 7 combos, 0 overlaps, no console errors.

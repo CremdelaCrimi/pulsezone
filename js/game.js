@@ -8,15 +8,15 @@ import {
   HeartRateAttribution, PROFILES, profileOffset, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
-  SHIFT, shiftWanted, shiftOffsetAt, breathAt, availableCombos, comboGap, comboChance, comboPlan,
+  SHIFT, shiftWanted, shiftOffsetAt, breathAt, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v25';
+} from './core.js?v26';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v25';
+import { AudioEngine } from './audio.js?v26';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v25';
-import { loadTuning, createDevPanel } from './dev.js?v25';
+import { OptionsPanel } from './options.js?v26';
+import { loadTuning, createDevPanel } from './dev.js?v26';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -311,6 +311,7 @@ function startWorkout() {
   finishedPlayed = false;
   shiftReadyAt = 0;
   waveState = 0;
+  spotlight = null; spotlightStarted = null;
   zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
   summaryBoard.visible = false; lastSummary = null;
   clearObstacles();
@@ -1421,6 +1422,67 @@ function comboResult(orb, hit) {
   score.score += pts;
   say(`${c.name.toUpperCase()} COMBO!  +${pts}`);
   audio.sfx('streak', { level: c.n });
+  // Finisher: the last punch gets a big pop-up and a strong buzz on both hands.
+  popText(`COMBO CLEAR +${pts}`, orb.group.position);
+  pulseBoth(0.9, 120);
+}
+
+// ------------------------------------------------------------------ spotlight rounds
+
+let spotlight = null;          // { key, until } while a round is on
+let spotlightStarted = null;   // training seconds when the last round started
+function updateSpotlight() {
+  const c = controller;
+  if (c.phase !== Phase.Training) { spotlight = null; return; }
+  const t = c.phaseElapsedSeconds;
+  const over = c.status === Zone.Above || c.status === Zone.SafetyBrake;
+  if (spotlight && (t >= spotlight.until || over)) {
+    if (over) say('Spotlight off - ease off and breathe');
+    spotlight = null;
+  }
+  if (!spotlight && !over && spotlightDue(t, spotlightStarted)) {
+    spotlightStarted = t;
+    const key = pickSpotlight({ enabled: enabledActivities(), gains: attribution.w, below: c.status === Zone.Below });
+    if (!key) return;
+    spotlight = { key, until: t + SPOTLIGHT.seconds };
+    say(`SPOTLIGHT: ${SPOTLIGHT_NAMES[key]}  (60 s)`);
+    audio.sfx('burst');
+  }
+}
+/** The activity mix's base weights, with the spotlight move boosted while a round is on. */
+function spawnWeights() {
+  if (!spotlight) return tuning.weights;
+  const a = ACTIVITIES.find((x) => x.key === spotlight.key);
+  return { ...(tuning.weights || {}), [spotlight.key]: ((tuning.weights || {})[spotlight.key] ?? a.base) * SPOTLIGHT.boost };
+}
+
+// Combo finisher: a floating "COMBO CLEAR +N" where the last punch landed.
+const popCanvas = document.createElement('canvas');
+popCanvas.width = 512; popCanvas.height = 128;
+const popTex = new THREE.CanvasTexture(popCanvas);
+popTex.colorSpace = THREE.SRGBColorSpace;
+const popMat = new THREE.MeshBasicMaterial({ map: popTex, transparent: true, depthWrite: false, depthTest: false });
+const popMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.15), popMat);
+popMesh.visible = false; popMesh.renderOrder = 10;
+scene.add(popMesh);
+let popAge = 0;
+function popText(text, pos, color = '#ffc04d') {
+  const g = popCanvas.getContext('2d');
+  g.clearRect(0, 0, 512, 128);
+  g.font = '800 64px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 10; g.strokeStyle = 'rgba(0,0,0,0.6)'; g.strokeText(text, 256, 64);
+  g.fillStyle = color; g.fillText(text, 256, 64);
+  popTex.needsUpdate = true;
+  popMesh.position.copy(pos).add(new THREE.Vector3(0, 0.12, 0));
+  popMesh.visible = true; popAge = 0;
+}
+function updatePop(rawDt) {
+  if (!popMesh.visible) return;
+  popAge += rawDt;
+  popMesh.position.y += rawDt * 0.35;
+  popMat.opacity = Math.max(0, 1 - popAge / 0.9);
+  popMesh.lookAt(camera.getWorldPosition(camTmp));
+  if (popAge > 0.9) popMesh.visible = false;
 }
 
 function removeOrb(orb) {
@@ -1699,7 +1761,8 @@ function drawHud(xr) {
   const boostPct = Math.round(boost.value * 100);
   const key = [bpmText, c.status, c.phase, Math.floor(remaining), Math.round(c.intensity * 100), score.score, score.combo,
     fresh ? lastEvent : '', statusLine, sourceKind, phoneFallback, workloadMode, link.code, xr, Math.round(c.currentSetpoint), c.s.targetBpm,
-    Math.round(boostPct / 5), options.open, trendShown, Math.floor(zoneStreak), breathCue].join('|');
+    Math.round(boostPct / 5), options.open, trendShown, Math.floor(zoneStreak), breathCue, spotlight && spotlight.key,
+    spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds)].join('|');
   if (key === hudKey) return;
   hudKey = key;
 
@@ -1758,6 +1821,10 @@ function drawHud(xr) {
     g.fillText(bestsLine(), W / 2, 400);
   }
 
+  if (spotlight && !breathCue && c.phase === Phase.Training) {
+    g.fillStyle = '#ffc04d'; g.font = '600 30px system-ui, sans-serif';
+    g.fillText(`SPOTLIGHT: ${SPOTLIGHT_NAMES[spotlight.key]}  ${Math.max(0, Math.ceil(spotlight.until - c.phaseElapsedSeconds))}s`, W / 2, 455);
+  }
   if (breathCue && c.phase !== Phase.Finished) { // its own line, so hit call-outs don't hide it
     g.fillStyle = '#7fd8ff'; g.font = '600 34px system-ui, sans-serif';
     g.fillText(breathCue === 'in' ? 'BREATHE IN...  (4)' : 'BREATHE OUT... slowly  (6)', W / 2, 455);
@@ -2292,6 +2359,7 @@ function frame(time) {
     if (realBpm != null && sourceKind === 'phone') realHrSeconds += gdt;
     updateStreak(gdt);
     updateWaves();
+    updateSpotlight();
     if (gameTime - gainsSavedAt > 30) { gainsSavedAt = gameTime; saveGains(); }
     logTimer += gdt;
     if (logTimer >= 1) { logTimer = 0; logRow(); }
@@ -2332,7 +2400,7 @@ function frame(time) {
       const plain = PLAIN_ORBS.filter((k) => enabledActivities(true)[k]);
       const activity = inShift ? (plain[Math.floor(Math.random() * plain.length)] || 'jab') : standNext ? 'stand' : queuedActivity || chooseActivity({
         intensity: difficulty.intensity, status: controller.status, boost: boost.value, gains: attribution.w,
-        baseWeights: tuning.weights, enabled: enabledActivities(true),
+        baseWeights: spawnWeights(), enabled: enabledActivities(true),
       });
       // A plain punch sometimes becomes a combo; like other solo moves it waits for a free lane slot.
       let pick = activity;
@@ -2366,6 +2434,7 @@ function frame(time) {
     if (ropes) updateRopes(gdt, xr, head);
   }
   updateShards(rawDt);
+  updatePop(rawDt);
 
   // Orbs.
   for (let i = orbs.length - 1; i >= 0; i--) {
@@ -2515,7 +2584,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, drifting, breath: breathCue, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, drifting, breath: breathCue, spotlight, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };

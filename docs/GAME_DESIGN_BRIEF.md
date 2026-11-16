@@ -49,6 +49,9 @@ If the player sits below the zone for about 15 seconds without heart rate rising
 - Saved in the browser; the options board shows "What raises YOUR heart rate"; the end screen names the best activity.
 - This is how "fun" moves are judged: if rope tracing turns out to barely move heart rate, it gets sent less when the player needs to push.
 
+### 4.4b Spotlight rounds
+Every 4 minutes of training (first at 3:00) one move is featured for 60 s (2.5x weight). Below the zone it's picked from the player's top 3 learned heart-raisers; above the zone the round is cancelled.
+
 ### 4.5 Lane spacing (nothing overlaps)
 Everything flies down one lane. Each thing books a time slot for when it reaches the player. Plain orbs can come in groups, but ropes, wall boxes, power orbs, pairs and guard shots get the lane to themselves with a short gap before and after. Bursts wait for an empty lane. Nothing flies through anything else. **Every new move must fit into this booking.**
 

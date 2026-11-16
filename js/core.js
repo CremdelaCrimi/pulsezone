@@ -760,6 +760,33 @@ export const comboChance = (intensity) => (intensity < 0.25 ? 0 : 0.25 + 0.35 * 
 /** Lane slot for a combo whose first punch arrives at `first` (gameTime) with `n` punches `gap` apart. */
 export const comboPlan = (first, n, gap) => ({ kind: 'solo', start: first - 0.5, end: first + gap * (n - 1) + 0.5 });
 
+/**
+ * Spotlight rounds: every 4 minutes of training (first at 3:00) one move is featured for 60 s
+ * (sent 2.5x as often). Below the zone it's one of the moves that raise YOUR heart rate most.
+ */
+export const SPOTLIGHT = Object.freeze({ first: 180, every: 240, seconds: 60, boost: 2.5 });
+export const SPOTLIGHT_MOVES = Object.freeze(['power', 'guard', 'low', 'swing', 'pair', 'sweep', 'trace', 'duck', 'squatSide', 'lateral']);
+export const SPOTLIGHT_NAMES = Object.freeze({
+  power: 'POWER ROUND', guard: 'DEFENCE DRILL', low: 'SQUAT ROUND', swing: 'HOOKS & UPPERCUTS', pair: 'SQUAT + REACH',
+  sweep: 'TWO-HAND ROPES', trace: 'ROPE ROUND', duck: 'DUCK & WEAVE', squatSide: 'SIDE SQUATS', lateral: 'FOOTWORK',
+});
+/** Is a spotlight due at this many seconds into training (given when the last one started)? */
+export function spotlightDue(t, lastStart) {
+  if (t < SPOTLIGHT.first) return false;
+  return lastStart == null || t - lastStart >= SPOTLIGHT.every;
+}
+/**
+ * Pick the featured move from the enabled ones. Below the zone: random among your top 3 by learned
+ * gain (what works for you); otherwise any enabled one.
+ */
+export function pickSpotlight({ enabled, gains = null, below = false, rng = Math.random }) {
+  const ok = SPOTLIGHT_MOVES.filter((k) => enabled[k]);
+  if (!ok.length) return null;
+  let pool = ok;
+  if (below && gains) pool = [...ok].sort((a, b) => (gains[b] ?? 0) - (gains[a] ?? 0)).slice(0, 3);
+  return pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))];
+}
+
 /** Can `plan` be added to the booked `lane` slots without crowding anything? */
 export function laneFree(lane, plan) {
   if (!plan) return true;
