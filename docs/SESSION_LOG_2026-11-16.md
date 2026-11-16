@@ -23,3 +23,8 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - **Built:** Gemini's (2), as it recommended in (A). A finishing slam: a wide gold bar at head height with arrows pointing down. Smash it down with both fists, each moving down at least 1.1 m/s, within 0.3 s of each other (Touch mode: just reach it with both hands). It comes 0.9 s after every two-hand rope (booked in the rope's lane slot) and ~2 s after battle ropes (booked as its own slot). +60 points (×2 in the zone), big boom, shards, strong buzz on both hands. Missing it breaks the combo. On desktop, a click while it's in reach counts.
 - Brief updated with cycles 1–3.
 - Checked: 98 checks pass; forced two-hand rope and battle ropes both produced a slam; 3-minute auto-play with 4 slams, 0 overlaps, no console errors.
+
+## Cycle 4 (9:30 AM)
+- **Built:** Gemini's (4), as it advised in (B). Side shifts: when you're below the zone in training (intensity ≥ 35% or challenge boost on) and not already "climbing", the game books an 8-second orb-only slot in the lane. Plain orbs (punch, squat punch, hook/uppercut) arriving in it come 35 cm to one side. A pulsing pad on the floor ~2 m ahead with an arrow shows where to step, and the call-out says "STEP RIGHT >>" / "<< STEP LEFT", then "Back to the centre". Walls, ropes, power orbs, pairs, guard shots and bursts wait until it's over. The scoreboard never moves. 30 s cooldown after each shift. New **Shift** toggle on the options board (Walls row) and the page ("Walls & footwork").
+- Moved the floor pad from under your feet to 2 m ahead after a snapshot showed it out of sight.
+- Checked: 101 checks pass; 3-minute auto-plays with shifts, 0 overlaps, no console errors.

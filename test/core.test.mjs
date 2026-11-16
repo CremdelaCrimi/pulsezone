@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -302,6 +302,21 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     const slam = lanePlan('slam', { now: 0, speed: 3, dist: 7 });
     check(sw.end - sw.start > tr.end - tr.start + SLAM_GAP && slam.kind === 'solo' && slam.start > 1 && slam.start < 2.5,
       'two-hand rope books room for its slam; a slam after battle ropes comes in ~2 s');
+  }
+
+  // Side shifts: below the zone only; plain orbs share the window, everything solo waits.
+  {
+    const base = { status: 'Below', phase: 'Training', intensity: 0.5, now: 100, readyAt: 90 };
+    check(shiftWanted(base) && !shiftWanted({ ...base, status: 'InZone' }) && !shiftWanted({ ...base, phase: 'WarmUp' })
+      && !shiftWanted({ ...base, readyAt: 120 }) && !shiftWanted({ ...base, intensity: 0.2 }) && shiftWanted({ ...base, intensity: 0.2, boost: 0.3 }),
+      'side shifts only when below the zone in training, with a cooldown');
+    const plan = { start: 10, end: 18, offset: 0.35 };
+    check(shiftOffsetAt(plan, 12) === 0.35 && shiftOffsetAt(plan, 9.5) === 0 && shiftOffsetAt(plan, 18.5) === 0 && shiftOffsetAt(null, 12) === 0,
+      'orbs arriving inside the shift window come from the side');
+    const lane = [{ kind: 'orb', start: 9.4, end: 18.6, shift: true }];
+    check(laneFree(lane, lanePlan('jab', { now: 8, speed: 3 })) && !laneFree(lane, lanePlan('duck', { now: 8, speed: 3, depth: 2 }))
+      && !laneFree(lane, lanePlan('trace', { now: 6, speed: 3 })),
+      'during a shift plain orbs still come, walls and ropes wait');
   }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.

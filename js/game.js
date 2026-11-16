@@ -8,14 +8,15 @@ import {
   HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
+  SHIFT, shiftWanted, shiftOffsetAt,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v15';
+} from './core.js?v16';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v15';
+import { AudioEngine } from './audio.js?v16';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v15';
-import { loadTuning, createDevPanel } from './dev.js?v15';
+import { OptionsPanel } from './options.js?v16';
+import { loadTuning, createDevPanel } from './dev.js?v16';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -32,7 +33,7 @@ const settings = {
   // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
   moves: {
     jab: true, low: true, swing: true, power: true, pair: true, guard: true, trace: true, sweep: true,
-    bag: true, ropes: true, duck: true, squatSide: true, lean: true, pillar: true,
+    bag: true, ropes: true, duck: true, squatSide: true, lean: true, pillar: true, shift: true,
   },
 };
 try {
@@ -46,7 +47,7 @@ try {
 const MOVE_LABELS = {
   jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then reach up', guard: 'Guard & counter',
   trace: 'Rope tracing', sweep: 'Two-hand rope', bag: 'Speed bag', ropes: 'Battle ropes',
-  duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar',
+  duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar', shift: 'Side shifts (step left/right)',
 };
 /** Which activities the moveset allows right now (forSpawn: also respect burst cooldowns). */
 const enabledActivities = (forSpawn = false) => ({
@@ -293,6 +294,7 @@ function startWorkout() {
   gameTime = 0;
   sessionLog.length = 0;
   finishedPlayed = false;
+  shiftReadyAt = 0;
   zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
   summaryBoard.visible = false; lastSummary = null;
   clearObstacles();
@@ -463,6 +465,7 @@ let spawnTimer = 0;
 // Lane timeline: booked arrival slots so obstacles never crowd each other (see lanePlan in core.js).
 let lane = [];
 let queuedActivity = null, queuedFor = 0;
+let shiftPlan = null, shiftReadyAt = 0, shiftSaid = '';      // side shift (footwork) window, in arrival time
 let standNext = false;                                // a squat box was sent: a "Stand tall!" box comes next
 let bag = null, ropes = null, pendingBurst = null;   // speed bag / battle ropes (one at a time)
 let bagReadyAt = 0, ropesReadyAt = 0;                // burst cooldowns (game seconds)
@@ -485,6 +488,7 @@ function clearObstacles() {
   lane = [];
   queuedActivity = null; queuedFor = 0;
   standNext = false;
+  shiftPlan = null; shiftSaid = ''; shiftPad.visible = false;
 }
 
 /**
@@ -534,7 +538,7 @@ function spawnOrb(head, standing, activity, opts = {}) {
     : power ? chest + (Math.random() - 0.5) * 0.15
       : Math.max(0.6, chest + (Math.random() * 1.4 - 1) * d.verticalSpread));
   const group = new THREE.Group();
-  group.position.set(centerX + x, y, head.z - (opts.dist ?? SPAWN_DISTANCE) - (opts.behind || 0));
+  group.position.set(centerX + x + (opts.shift || 0), y, head.z - (opts.dist ?? SPAWN_DISTANCE) - (opts.behind || 0));
   const baseMat = power ? (hand === 'left' ? MAT.powerL : MAT.powerR) : MAT[hand];
   const mesh = new THREE.Mesh(power ? powerGeo : orbGeo, baseMat);
   mesh.scale.setScalar(r);
@@ -1676,7 +1680,7 @@ function buildMovesUI() {
     </div>
     ${group('Orbs', ['jab', 'low', 'swing', 'power', 'pair', 'guard', 'trace', 'sweep'])}
     ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes'])}
-    ${group('Walls', ['duck', 'squatSide', 'lean', 'pillar'])}
+    ${group('Walls & footwork', ['duck', 'squatSide', 'lean', 'pillar', 'shift'])}
     <div class="muted" id="movesNote" style="font-size:12px"></div>`;
   box.addEventListener('change', (e) => {
     const t = e.target;
@@ -1924,7 +1928,7 @@ function xrButtons() {
 
 /** Send `activity` if its arrival slot is free. Returns false to try again a moment later. */
 const SLAM_DIST = 7; // after battle ropes the slam comes from 7 m, so it arrives in ~2 s
-function trySpawn(activity) {
+function trySpawn(activity, extra = {}) {
   if (activity === 'bag' || activity === 'ropes') {
     pendingBurst = activity;
     say(activity === 'bag' ? 'Speed bag coming...' : 'Battle ropes coming...');
@@ -1945,9 +1949,55 @@ function trySpawn(activity) {
   else if (activity === 'trace' || activity === 'sweep') spawnTrace(head, standing, activity === 'sweep');
   else if (activity === 'pair') spawnPair(head, standing);
   else if (activity === 'guard') spawnGuard(head, standing);
-  else spawnOrb(head, standing, activity);
+  else spawnOrb(head, standing, activity, { shift: extra.shift || 0 });
   return true;
 }
+
+// ------------------------------------------------------------------ side shifts (footwork)
+
+// A glowing pad on the floor where to stand, with an arrow from the centre.
+const shiftPadMat = new THREE.MeshBasicMaterial({ color: 0x4fd1c5, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false });
+const shiftPad = new THREE.Group();
+{
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.17, 0.23, 32), shiftPadMat);
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.2, 3), shiftPadMat);
+  ring.rotation.x = -Math.PI / 2;
+  arrow.rotation.set(-Math.PI / 2, 0, -Math.PI / 2); // flat on the floor, pointing +x
+  arrow.position.x = -0.32;
+  shiftPad.add(ring, arrow);
+  shiftPad.visible = false;
+  scene.add(shiftPad);
+}
+const PLAIN_ORBS = ['jab', 'low', 'swing'];
+/** Plan a shift when you're stuck below the zone, if no wall/rope/etc. would arrive during it. */
+function maybePlanShift() {
+  if (!settings.moves.shift || shiftPlan || bag || ropes || pendingBurst) return;
+  if (trendShown === 'climbing') return; // already working hard enough: your heart just needs time
+  if (!shiftWanted({ status: controller.status, phase: controller.phase, intensity: controller.intensity, boost: boost.value, now: gameTime, readyAt: shiftReadyAt })) return;
+  const start = gameTime + (SPAWN_DISTANCE - 0.5) / difficulty.orbSpeed + 0.4;
+  const slot = { kind: 'orb', start: start - SHIFT.margin, end: start + SHIFT.seconds + SHIFT.margin, shift: true };
+  if (!laneFree(lane, slot)) return;  // something solo is on its way: try again later
+  lane.push(slot);
+  shiftPlan = { start, end: start + SHIFT.seconds, offset: (Math.random() < 0.5 ? -1 : 1) * SHIFT.offset };
+  shiftReadyAt = shiftPlan.end + SHIFT.cooldown;
+}
+/** Pad, call-outs, and ending the shift. */
+function updateShift(head, standing) {
+  const p = shiftPlan;
+  if (!p) { shiftPad.visible = false; return; }
+  const showFrom = p.start - 2;
+  shiftPad.visible = gameTime >= showFrom && gameTime <= p.end;
+  if (shiftPad.visible) {
+    // ~2 m ahead on the floor, low in view while you watch the orbs (right under your feet it is out of sight).
+    shiftPad.position.set(centerX + p.offset, 0.02, head.z - 2.2);
+    shiftPad.scale.set(p.offset > 0 ? 1.8 : -1.8, 1.8, 1.8); // arrow points the way to step
+    shiftPadMat.opacity = 0.55 + 0.35 * Math.abs(Math.sin(gameTime * 5));
+  }
+  if (gameTime >= showFrom && shiftSaid !== 'go') { shiftSaid = 'go'; say(p.offset > 0 ? 'STEP RIGHT  >>' : '<<  STEP LEFT'); audio.sfx('burst'); }
+  if (gameTime >= p.end && shiftSaid !== 'back') { shiftSaid = 'back'; say('Back to the centre'); }
+  if (gameTime > p.end + SHIFT.margin) { shiftPlan = null; shiftSaid = ''; }
+}
+
 
 // ------------------------------------------------------------------ main loop
 
@@ -2030,7 +2080,9 @@ function frame(time) {
   if (!paused && controller.phase !== Phase.Finished) {
     spawnTimer += gdt;
     lane = lane.filter((r) => r.end > gameTime);
-    if (pendingBurst && !standNext) {
+    maybePlanShift();
+    const shiftBusy = shiftPlan && gameTime < shiftPlan.end + SHIFT.margin;
+    if (pendingBurst && !standNext && !shiftBusy) {
       // A burst waits until the lane is clear, then takes over for a few seconds.
       if (!orbs.length && !walls.length && !traces.length && !guards.length && !slams.length) {
         if (pendingBurst === 'bag') spawnBag(head, standing); else spawnRopes(head, standing);
@@ -2040,11 +2092,18 @@ function frame(time) {
     } else if (!bag && !ropes && spawnTimer >= difficulty.spawnInterval) {
       // Pick what's next (or keep waiting for the move already picked), then only send it once its
       // arrival slot is free, so nothing crowds a rope, a wall box, a pair or a guard shot.
-      const activity = standNext ? 'stand' : queuedActivity || chooseActivity({
+      // During a side shift only plain orbs come (offset to the side); anything queued waits.
+      const arrive = gameTime + (SPAWN_DISTANCE - 0.5) / difficulty.orbSpeed;
+      const inShift = shiftPlan && arrive >= shiftPlan.start - SHIFT.margin && arrive <= shiftPlan.end + SHIFT.margin;
+      const plain = PLAIN_ORBS.filter((k) => enabledActivities(true)[k]);
+      const activity = inShift ? (plain[Math.floor(Math.random() * plain.length)] || 'jab') : standNext ? 'stand' : queuedActivity || chooseActivity({
         intensity: difficulty.intensity, status: controller.status, boost: boost.value, gains: attribution.w,
         baseWeights: tuning.weights, enabled: enabledActivities(true),
       });
-      if (trySpawn(activity)) {
+      if (inShift) {
+        trySpawn(activity, { shift: shiftOffsetAt(shiftPlan, arrive) });
+        spawnTimer = 0;
+      } else if (trySpawn(activity)) {
         queuedActivity = null; queuedFor = 0;
         spawnTimer = 0;
       } else {
@@ -2059,6 +2118,7 @@ function frame(time) {
     updateTraces(gdt, xr);
     updateGuards(gdt, xr, head);
     updateSlams(gdt, xr, head);
+    updateShift(head, standing);
     if (bag) updateBag(gdt, xr);
     if (ropes) updateRopes(gdt, xr, head);
   }
@@ -2211,7 +2271,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };

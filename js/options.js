@@ -106,8 +106,9 @@ export class OptionsPanel {
     label('More'); button('move-power', 'Power', 175, 165, s.moves.power && s.gameType === 'punch'); button('move-pair', 'Squat+reach', 350, 230, s.moves.pair);
     button('move-guard', 'Guard', 590, 215, s.moves.guard); button('move-sweep', '2 ropes', 815, 160, s.moves.sweep); y += R;
     label('Bursts'); button('move-bag', 'Speed bag', 175, 390, s.moves.bag); button('move-ropes', 'Battle ropes', 580, 395, s.moves.ropes); y += R;
-    label('Walls'); button('move-duck', 'Duck', 175, 165, s.moves.duck); button('move-squatSide', 'Side squat', 350, 230, s.moves.squatSide);
-    button('move-lean', 'Lean', 590, 215, s.moves.lean); button('move-pillar', 'Pillar', 815, 160, s.moves.pillar); y += R;
+    label('Walls'); button('move-duck', 'Duck', 175, 140, s.moves.duck); button('move-squatSide', 'Side squat', 325, 200, s.moves.squatSide);
+    button('move-lean', 'Lean', 535, 130, s.moves.lean); button('move-pillar', 'Pillar', 675, 140, s.moves.pillar);
+    button('move-shift', 'Shift', 825, 150, s.moves.shift); y += R;
     label('Music & sounds'); button('sound', s.sound ? 'On' : 'Off', 520, 140, s.sound); button('vol-', 'Vol −', 680, 140); button('vol+', 'Vol +', 830, 140); y += R;
     label(s.songAvailable ? 'Music style' : 'Music style (no song file yet)');
     button('music-song', 'Song', 520, 215, s.musicStyle === 'song' && s.songAvailable); button('music-synth', 'Synth', 755, 215, s.musicStyle === 'synth' || !s.songAvailable); y += R;

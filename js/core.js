@@ -697,6 +697,18 @@ export function fistSlams(f, bar, touch = false) {
 /** Both fists came down on it close enough together? (times in seconds, null = not yet) */
 export const slamTogether = (tLeft, tRight) => tLeft != null && tRight != null && Math.abs(tLeft - tRight) <= SLAM_WINDOW;
 
+/**
+ * Side shifts (footwork): when you're below the zone, plain orbs come 35 cm to one side for 8 s,
+ * so you take a wide side step and punch from there. Walls, ropes and bursts stay centred and
+ * wait until the shift is over (the shift books an orb-only slot in the lane).
+ */
+export const SHIFT = Object.freeze({ offset: 0.35, seconds: 8, cooldown: 30, margin: 0.6 });
+export function shiftWanted({ status, phase, intensity, boost = 0, now, readyAt }) {
+  return status === 'Below' && phase === 'Training' && now >= readyAt && (intensity >= 0.35 || boost >= 0.2);
+}
+/** How far sideways an orb arriving at time t should be (0 outside the shift window). */
+export const shiftOffsetAt = (plan, t) => (plan && t >= plan.start && t <= plan.end ? plan.offset : 0);
+
 /** Can `plan` be added to the booked `lane` slots without crowding anything? */
 export function laneFree(lane, plan) {
   if (!plan) return true;
