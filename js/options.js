@@ -2,7 +2,7 @@
 // (trigger = click). Also works on desktop with the mouse. The game pauses while it's open.
 import * as THREE from 'three';
 
-const W = 1024, H = 1540;
+const W = 1024, H = 1630;
 
 export class OptionsPanel {
   /**
@@ -101,6 +101,8 @@ export class OptionsPanel {
     // Moveset: tap to switch each move on/off (highlighted = on).
     label('Orbs'); button('move-jab', 'Punch', 175, 165, s.moves.jab); button('move-low', 'Squat punch', 350, 230, s.moves.low);
     button('move-swing', 'Hook/upper', 590, 215, s.moves.swing && s.gameType === 'punch'); button('move-trace', 'Rope', 815, 160, s.moves.trace); y += R;
+    label('More'); button('move-power', 'Power', 175, 165, s.moves.power && s.gameType === 'punch'); button('move-pair', 'Squat+reach', 350, 230, s.moves.pair);
+    button('move-bag', 'Speed bag', 590, 215, s.moves.bag); button('move-ropes', 'Ropes', 815, 160, s.moves.ropes); y += R;
     label('Walls'); button('move-duck', 'Duck', 175, 165, s.moves.duck); button('move-squatSide', 'Side squat', 350, 230, s.moves.squatSide);
     button('move-lean', 'Lean', 590, 215, s.moves.lean); button('move-pillar', 'Pillar', 815, 160, s.moves.pillar); y += R;
     label('Music & sounds'); button('sound', s.sound ? 'On' : 'Off', 520, 140, s.sound); button('vol-', 'Vol −', 680, 140); button('vol+', 'Vol +', 830, 140); y += R;
@@ -115,7 +117,7 @@ export class OptionsPanel {
     g.fillText('estimated BPM added per 10 reps/min · reps this workout', 50, y + 62);
     y += 95;
     const max = Math.max(1, ...s.ranking.map((r) => r.bpmPer10));
-    for (const r of s.ranking) {
+    for (const r of s.ranking.slice(0, 7)) {
       g.fillStyle = '#c9ced8'; g.font = '30px system-ui, sans-serif'; g.textAlign = 'left';
       g.fillText(r.label, 50, y + 22);
       g.fillStyle = '#262a38'; g.beginPath(); g.roundRect(400, y + 6, 430, 32, 10); g.fill();

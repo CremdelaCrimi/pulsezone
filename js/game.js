@@ -6,12 +6,13 @@ import {
   evaluateDifficulty, estimatedMaxBpm, EASY, HARD, WALL_TYPES, wallPolygon, wallHitsHead,
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
   HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints,
-} from './core.js?v7';
+  minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
+} from './core.js?v9';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v7';
+import { AudioEngine } from './audio.js?v9';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v7';
-import { loadTuning, createDevPanel } from './dev.js?v7';
+import { OptionsPanel } from './options.js?v9';
+import { loadTuning, createDevPanel } from './dev.js?v9';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -26,7 +27,10 @@ const settings = {
   gameType: 'punch',   // 'punch' = hit hard enough; 'touch' = just hold your hand where the orb arrives
   musicStyle: 'song',  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
   // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
-  moves: { jab: true, low: true, swing: true, trace: true, duck: true, squatSide: true, lean: true, pillar: true },
+  moves: {
+    jab: true, low: true, swing: true, power: true, pair: true, trace: true,
+    bag: true, ropes: true, duck: true, squatSide: true, lean: true, pillar: true,
+  },
 };
 try {
   const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
@@ -36,15 +40,20 @@ try {
   delete settings.walls; delete settings.trace;
 } catch { /* ignore */ }
 const MOVE_LABELS = {
-  jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', trace: 'Rope tracing',
+  jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then reach up',
+  trace: 'Rope tracing', bag: 'Speed bag', ropes: 'Battle ropes',
   duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar',
 };
-/** Which activities the moveset allows right now. */
-const enabledActivities = () => ({
+/** Which activities the moveset allows right now (forSpawn: also respect burst cooldowns). */
+const enabledActivities = (forSpawn = false) => ({
   jab: settings.moves.jab,
   low: settings.moves.low,
   swing: settings.moves.swing && settings.gameType === 'punch', // swing direction needs a real punch
+  power: settings.moves.power && settings.gameType === 'punch', // power is all about punching hard
+  pair: settings.moves.pair,
   trace: settings.moves.trace,
+  bag: settings.moves.bag && (!forSpawn || gameTime >= bagReadyAt),
+  ropes: settings.moves.ropes && (!forSpawn || gameTime >= ropesReadyAt),
   duck: settings.moves.duck,
   squatSide: settings.moves.squatSide,
   lateral: settings.moves.lean || settings.moves.pillar,
@@ -383,7 +392,16 @@ const MAT = {
   wall: new THREE.MeshBasicMaterial({ color: 0xd94cf2, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }),
   wallEdge: new THREE.LineBasicMaterial({ color: 0xf5a3ff }),
   wallHit: new THREE.MeshBasicMaterial({ color: 0xff2626, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
+  flash: new THREE.MeshBasicMaterial({ color: 0xffffff }),
+  // Power orbs: faceted, armoured, glowing harder.
+  powerL: new THREE.MeshStandardMaterial({ color: HAND_COLOR.left, emissive: HAND_COLOR.left, emissiveIntensity: 0.75, roughness: 0.25, metalness: 0.3, flatShading: true }),
+  powerR: new THREE.MeshStandardMaterial({ color: HAND_COLOR.right, emissive: HAND_COLOR.right, emissiveIntensity: 0.75, roughness: 0.25, metalness: 0.3, flatShading: true }),
+  shell: new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
+  pairLink: new THREE.LineDashedMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, dashSize: 0.12, gapSize: 0.08 }),
 };
+const powerGeo = new THREE.IcosahedronGeometry(1, 0);
+const powerShellGeo = new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(1.35, 0));
+const shardGeo = new THREE.TetrahedronGeometry(1, 0);
 
 /**
  * The curve your fist should travel for a swing orb, drawn through the orb (orb at origin,
@@ -411,18 +429,24 @@ function swingGuide(swing, hand) {
   return { group, curve, ghost };
 }
 
-const orbs = [], walls = [], bursts = [];
+const orbs = [], walls = [], bursts = [], shards = [];
 window.__orbs = orbs; // test hook
 window.__walls = walls;
 setTimeout(() => { window.__traces = traces; });
 let spawnTimer = 0, wallCooldown = 0;
+let bag = null, ropes = null, pendingBurst = null;   // speed bag / battle ropes (one at a time)
+let bagReadyAt = 0, ropesReadyAt = 0;                // burst cooldowns (game seconds)
 let centerX = 0;
 let recenterSoon = true;
 
 function clearObstacles() {
-  for (const o of [...orbs, ...walls, ...bursts]) scene.remove(o.group || o.mesh);
+  for (const o of [...orbs, ...walls, ...bursts, ...shards]) scene.remove(o.group || o.mesh);
   for (const t of traces) scene.remove(t.group, t.ring);
-  orbs.length = walls.length = bursts.length = traces.length = 0;
+  orbs.length = walls.length = bursts.length = traces.length = shards.length = 0;
+  if (bag) { scene.remove(bag.group); bag = null; }
+  if (ropes) { endRopes(false); }
+  pendingBurst = null;
+  bagReadyAt = ropesReadyAt = 0;
   spawnTimer = 0;
 }
 
@@ -449,29 +473,301 @@ function spawnWall(head, standing, type, activity) {
   wallCooldown = 1.3 + depth / speed;
 }
 
-function spawnOrb(head, standing, activity) {
+/**
+ * Orbs. `opts` can fix the position / hand / swing (used by squat-then-reach pairs) and push the
+ * orb further back (`behind` metres) so it arrives later. Power orbs are faceted, armoured and
+ * need a full punch.
+ */
+function spawnOrb(head, standing, activity, opts = {}) {
   const d = difficulty;
-  const r = 0.125;
-  const x = (Math.random() * 2 - 1) * d.horizontalSpread;
-  let { hand } = planOrb(x, d);
-  let swing = null;
+  const power = activity === 'power';
+  const r = power ? 0.15 : 0.125;
+  const x = opts.x ?? (Math.random() * 2 - 1) * d.horizontalSpread * (power ? 0.7 : 1);
+  let hand = opts.hand ?? planOrb(x, d).hand;
+  let swing = opts.swing ?? null;
   if (activity === 'swing') {
     hand = x < 0 ? 'left' : 'right';
     swing = Math.random() < 0.5 ? 'up' : (hand === 'right' ? 'left' : 'right');
   }
+  if (power) hand = x < 0 ? 'left' : 'right';
   const chest = standing - 0.35;
-  const y = activity === 'low'
+  const y = opts.y ?? (activity === 'low'
     ? Math.max(0.55, standing - 0.95 + Math.random() * 0.15)   // knee-to-hip height: squat and punch
-    : Math.max(0.6, chest + (Math.random() * 1.4 - 1) * d.verticalSpread);
+    : power ? chest + (Math.random() - 0.5) * 0.15
+      : Math.max(0.6, chest + (Math.random() * 1.4 - 1) * d.verticalSpread));
   const group = new THREE.Group();
-  group.position.set(centerX + x, y, head.z - 14);
-  const mesh = new THREE.Mesh(orbGeo, MAT[hand]);
+  group.position.set(centerX + x, y, head.z - 14 - (opts.behind || 0));
+  const baseMat = power ? (hand === 'left' ? MAT.powerL : MAT.powerR) : MAT[hand];
+  const mesh = new THREE.Mesh(power ? powerGeo : orbGeo, baseMat);
   mesh.scale.setScalar(r);
   group.add(mesh);
+  let shell = null;
+  if (power) { // spiky wireframe armour that spins
+    shell = new THREE.LineSegments(powerShellGeo, MAT.shell);
+    shell.scale.setScalar(r);
+    group.add(shell);
+  }
   let guide = null;
   if (swing) { guide = swingGuide(swing, hand); group.add(guide.group); }
+  if (opts.link) { // dashed line back to the first orb of a pair: "low, then up"
+    const pts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(...opts.link)];
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), MAT.pairLink);
+    line.computeLineDistances();
+    group.add(line);
+  }
   scene.add(group);
-  orbs.push({ group, mesh, r, hand, swing, guide, activity, speed: d.orbSpeed, minPunch: d.minPunchSpeed, immuneUntil: 0, flashUntil: 0, passZ: head.z + 0.6 });
+  const orb = {
+    group, mesh, shell, baseMat, r, hand, swing, guide, activity, power, speed: opts.speed ?? d.orbSpeed, minPunch: d.minPunchSpeed,
+    immuneUntil: 0, flashUntil: 0, passZ: head.z + 0.6, dying: 0,
+  };
+  orbs.push(orb);
+  return orb;
+}
+
+/**
+ * Squat, then reach up: a low orb for one hand, then a high orb for the other hand about 0.85 s
+ * later (it flies in behind the first). Like a squat jump without leaving the floor.
+ */
+function spawnPair(head, standing) {
+  const d = difficulty;
+  const side = Math.random() < 0.5 ? -1 : 1;
+  const lowX = side * (0.12 + Math.random() * 0.15);
+  const lowY = Math.max(0.55, standing - 0.95 + Math.random() * 0.1);
+  const highX = -side * (0.08 + Math.random() * 0.12);
+  const highY = standing + 0.1 + Math.random() * 0.08;
+  const lowHand = side < 0 ? 'left' : 'right';
+  const highHand = lowHand === 'left' ? 'right' : 'left';
+  const gap = d.orbSpeed * 0.85;
+  spawnOrb(head, standing, 'pair', { x: lowX, y: lowY, hand: lowHand, speed: d.orbSpeed });
+  spawnOrb(head, standing, 'pair', {
+    x: highX, y: highY, hand: highHand, behind: gap, speed: d.orbSpeed,
+    swing: settings.gameType === 'punch' ? 'up' : null,
+    link: [lowX - highX, lowY - highY, gap],
+  });
+  say('Squat... then reach up!');
+}
+
+// ------------------------------------------------------------------ hit feel: flash, shatter along your punch
+
+/** Shards fly off along the punch direction; more and faster for harder punches. */
+function shatter(pos, dir, color, power) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
+  const n = 6 + Math.round(10 * power);
+  const parts = [];
+  for (let i = 0; i < n; i++) {
+    const m = new THREE.Mesh(shardGeo, mat);
+    m.scale.setScalar(0.02 + Math.random() * 0.025);
+    m.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.08, (Math.random() - 0.5) * 0.08, (Math.random() - 0.5) * 0.08));
+    const v = dir.clone().multiplyScalar(1.2 + 3.2 * power * (0.6 + Math.random() * 0.6))
+      .add(new THREE.Vector3((Math.random() - 0.5) * 1.6, Math.random() * 1.2, (Math.random() - 0.5) * 1.6));
+    group.add(m);
+    parts.push({ m, v, spin: new THREE.Vector3(Math.random() * 12, Math.random() * 12, Math.random() * 12) });
+  }
+  scene.add(group);
+  shards.push({ group, mat, parts, age: 0, life: 0.45 + 0.25 * power });
+}
+function updateShards(dt) {
+  for (let i = shards.length - 1; i >= 0; i--) {
+    const s = shards[i];
+    s.age += dt;
+    for (const p of s.parts) {
+      p.v.y -= 6 * dt;
+      p.m.position.addScaledVector(p.v, dt);
+      p.m.rotation.x += p.spin.x * dt; p.m.rotation.y += p.spin.y * dt; p.m.rotation.z += p.spin.z * dt;
+    }
+    s.mat.opacity = Math.max(0, 1 - s.age / s.life);
+    if (s.age >= s.life) { scene.remove(s.group); s.mat.dispose(); shards.splice(i, 1); }
+  }
+}
+
+// ------------------------------------------------------------------ speed bag (a burst: hit it as fast as you can)
+
+const bagGeo = new THREE.CapsuleGeometry(0.11, 0.16, 6, 16);
+const BAG_ARRIVE = 1.0;
+function spawnBag(head, standing) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0xff3d5a, emissive: 0xff3d5a, emissiveIntensity: 0.35, roughness: 0.5 });
+  const body = new THREE.Mesh(bagGeo, mat);
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.45, 6), MAT.guide);
+  cord.position.y = 0.42;
+  // Floating counter above the bag: hits and a time bar.
+  const lc = document.createElement('canvas'); lc.width = 256; lc.height = 128;
+  const tex = new THREE.CanvasTexture(lc); tex.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.18), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  label.position.set(0, 0.55, -1.4);   // counter floats further back so it never blocks your view
+  label.scale.setScalar(2.2);
+  group.add(body, cord, label);
+  const station = new THREE.Vector3(centerX, standing - 0.42, head.z - 0.5);
+  group.position.set(station.x, station.y, head.z - 10);
+  scene.add(group);
+  bag = {
+    group, body, mat, label, lc, tex, station, startZ: head.z - 10, age: 0, duration: 4 + 1 * (1 - difficulty.intensity),
+    hits: 0, armed: { left: true, right: true }, off: new THREE.Vector3(), offV: new THREE.Vector3(), labelKey: '', smokeT: 0,
+  };
+  say('SPEED BAG! Hit it fast!');
+  audio.sfx('burst');
+  pulseBoth(0.4, 60);
+}
+function drawBagLabel() {
+  const left = Math.max(0, bag.duration - Math.max(0, bag.age - BAG_ARRIVE));
+  const key = `${bag.hits}|${Math.ceil(left * 4)}`;
+  if (key === bag.labelKey) return;
+  bag.labelKey = key;
+  const g = bag.lc.getContext('2d');
+  g.clearRect(0, 0, 256, 128);
+  g.fillStyle = 'rgba(8,10,18,0.7)'; g.beginPath(); g.roundRect(4, 4, 248, 120, 22); g.fill();
+  g.fillStyle = '#ffffff'; g.font = '700 64px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(String(bag.hits), 128, 56);
+  g.fillStyle = '#262a38'; g.fillRect(28, 98, 200, 12);
+  g.fillStyle = '#ff5a6e'; g.fillRect(28, 98, 200 * (left / bag.duration), 12);
+  bag.tex.needsUpdate = true;
+}
+function bagHit(hand, fist) {
+  bag.hits++;
+  const push = fist && fist.vel.lengthSq() > 0.01 ? fist.vel.clone().setY(0).normalize() : new THREE.Vector3(0, 0, -1);
+  bag.offV.addScaledVector(push, 1.4);
+  bag.mat.emissiveIntensity = 1.2;
+  pulse(fist, 0.55, 25);
+  audio.sfx('bag', { hand });
+  attribution.record('bag', gameTime);
+}
+const bagCenter = new THREE.Vector3();
+function updateBag(dt, xr) {
+  bag.age += dt;
+  const arriving = bag.age < BAG_ARRIVE;
+  const k = Math.min(1, bag.age / BAG_ARRIVE);
+  bag.group.position.z = bag.startZ + (bag.station.z - bag.startZ) * (1 - (1 - k) ** 3);
+  // Springy wobble after each hit.
+  bag.offV.addScaledVector(bag.off, -320 * dt).multiplyScalar(Math.exp(-9 * dt));
+  bag.off.addScaledVector(bag.offV, dt);
+  bag.body.position.copy(bag.off);
+  bag.body.rotation.set(bag.off.z * 2.5, 0, -bag.off.x * 2.5);
+  bag.mat.emissiveIntensity += (0.35 - bag.mat.emissiveIntensity) * Math.min(1, dt * 8);
+  bag.label.lookAt(camera.getWorldPosition(new THREE.Vector3()));
+  if (!arriving) {
+    bag.body.getWorldPosition(bagCenter);
+    if (xr) {
+      for (const f of fists) {
+        const dx = f.world.x - bagCenter.x, dz = f.world.z - bagCenter.z;
+        const dy = Math.max(0, Math.abs(f.world.y - bagCenter.y) - 0.08);
+        const dist = Math.hypot(dx, dy, dz);
+        const reach = 0.11 + FIST_R + 0.04;
+        if (bag.armed[f.hand] && dist < reach && (settings.gameType === 'touch' || f.speed > 1.0)) {
+          bag.armed[f.hand] = false;
+          bagHit(f.hand, f);
+        } else if (dist > reach + 0.06) bag.armed[f.hand] = true;
+      }
+    }
+    if (SMOKE) { bag.smokeT += dt; while (bag.smokeT > 0.16) { bag.smokeT -= 0.16; bagHit(bag.hits % 2 ? 'left' : 'right', null); } }
+  }
+  drawBagLabel();
+  if (bag.age >= BAG_ARRIVE + bag.duration) endBag();
+}
+function endBag() {
+  const pts = bagPoints(bag.hits) * (score.inZone() ? 2 : 1);
+  score.score += pts;
+  if (bag.hits >= 8) { score.hits++; score.combo++; score.best = Math.max(score.best, score.combo); }
+  say(`Speed bag: ${bag.hits} hits  +${pts}`);
+  audio.sfx(bag.hits >= 15 ? 'perfect' : 'hit', { hand: 'right', power: 1 });
+  bag.body.getWorldPosition(bagCenter);
+  shatter(bagCenter, new THREE.Vector3(0, 0.3, -1), 0xff5a6e, 1);
+  scene.remove(bag.group);
+  bag.mat.dispose(); bag.tex.dispose();
+  bag = null;
+  bagReadyAt = gameTime + 20;
+}
+
+// ------------------------------------------------------------------ battle ropes (a burst: pump both arms, stay low)
+
+const ROPE_BEADS = 56;
+const ropeBeadGeo = new THREE.SphereGeometry(0.032, 10, 8);
+const ROPES_ARRIVE = 1.2;
+const ROPE_DELAY = 0.7;    // seconds for a wave to run from your hand to the anchor
+function spawnRopes(head, standing) {
+  const sides = ['left', 'right'].map((hand) => {
+    const sx = hand === 'left' ? -1 : 1;
+    const mat = new THREE.MeshStandardMaterial({ color: HAND_COLOR[hand], emissive: HAND_COLOR[hand], emissiveIntensity: 0.4, roughness: 0.5 });
+    const mesh = new THREE.InstancedMesh(ropeBeadGeo, mat, ROPE_BEADS);
+    mesh.frustumCulled = false;
+    scene.add(mesh);
+    return {
+      hand, mesh, mat, hist: [], pump: 0, lastY: null,
+      handle: new THREE.Vector3(centerX + sx * 0.22, standing - 0.72, head.z - 0.42),
+      anchor: new THREE.Vector3(centerX + sx * 0.45, 0.75, head.z - 6.5),
+    };
+  });
+  ropes = { sides, age: 0, duration: 6, onTime: 0, credited: 0, points: 0, lowTime: 0, tip: '', dummy: new THREE.Object3D() };
+  say('BATTLE ROPES! Pump both arms, stay low!');
+  audio.sfx('burst');
+  pulseBoth(0.4, 60);
+}
+function ropeHandPos(side, xr, t) {
+  if (xr) return fistByHand[side.hand].world;
+  const phase = side.hand === 'left' ? 0 : Math.PI;
+  const y = SMOKE ? 0.16 * Math.sin(2 * Math.PI * 2.4 * t + phase) : pointer.y * 0.35;
+  return side.handle.clone().setY(side.handle.y + y);
+}
+function updateRopes(dt, xr, head) {
+  ropes.age += dt;
+  const t = ropes.age;
+  const active = t >= ROPES_ARRIVE && t < ROPES_ARRIVE + ropes.duration;
+  const reveal = Math.min(1, t / ROPES_ARRIVE);             // ropes snake in from the anchors
+  let bothOn = true;
+  for (const s of ropes.sides) {
+    const hp = ropeHandPos(s, xr, t);
+    s.hist.push([t, hp.y]);
+    while (s.hist.length && t - s.hist[0][0] > ROPE_DELAY + 0.3) s.hist.shift();
+    if (s.lastY != null && dt > 0) s.pump += (Math.min(4, Math.abs(hp.y - s.lastY) / dt) - s.pump) * (1 - Math.exp(-dt / 0.25));
+    s.lastY = hp.y;
+    if (s.pump < ROPE_PUMP_SPEED) bothOn = false;
+    const restY = s.hist.reduce((a, [, y]) => a + y, 0) / s.hist.length;
+    const yAt = (ago) => { // hand height `ago` seconds back
+      for (let i = s.hist.length - 1; i >= 0; i--) if (t - s.hist[i][0] >= ago) return s.hist[i][1];
+      return s.hist[0][1];
+    };
+    for (let i = 0; i < ROPE_BEADS; i++) {
+      const u = i / (ROPE_BEADS - 1);                        // 0 = your hand, 1 = anchor
+      const shown = u >= 1 - reveal;
+      const base = new THREE.Vector3().lerpVectors(hp.clone().setY(restY), s.anchor, u);
+      base.y -= 0.18 * Math.sin(Math.PI * u);                // a little sag
+      base.y += (yAt(u * ROPE_DELAY) - restY) * (1 - u) ** 0.6 * 1.3;
+      ropes.dummy.position.copy(base);
+      ropes.dummy.scale.setScalar(shown ? 1 : 0.001);
+      ropes.dummy.updateMatrix();
+      s.mesh.setMatrixAt(i, ropes.dummy.matrix);
+    }
+    s.mesh.instanceMatrix.needsUpdate = true;
+    s.mat.emissiveIntensity = active && s.pump >= ROPE_PUMP_SPEED ? 1.0 : 0.4;
+  }
+  if (active) {
+    const low = head.y < standing - 0.12 || SMOKE;
+    if (bothOn) {
+      ropes.onTime += dt;
+      if (low) ropes.lowTime += dt;
+      ropes.points += dt * 10 * (low ? 1.5 : 1);
+      if (xr && Math.random() < 0.25) pulseBoth(0.2, 15);
+    }
+    while (ropes.onTime - ropes.credited >= 1) { ropes.credited++; attribution.record('ropes', gameTime); }
+    const left = Math.ceil(ROPES_ARRIVE + ropes.duration - t);
+    const tip = !bothOn ? (ropes.sides.every((s) => s.pump < ROPE_PUMP_SPEED) ? 'Pump both arms!' : 'Both arms - faster!')
+      : !low ? 'Great! Now get low!' : `Keep going! ${left}`;
+    if (tip !== ropes.tip) { ropes.tip = tip; say(tip); }
+  }
+  if (t >= ROPES_ARRIVE + ropes.duration) endRopes(true);
+}
+function endRopes(award) {
+  if (award) {
+    const pts = Math.round(ropes.points) * (score.inZone() ? 2 : 1);
+    score.score += pts;
+    const pct = Math.round((ropes.onTime / ropes.duration) * 100);
+    if (pct >= 50) { score.hits++; score.combo++; score.best = Math.max(score.best, score.combo); }
+    say(`Battle ropes ${pct}%  +${pts}`);
+    audio.sfx(pct >= 70 ? 'perfect' : 'hit', { hand: 'left', power: 0.8 });
+  }
+  for (const s of ropes.sides) { scene.remove(s.mesh); s.mesh.dispose(); s.mat.dispose(); }
+  ropes = null;
+  ropesReadyAt = gameTime + 30;
 }
 
 /**
@@ -578,9 +874,12 @@ function removeOrb(orb) {
  */
 function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
   const t = now();
-  if (t < orb.immuneUntil) return false;
+  if (orb.dying || t < orb.immuneUntil) return false;
   orb.immuneUntil = t + 0.25;
   const flashWeak = () => { orb.mesh.material = MAT.weak; orb.flashUntil = t + 0.15; };
+  const punchMode = settings.gameType === 'punch';
+  // How far the fist travelled just before contact: a real punch, not a wrist flick.
+  const travel = fist ? fistDisplacement(fist, 0.15).length() : 0.4;
 
   if (hand !== orb.hand) {
     score.wrongHand(orb.hand);
@@ -589,14 +888,23 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
     flashWeak();
     return false;
   }
-  if (settings.gameType === 'punch' && speed < orb.minPunch * (orb.swing ? 0.7 : 1)) {
-    score.weakHit();
+  const needSpeed = orb.power ? powerPunchSpeed(orb.minPunch) : orb.minPunch * (orb.swing ? 0.7 : 1);
+  const needTravel = minPunchTravel(difficulty.intensity, orb.power) * (orb.swing ? 0.8 : 1);
+  if (punchMode && (speed < needSpeed || travel < needTravel)) {
+    score.weakHit(orb.power ? 'Power orb - full punch from the shoulder!' : speed < needSpeed ? 'Punch harder!' : 'Punch through it - not a flick!');
     audio.sfx('weak');
     pulse(fist, 0.2, 20);
     flashWeak();
     return false;
   }
+  let power = fist ? punchPower(speed, travel) : 0.6;
+  if (!punchMode) power = Math.max(0.35, power * 0.7);
   let bonus = 1, label = '';
+  if (orb.power) {
+    bonus = 1.5 + 1.5 * power;
+    label = `POWER ${Math.round(power * 100)}%  `;
+    power = Math.max(power, 0.75);
+  }
   if (orb.swing && fist) {
     const d = fistDisplacement(fist);
     if (swingMatches(orb.swing, [d.x, d.y, d.z], 0.25)) {
@@ -607,17 +915,31 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
       label = 'Follow the curve for x2  ';
     }
   }
-  pulse(fist, bonus > 1 ? 1 : 0.8, bonus > 1 ? 80 : 50);
+  if (bonus > 1 && !orb.power) power = Math.max(power, 0.7);
+  pulse(fist, 0.35 + 0.65 * power, 30 + 60 * power);
   score.hit(bonus, label);
-  audio.sfx(bonus > 1 ? 'perfect' : 'hit', { hand });
+  audio.sfx(orb.power ? 'power' : bonus > 1 ? 'perfect' : 'hit', { hand, power });
   attribution.record(orb.activity, gameTime);
-  const b = new THREE.Mesh(burstGeo, new THREE.MeshBasicMaterial({ color: bonus > 1 ? 0xffffff : HAND_COLOR[orb.hand], transparent: true }));
-  b.position.copy(orb.group.position);
-  b.scale.setScalar(orb.r);
-  scene.add(b);
-  bursts.push({ mesh: b, age: 0, r: orb.r });
-  removeOrb(orb);
+  // Hit feel: the orb freezes and flashes white for a split second, then shatters along your punch.
+  orb.dying = 0.035;
+  orb.mesh.material = MAT.flash;
+  orb.mesh.scale.setScalar(orb.r * 1.2);
+  if (orb.shell) orb.shell.visible = false;
+  if (orb.guide) orb.guide.group.visible = false;
+  orb.hitPower = power;
+  orb.hitDir = fist && fist.vel.lengthSq() > 0.09 ? fist.vel.clone().normalize() : new THREE.Vector3(0, 0, -1);
+  orb.hitColor = bonus > 1 ? 0xffffff : HAND_COLOR[orb.hand];
   return true;
+}
+/** End of the hit flash: burst ring + shards, then the orb is gone. */
+function popOrb(orb) {
+  const b = new THREE.Mesh(burstGeo, new THREE.MeshBasicMaterial({ color: orb.hitColor, transparent: true }));
+  b.position.copy(orb.group.position);
+  b.scale.setScalar(orb.r * 0.8);
+  scene.add(b);
+  bursts.push({ mesh: b, age: 0, r: orb.r * 0.8 });
+  shatter(orb.group.position, orb.hitDir, orb.hitColor, orb.hitPower);
+  removeOrb(orb);
 }
 
 // ------------------------------------------------------------------ HUD (canvas texture in the world)
@@ -809,7 +1131,8 @@ function buildMovesUI() {
       <label><input type="radio" name="gtype" value="punch"> Punch (hit hard)</label>
       <label><input type="radio" name="gtype" value="touch"> Touch (just hold your hand there)</label>
     </div>
-    ${group('Orbs', ['jab', 'low', 'swing', 'trace'])}
+    ${group('Orbs', ['jab', 'low', 'swing', 'power', 'pair', 'trace'])}
+    ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes'])}
     ${group('Walls', ['duck', 'squatSide', 'lean', 'pillar'])}
     <div class="muted" id="movesNote" style="font-size:12px"></div>`;
   box.addEventListener('change', (e) => {
@@ -825,7 +1148,7 @@ function syncMovesUI() {
   box.querySelectorAll('input[data-move]').forEach((el) => { el.checked = !!settings.moves[el.dataset.move]; });
   box.querySelectorAll('input[name=gtype]').forEach((el) => { el.checked = el.value === settings.gameType; });
   const notes = [];
-  if (settings.gameType === 'touch' && settings.moves.swing) notes.push('Hooks & uppercuts are skipped in Touch mode (they need a real swing).');
+  if (settings.gameType === 'touch' && (settings.moves.swing || settings.moves.power)) notes.push('Hooks, uppercuts and power orbs are skipped in Touch mode (they need a real punch).');
   if (!Object.values(enabledActivities()).some(Boolean)) notes.push('Everything is off, so you\'ll get plain punches.');
   $('movesNote').textContent = notes.join(' ');
 }
@@ -983,6 +1306,12 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 
 function desktopPunch(hand) {
   raycaster.setFromCamera(pointer, camera);
+  if (bag && bag.age >= BAG_ARRIVE && raycaster.intersectObject(bag.body, false).length) {
+    punchTimer = 0.12; punchHand = hand;
+    punchPoint.copy(bag.body.getWorldPosition(new THREE.Vector3()));
+    bagHit(hand, null);
+    return;
+  }
   raycaster.far = 3.2;
   punchTimer = 0.15;
   punchHand = hand;
@@ -1120,31 +1449,51 @@ function frame(time) {
     spawnTimer += gdt;
     wallCooldown -= gdt;
     const ropeNear = traces.some((t) => t.group.position.z > t.planeZ - t.speed * 2.5); // keep the lane clear around a rope
-    if (spawnTimer >= difficulty.spawnInterval && wallCooldown <= 0 && !ropeNear) {
+    if (pendingBurst) {
+      // A burst waits until the lane is clear, then takes over for a few seconds.
+      if (!orbs.length && !walls.length && !traces.length) {
+        if (pendingBurst === 'bag') spawnBag(head, standing); else spawnRopes(head, standing);
+        pendingBurst = null;
+        spawnTimer = 0;
+      }
+    } else if (!bag && !ropes && spawnTimer >= difficulty.spawnInterval && wallCooldown <= 0 && !ropeNear) {
       spawnTimer = 0;
       const activity = chooseActivity({
         intensity: difficulty.intensity, status: controller.status, boost: boost.value, gains: attribution.w,
-        baseWeights: tuning.weights, enabled: enabledActivities(),
+        baseWeights: tuning.weights, enabled: enabledActivities(true),
       });
       const wallType = wallTypeFor(activity, Math.random, settings.moves);
       if (wallType) spawnWall(head, standing, wallType, activity);
       else if (activity === 'trace') spawnTrace(head, standing);
+      else if (activity === 'pair') { spawnPair(head, standing); spawnTimer = -0.9; }
+      else if (activity === 'bag' || activity === 'ropes') { pendingBurst = activity; say(activity === 'bag' ? 'Speed bag coming...' : 'Battle ropes coming...'); }
       else if (ACTIVITIES.find((a) => a.key === activity).kind === 'orb') spawnOrb(head, standing, activity);
     }
   }
 
-  if (!paused) updateTraces(gdt, xr);
+  if (!paused) {
+    updateTraces(gdt, xr);
+    if (bag) updateBag(gdt, xr);
+    if (ropes) updateRopes(gdt, xr, head);
+  }
+  updateShards(rawDt);
 
   // Orbs.
   for (let i = orbs.length - 1; i >= 0; i--) {
     const o = orbs[i];
+    if (o.dying) { // hit flash: frozen for a split second, then it shatters
+      o.dying -= rawDt;
+      if (o.dying <= 0) popOrb(o);
+      continue;
+    }
     o.group.position.z += o.speed * gdt;
+    if (o.shell) { o.shell.rotation.y += gdt * 1.8; o.shell.rotation.x += gdt * 0.9; o.mesh.rotation.y -= gdt * 0.6; }
     if (o.guide) { // ghost fist keeps sliding along the swing path
       const u = (tNow * 1.3 + i * 0.37) % 1;
       o.guide.ghost.position.copy(o.guide.curve.getPoint(u));
       o.guide.ghost.material.opacity = 0.35 + 0.6 * Math.sin(Math.PI * u);
     }
-    if (o.flashUntil && tNow > o.flashUntil) { o.flashUntil = 0; o.mesh.material = MAT[o.hand]; }
+    if (o.flashUntil && tNow > o.flashUntil) { o.flashUntil = 0; o.mesh.material = o.baseMat; }
     if (xr && !paused) {
       for (const f of fists) {
         const reach = o.r + FIST_R + (o.swing ? 0.05 : 0.02) + (settings.gameType === 'touch' ? 0.03 : 0);
@@ -1152,7 +1501,7 @@ function frame(time) {
       }
     }
     if (SMOKE && orbs[i] === o && o.group.position.z > head.z - 1.2) tryHit(o, null, o.hand, 5);
-    if (orbs[i] === o && o.group.position.z > o.passZ) {
+    if (orbs[i] === o && !o.dying && o.group.position.z > o.passZ) {
       score.miss(); audio.sfx('miss');
       attribution.record(o.activity, gameTime);
       removeOrb(o);
@@ -1265,6 +1614,9 @@ window.pz = {
       orbs: orbs.length, walls: walls.length, swingOrbs: orbs.filter((o) => o.swing).length, secondsInZone: Math.round(c.secondsInZone),
       reps: { ...attribution.counts }, ranking: attribution.ranking().map((r) => `${r.key} ${r.bpmPer10.toFixed(1)}`),
       optionsOpen: options.open, logRows: sessionLog.length, traces: traces.length, gameType: settings.gameType,
+      powerOrbs: orbs.filter((o) => o.power).length, pairOrbs: orbs.filter((o) => o.activity === 'pair').length, shards: shards.length,
+      bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
+      pendingBurst,
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };
@@ -1282,11 +1634,23 @@ window.pz = {
   },
   phone(bpm) { remote.push(bpm); if (sourceKind === 'sim' && !userChoseSource) sourceKind = 'phone'; },
   /** Test helper: touch the nearest plain orb with the correct hand at a given hand speed. */
-  testHit(speed) {
-    const orb = orbs.find((o) => !o.swing);
+  testHit(speed, travel = 0.4, kind = 'plain') {
+    const orb = orbs.find((o) => !o.swing && !o.dying && (kind === 'power' ? o.power : !o.power));
     if (!orb) return null;
-    const fake = { hand: orb.hand, speed, vel: new THREE.Vector3(0, 0, -1), hist: [], world: orb.group.position.clone(), source: null };
+    const world = orb.group.position.clone();
+    const fake = {
+      hand: orb.hand, speed, vel: new THREE.Vector3(0, 0, -speed), world, source: null,
+      hist: [[now() - 0.2, world.clone().add(new THREE.Vector3(0, 0, travel))]],
+    };
     return tryHit(orb, fake);
+  },
+  /** Test helper: force the next thing the game sends (e.g. 'bag', 'ropes', 'pair', 'power'). */
+  force(activity) {
+    clearObstacles();
+    if (activity === 'bag' || activity === 'ropes') pendingBurst = activity;
+    else if (activity === 'pair') spawnPair(head, standing);
+    else spawnOrb(head, standing, activity);
+    return this.state;
   },
   act: (id) => options.hooks.act(id),
   logRows: () => sessionLog,

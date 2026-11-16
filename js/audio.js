@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo } from './core.js?v7';
+import { musicTempo } from './core.js?v9';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
@@ -296,12 +296,38 @@ export class AudioEngine {
     if (!c || c.state !== 'running') return;
     const t = c.currentTime + 0.005;
     switch (name) {
-      case 'hit': { // punchy thwack, pitched by hand
+      case 'hit': { // punchy thwack, pitched by hand; harder punches add a bass thump and a crack
         const base = opts.hand === 'left' ? 520 : 660;
-        this.noiseHit(t, 'bandpass', 2500, 1.2, 0.5, 0.06, this.fx);
-        this.tone(t, base, 'square', 0.12, 0.09, base * 1.5);
+        const p = opts.power ?? 0.5;
+        if (p < 0.3) { // soft punch: hollow thud
+          this.noiseHit(t, 'lowpass', 700, 0.8, 0.45, 0.08, this.fx);
+          this.tone(t, 180, 'sine', 0.18, 0.1, 120);
+          break;
+        }
+        this.noiseHit(t, 'bandpass', 2500, 1.2, 0.35 + 0.3 * p, 0.06, this.fx);
+        this.tone(t, base, 'square', 0.1 + 0.05 * p, 0.09, base * 1.5);
+        this.tone(t, 130, 'sine', 0.35 * p, 0.14 + 0.08 * p, 45);                 // bass thump
+        if (p > 0.6) this.noiseHit(t, 'highpass', 4500, 0.7, 0.35 * p, 0.12, this.fx); // glassy crack
         break;
       }
+      case 'power': { // power orb smashed: big boom + shatter
+        const p = opts.power ?? 1;
+        this.tone(t, 110, 'sine', 0.5, 0.35, 38);
+        this.tone(t, 70, 'triangle', 0.3, 0.3, 35);
+        this.noiseHit(t, 'highpass', 3500, 0.6, 0.45, 0.25, this.fx);
+        this.noiseHit(t + 0.02, 'bandpass', 6000, 2, 0.3 * p, 0.3, this.fx);
+        [1046.5, 1568].forEach((f, i) => this.tone(t + 0.04 + i * 0.05, f, 'triangle', 0.1, 0.25));
+        break;
+      }
+      case 'bag': { // speed bag tap: tight and quick
+        this.noiseHit(t, 'bandpass', 1800, 2.5, 0.4, 0.04, this.fx);
+        this.tone(t, opts.hand === 'left' ? 240 : 280, 'sine', 0.22, 0.06, 140);
+        break;
+      }
+      case 'burst': // a speed bag / battle ropes is coming: two quick rising blips
+        this.tone(t, 660, 'square', 0.12, 0.08, 990);
+        this.tone(t + 0.12, 880, 'square', 0.12, 0.1, 1320);
+        break;
       case 'perfect': // followed the swing curve: punchy hit plus a bright rising sparkle
         this.noiseHit(t, 'bandpass', 2500, 1.2, 0.5, 0.06, this.fx);
         [784, 1046.5, 1318.5].forEach((f, i) => this.tone(t + i * 0.045, f, 'triangle', 0.13, 0.22));

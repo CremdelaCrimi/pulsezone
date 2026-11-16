@@ -503,6 +503,12 @@ export const ACTIVITIES = Object.freeze([
   { key: 'lateral', label: 'Side steps', kind: 'wall', from: 0.25, base: 0.35, prior: 1.0 },
   { key: 'squatSide', label: 'Side squats', kind: 'wall', from: 0.4, base: 0.3, prior: 1.6 },
   { key: 'trace', label: 'Rope tracing', kind: 'orb', from: 0.2, base: 0.35, prior: 0.8 },
+  // Full-body power moves. Bursts (speed bag, battle ropes) are short all-out efforts
+  // that the challenge boost leans on when your heart rate is stuck.
+  { key: 'power', label: 'Power punches', kind: 'orb', from: 0.3, base: 0.3, prior: 0.9 },
+  { key: 'pair', label: 'Squat + reach', kind: 'orb', from: 0.3, base: 0.3, prior: 1.4 },
+  { key: 'bag', label: 'Speed bag', kind: 'burst', from: 0.35, base: 0.1, prior: 0.3 },     // per punch on the bag
+  { key: 'ropes', label: 'Battle ropes', kind: 'burst', from: 0.45, base: 0.1, prior: 1.6 }, // per second of pumping
 ]);
 export const ACTIVITY_KEYS = ACTIVITIES.map((a) => a.key);
 
@@ -516,19 +522,23 @@ export const ACTIVITY_KEYS = ACTIVITIES.map((a) => a.key);
 export function chooseActivity({ intensity, status, boost = 0, gains = null, baseWeights = null, enabled = null, rng = Math.random }) {
   const weights = ACTIVITIES.map((a) => {
     if (enabled && enabled[a.key] === false) return 0; // turned off in options
-    const unlock = clamp01((intensity - a.from) / 0.1 + (a.from === 0 ? 1 : 0));
+    let unlock = clamp01((intensity - a.from) / 0.1 + (a.from === 0 ? 1 : 0));
+    if (a.kind === 'burst' && status === 'Below') unlock = Math.max(unlock, clamp01((boost - 0.2) / 0.2)); // stuck: bursts open up early
     let w = (baseWeights?.[a.key] ?? a.base) * unlock;
     if (w <= 0) return 0;
     if (status === 'Below') {
       if (gains) {
         const g = gains[a.key] ?? a.prior;
-        const mean = ACTIVITY_KEYS.reduce((s, k) => s + (gains[k] ?? 0), 0) / ACTIVITY_KEYS.length || 1e-6;
+        const mean = ACTIVITIES.reduce((s, b) => s + (gains[b.key] ?? b.prior), 0) / ACTIVITIES.length || 1e-6;
         w *= Math.exp((0.5 + 0.7 * boost) * clamp((g - mean) / Math.max(mean, 0.05), -1, 1));
       }
       if (a.key !== 'jab') w *= 1 + 1.2 * boost;
+      if (a.kind === 'burst') w *= 1 + 5 * boost; // the boost's main tool: pour effort into a bag or ropes
       w = Math.max(w, 0.12 * (baseWeights?.[a.key] ?? a.base) * unlock); // always keep some variety
     } else if (status === 'Above' || status === 'SafetyBrake') {
-      if (a.key !== 'jab') w *= 0.35;
+      if (a.key !== 'jab') w *= a.kind === 'burst' ? 0.05 : 0.35;
+    } else if (a.kind === 'burst') {
+      w *= 0.5; // in the zone: an occasional burst for variety
     }
     return w;
   });
@@ -588,6 +598,23 @@ export const traceSeconds = (intensity) => lerp(4.5, 2.6, clamp01(intensity));
 
 /** Points for a trace from the fraction of time your hand stayed on the orb. */
 export const tracePoints = (fraction) => Math.round(50 * clamp01(fraction) ** 1.5);
+
+// ---------------------------------------------------------------- punch quality (anti wrist-flick)
+
+/**
+ * How far (metres) a fist must have travelled in the last ~0.15 s for a hit to count in Punch
+ * mode, so flicking the wrist at an orb doesn't pop it. Power orbs need a full punch.
+ */
+export const minPunchTravel = (intensity, power = false) => (power ? 0.32 : lerp(0.13, 0.22, clamp01(intensity)));
+/** Speed (m/s) a power orb needs, given the normal minimum punch speed. */
+export const powerPunchSpeed = (minPunch) => Math.max(2.2, minPunch * 1.6);
+/** 0..1 "how strong was that punch" from fist speed and travel, used for points, sound and haptics. */
+export const punchPower = (speed, travel) => clamp01(0.55 * clamp01((speed - 1) / 3.5) + 0.45 * clamp01((travel - 0.1) / 0.35));
+
+/** Speed bag: points for a burst of hits (5 each, more for a big flurry). */
+export const bagPoints = (hits) => Math.round(5 * hits + 2 * Math.max(0, hits - 15));
+/** Battle ropes: is a hand pumping hard enough? (smoothed vertical speed, m/s) */
+export const ROPE_PUMP_SPEED = 0.7;
 
 // ---------------------------------------------------------------- challenge boost (when you're stuck)
 

@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints,
+  wallDepth, tracePath, traceSeconds, tracePoints, minPunchTravel, powerPunchSpeed, punchPower, bagPoints,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -154,17 +154,24 @@ check(hz.flame === 1 && hc.cold === 1 && hh.hyper === 1 && heatLook('Below', 112
 console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music tempo');
 {
   const count = (opts, n = 4000) => {
-    const c = {}; for (let i = 0; i < n; i++) { const k = chooseActivity(opts); c[k] = (c[k] || 0) + 1; } return c;
+    const c = {}; const rng = mulberry32(11); for (let i = 0; i < n; i++) { const k = chooseActivity({ rng, ...opts }); c[k] = (c[k] || 0) + 1; } return c;
   };
   const easy = count({ intensity: 0.05, status: 'Below' });
   check(Object.keys(easy).length === 1 && easy.jab, 'very low intensity: only plain punches');
   const mid = count({ intensity: 0.5, status: 'InZone' });
   check(ACTIVITY_KEYS.every((k) => mid[k] > 0), `mid intensity: every activity appears (${JSON.stringify(mid)})`);
   const gains = { jab: 0.05, low: 0.3, swing: 0.1, duck: 0.3, lateral: 0.2, squatSide: 0.9 };
-  const stuck = count({ intensity: 0.9, status: 'Below', boost: 1, gains });
-  const normal = count({ intensity: 0.9, status: 'InZone', gains });
-  check(stuck.squatSide > normal.squatSide * 1.8 && stuck.jab < normal.jab * 0.6,
+  const noBursts = { bag: false, ropes: false };
+  const stuck = count({ intensity: 0.9, status: 'Below', boost: 1, gains, enabled: noBursts });
+  const normal = count({ intensity: 0.9, status: 'InZone', gains, enabled: noBursts });
+  check(stuck.squatSide > normal.squatSide * 1.6 && stuck.jab < normal.jab * 0.6,
     `stuck below zone: far more of what works (side squats ${normal.squatSide}->${stuck.squatSide}, punches ${normal.jab}->${stuck.jab})`);
+  const bursts = (c) => (c.bag || 0) + (c.ropes || 0);
+  const stuckAll = count({ intensity: 0.9, status: 'Below', boost: 1 }), zoneAll = count({ intensity: 0.9, status: 'InZone' });
+  check(bursts(stuckAll) > bursts(zoneAll) * 4, `stuck: speed bag / battle ropes become the main tool (${bursts(zoneAll)}->${bursts(stuckAll)})`);
+  const stuckEarly = count({ intensity: 0.2, status: 'Below', boost: 0.6 });
+  check(bursts(stuckEarly) > 0 && !bursts(count({ intensity: 0.2, status: 'Below', boost: 0 })), 'bursts open up early only when you are stuck');
+  check(!bursts(count({ intensity: 0.9, status: 'Above' })) || bursts(count({ intensity: 0.9, status: 'Above' })) < bursts(zoneAll) * 0.4, 'above the zone: hardly any bursts');
   const above = count({ intensity: 0.9, status: 'Above', gains });
   check(above.jab > normal.jab * 1.3, `above zone: mostly easy punches (${normal.jab}->${above.jab})`);
   check(wallTypeFor('duck') === 'duck' && ['squatLeft', 'squatRight'].includes(wallTypeFor('squatSide')) && wallTypeFor('jab') === null, 'activities map to wall shapes');
@@ -181,7 +188,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
   // Learning: a synthetic player whose heart responds strongly to side squats and barely to punches.
   // Generated with a slightly different lag than the learner assumes, plus noise.
-  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6 };
+  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5 };
   const att = new HeartRateAttribution({ weights: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 1.0])) });
   const rng = mulberry32(7);
   const tr = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
@@ -230,6 +237,13 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(tp.length === 5 && tp.every(([x, y]) => Math.abs(x) <= 0.5 && y >= 1.7 - 0.95 && y <= 1.7 - 0.05) && Math.min(...tp.map((p) => p[1])) < 1.45,
     'trace path stays within reach and dips low');
   check(traceSeconds(0) > traceSeconds(1) && tracePoints(1) === 50 && tracePoints(0.5) < 25, 'traces get quicker when hard; accuracy drives points');
+
+  // Punch quality: wrist flicks don't count, power orbs need a full punch, strength scales feedback.
+  check(minPunchTravel(0) < minPunchTravel(1) && minPunchTravel(1) <= 0.25 && minPunchTravel(0.5, true) >= 0.3,
+    'a hit needs real fist travel (more when hard, a full punch for power orbs)');
+  check(powerPunchSpeed(1.6) > 1.6 && powerPunchSpeed(0.6) >= 2.2, 'power orbs need a faster punch than normal orbs');
+  check(punchPower(1, 0.05) < 0.1 && punchPower(5, 0.5) > 0.95 && punchPower(3, 0.3) > punchPower(2, 0.2), 'punch strength grows with speed and travel');
+  check(bagPoints(10) === 50 && bagPoints(25) > 25 * 5, 'speed bag: 5 points a hit, bonus for a big flurry');
 
   check(musicTempo({ intensity: 0.5, status: 'Below', bpm: 100, target: 120 }) > musicTempo({ intensity: 0.5, status: 'InZone', bpm: 120, target: 120 }),
     'music speeds up when you need to pick it up');

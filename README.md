@@ -23,7 +23,10 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 
 ## The game
 
-- **Orbs:** punch **blue** with your left hand and **orange** with your right. **Low orbs** (knee to hip height) mean squat and punch.
+- **Orbs:** punch **blue** with your left hand and **orange** with your right. **Low orbs** (knee to hip height) mean squat and punch. In Punch mode a hit needs a real punch: your fist has to travel about 13–22 cm just before contact (more at higher intensity), so wrist flicks don't count.
+- **Power orbs** are faceted and wrapped in a spinning wireframe shell. They need a full punch from the shoulder (fast, with 30+ cm of travel) and score up to 3× depending on how hard you hit.
+- **Squat, then reach up:** a low orb for one hand, then a high orb for the other hand about 0.85 s later, joined by a dashed line. It's a squat jump without leaving the floor.
+- **Hit feel:** a hit orb flashes white for a split second, then shatters, with the pieces flying the way your fist was going. Harder punches throw more pieces, sound bigger (a soft punch is a hollow thud, a hard one adds a bass thump and a glassy crack) and buzz harder.
 - **Swing orbs** have a glowing **white curve** through them, with a "ghost fist" sliding along it. Swing along the curve (an uppercut, or a hook from the outside in) for **double points**. Any solid punch still counts, so you're never punished for an imperfect angle.
 - **Walls (purple boxes):** get your head into the open gap: **duck**, **step aside** from a centre pillar, **lean left or right**, or **squat left or right**. Each wall is a box, and its length shows how long to hold the position (about 1.2 s for a duck).
 - **Rope tracing:** a long glowing rope in your hand's colour flows toward you along the lane, curving left, right, up and down (low dips mean squats). Where it crosses arm's length there's a ring: keep that hand on the rope as it slides past, and the ring turns green while you're on it. Points depend on how closely you followed the whole rope.
@@ -36,7 +39,11 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 
 - **Intensity:** the zone controller raises intensity whenever you're below target.
 - **Challenge boost:** if you stay below for about 15 seconds without heart rate rising (or the game is already at full intensity), a **challenge boost** builds up over about 45 seconds. It brings faster spawns, faster orbs and more walls and squat punches, and the scoreboard shows `CHALLENGE +NN%`. It fades once you reach the zone.
-- **What works for you:** the game **learns what raises YOUR heart rate**. It compares your heart rate with how many of each activity you've recently done (punches, squat punches, hooks and uppercuts, ducks, side steps, side squats), allowing for the heart's 30–40 second lag. When you're below the zone, it sends more of whatever works for you. When you're above it, it sends easier punches. The estimates are saved in the browser and refine over several workouts.
+- **Bursts:** the boost's main tool is a short all-out effort, sent once the lane is clear:
+  - **Speed bag:** a bag hangs in front of your chest for 4–5 seconds. Hit it as many times as you can (5 points a hit, more for a big flurry). No aiming or reaction time needed, just effort.
+  - **Battle ropes:** two ropes run from your hands down the lane for 6 seconds. Pump both arms up and down fast; the waves you make travel down the ropes. Staying low (half squat) scores 1.5×.
+  - Each can come at most every 20 s (speed bag) or 30 s (ropes). You'll see the odd one in the zone too, for variety, and hardly any above it.
+- **What works for you:** the game **learns what raises YOUR heart rate**. It compares your heart rate with how many of each activity you've recently done (punches, squat punches, hooks and uppercuts, power punches, squat-and-reach pairs, rope tracing, speed bag, battle ropes, ducks, side steps, side squats), allowing for the heart's 30–40 second lag. When you're below the zone, it sends more of whatever works for you. When you're above it, it sends easier punches. The estimates are saved in the browser and refine over several workouts.
 - **Where to see it:** in VR it's on the options board, and the end screen names your best activity.
 
 ### Options (in VR)
@@ -48,7 +55,7 @@ Press **Y** (or **B**) to open the options board on your left, point at it with 
 - Turn music on or off and change the volume.
 - Set the challenge level: **Gentle / Normal / Hard** changes how hard the game pushes and how fast the boost builds.
 - Choose the game type (Punch or Touch).
-- Pick your **moveset**: orbs (**Punch**, **Squat punch**, **Hook/uppercut**, **Rope**) and walls (**Duck**, **Side squat**, **Lean**, **Pillar**). Highlighted means on. The same checklist is on the game page under **Moveset**, and the two stay in sync. If you pick moves that normally unlock later (e.g. only ducks), you get them straight away.
+- Pick your **moveset**: orbs (**Punch**, **Squat punch**, **Hook/uppercut**, **Rope**), more (**Power**, **Squat+reach**, **Speed bag**, **Ropes**) and walls (**Duck**, **Side squat**, **Lean**, **Pillar**). Highlighted means on. Hooks, uppercuts and power orbs need Punch mode. The same checklist is on the game page under **Moveset**, and the two stay in sync. If you pick moves that normally unlock later (e.g. only ducks), you get them straight away.
 - See the "what raises your heart rate" chart.
 - Restart, end the workout, or close the board.
 
@@ -70,7 +77,7 @@ Left click = left punch · right click = right punch · hold **C** duck · **A/D
 | `js/dev.js` | Developer tuning panel |
 | `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
 | `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
-| `test/core.test.mjs` | 69 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, activity mix, challenge boost, heart-rate learning, music tempo |
+| `test/core.test.mjs` | 76 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
 
@@ -103,7 +110,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v7` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v9` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 
