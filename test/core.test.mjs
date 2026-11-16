@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -253,6 +253,25 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(!wallHitsHead(rise, 0, 1.68) && wallHitsHead(rise, 0, 1.5) && wallHitsHead(rise, 0.4, 1.2), 'stand-up box: hits you if you stay low, clear when standing tall');
   check(!wallHitsHead(wallPolygon('duck', 1.7), 0, 1.35) && !wallHitsHead(rise, 0, 1.6), 'duck then stand: both passable from a normal duck and a normal stance');
   { const seen = new Set(); for (let i = 0; i < 300; i++) seen.add(pickWallType(1)); check(!seen.has('rise'), 'stand-up boxes only come after a squat, never at random'); }
+
+  // Heart-lag bridge: the HUD says "climbing" when you're working hard enough before BPM catches up.
+  {
+    const m = new HeartRateAttribution();
+    for (let t = 0; t < 60; t += 1) m.update(t, 95, 1);              // resting ~95 for a minute
+    const restProj = m.projected();
+    for (let t = 60; t < 75; t += 0.5) { m.record('squatSide', t); m.update(t, 97, 1); } // 15 s of hard squats, heart barely moved yet
+    const slow = m.base + Object.keys(m.rate).reduce((s2, k) => s2 + m.w[k] * m.rate[k], 0);
+    check(m.projected() > restProj + 20 && m.projected() > slow + 5,
+      `projected heart rate jumps with effort before the slow average does (${restProj.toFixed(0)} -> ${m.projected().toFixed(0)}, slow ${slow.toFixed(0)})`);
+    check(heartTrend({ status: 'Below', bpm: 105, projected: 118, target: 120 }) === 'climbing'
+      && heartTrend({ status: 'Below', bpm: 105, projected: 108, target: 120 }) === null
+      && heartTrend({ status: 'Above', bpm: 134, projected: 122, target: 120 }) === 'easing'
+      && heartTrend({ status: 'InZone', bpm: 120, projected: 140, target: 120 }) === null
+      && heartTrend({ status: 'Below', bpm: 105, projected: null, target: 120 }) === null,
+      'climbing / easing only when effort already points into the zone');
+    check(streakMilestone(14.9, 15.1) === 1 && streakMilestone(29, 31) === 2 && streakMilestone(15.2, 16) === 0 && streakMilestone(0, 0.5) === 0,
+      'zone streak milestones every 15 s');
+  }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
   {

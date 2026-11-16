@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo } from './core.js?v11';
+import { musicTempo } from './core.js?v13';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
@@ -392,6 +392,12 @@ export class AudioEngine {
         this.env(g, t, 0.35, 0.05, 0.25);
         src.connect(f).connect(g).connect(this.fx);
         src.start(t, 0, 0.35);
+        break;
+      }
+      case 'streak': { // held the zone another 15 s: a soft bell chord that climbs with the streak
+        const up = Math.pow(2, Math.min(opts.level ?? 1, 8) / 12);
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.tone(t + i * 0.03, f * up, 'sine', 0.09, 0.9));
+        this.tone(t, 1567.98 * up, 'triangle', 0.05, 1.2);
         break;
       }
       case 'zone': // entered the zone: rising chime

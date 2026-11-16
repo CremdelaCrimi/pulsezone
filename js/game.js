@@ -6,15 +6,15 @@ import {
   evaluateDifficulty, estimatedMaxBpm, EASY, HARD, WALL_TYPES, wallPolygon, wallHitsHead,
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
   HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
-  TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS,
+  TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v11';
+} from './core.js?v13';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v11';
+import { AudioEngine } from './audio.js?v13';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v12';
-import { loadTuning, createDevPanel } from './dev.js?v11';
+import { OptionsPanel } from './options.js?v13';
+import { loadTuning, createDevPanel } from './dev.js?v13';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -292,6 +292,7 @@ function startWorkout() {
   gameTime = 0;
   sessionLog.length = 0;
   finishedPlayed = false;
+  zoneStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
   clearObstacles();
   score.reset();
   resetReactor();
@@ -748,6 +749,9 @@ function updateReactor(dt, rawDt, status, running) {
 let zoneAmt = 0;        // 0..1, eases in when you're in the zone
 let beatPhase = 0;      // music beats, for pulsing things to the tempo
 let hitFlash = 0;       // red flash when a guard shot gets through
+let zoneStreak = 0;     // seconds in the zone without dropping out (training only)
+let streakFlash = 0;    // lane rails flare up at each streak milestone
+let trend = null, trendShown = null, trendFor = 0, projSmooth = null; // 'climbing' / 'easing' (heart catching up with effort)
 const eqMats = [0xff8a3d, 0xff4fa3].map((c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.9, roughness: 0.5 }));
 const eqGeo = new THREE.BoxGeometry(0.28, 1, 0.28);
 eqGeo.translate(0, 0.5, 0); // grow up from the floor
@@ -835,6 +839,8 @@ function updateZoneWorld(rawDt, inZone, paused, head) {
     t.mat.opacity = 0.75 * zoneAmt;
   }
   railMat.emissive.copy(railBase).lerp(railZone, zoneAmt);
+  streakFlash = Math.max(0, streakFlash - rawDt * 1.5);
+  railMat.emissiveIntensity = 1 + 2.5 * streakFlash;
 }
 
 // ------------------------------------------------------------------ hit feel: flash, shatter along your punch
@@ -1283,9 +1289,41 @@ scene.add(thermo.mesh);
 const ZONE_COLOR = {
   InZone: '#4dff73', Below: '#59b3ff', Above: '#ff9933', SafetyBrake: '#ff3333', NoSignal: '#999999',
 };
+/** Is your heart rate on its way into the zone (or back down to it)? Shown after it holds 2 s. */
+function updateTrend(rawDt, src) {
+  const p = attribution.projected();   // effort-based estimate, steadied over ~4 s (single reps make it jumpy)
+  projSmooth = p == null ? null : projSmooth == null ? p : projSmooth + (p - projSmooth) * (1 - Math.exp(-rawDt / 4));
+  const t = controller.phase === Phase.Training || controller.phase === Phase.WarmUp ? heartTrend({
+    status: controller.status, bpm: src.hasReading ? src.currentBpm : 0, projected: projSmooth,
+    target: controller.currentSetpoint, half: controller.s.zoneHalfWidth,
+  }) : null;
+  if (t !== trend) { trend = t; trendFor = 0; } else trendFor += rawDt;
+  if (trend && trendFor >= 2) trendShown = trend;
+  else if (!trend && trendFor >= 3) trendShown = null; // linger a little so it doesn't flicker
+}
+
+/** Zone streaks: every 15 s you hold the zone, a chime (higher each time), bonus points and charge. */
+function updateStreak(gdt) {
+  if (controller.phase !== Phase.Training || controller.status !== Zone.InZone) { zoneStreak = 0; return; }
+  const before = zoneStreak;
+  zoneStreak += gdt;
+  const m = streakMilestone(before, zoneStreak);
+  if (!m) return;
+  const bonus = 20 * Math.min(m, 8);
+  score.score += bonus;
+  reactor.charge = Math.min(0.999, reactor.charge + 0.04);
+  say(`ZONE STREAK ${mmss(m * ZONE_STREAK_STEP)}!  +${bonus}`);
+  audio.sfx('streak', { level: m });
+  streakFlash = 1;
+  pulseBoth(0.3, 60);
+}
+
 function statusLabel(c) {
   if (c.phase === Phase.Finished) return 'NICE WORK';
   if (c.phase === Phase.CoolDown && c.status !== Zone.SafetyBrake) return 'COOLING DOWN';
+  // Heart rate lags effort by 30-40 s: say so when you're already doing the right thing.
+  if (trendShown === 'climbing' && c.status === Zone.Below) return 'CLIMBING - KEEP IT UP';
+  if (trendShown === 'easing' && c.status === Zone.Above) return 'SETTLING - NICE';
   return { InZone: 'IN THE ZONE', Below: 'PICK IT UP', Above: 'EASE OFF', SafetyBrake: 'SAFETY BRAKE - SLOW DOWN', NoSignal: 'NO HEART-RATE SIGNAL' }[c.status];
 }
 const PHASE_LABEL = { WarmUp: 'WARM-UP', Training: 'TRAINING', CoolDown: 'COOL-DOWN', Finished: 'DONE' };
@@ -1300,7 +1338,7 @@ function drawHud(xr) {
   const boostPct = Math.round(boost.value * 100);
   const key = [bpmText, c.status, c.phase, Math.floor(remaining), Math.round(c.intensity * 100), score.score, score.combo,
     fresh ? lastEvent : '', statusLine, sourceKind, phoneFallback, workloadMode, link.code, xr, Math.round(c.currentSetpoint), c.s.targetBpm,
-    Math.round(boostPct / 5), options.open].join('|');
+    Math.round(boostPct / 5), options.open, trendShown, Math.floor(zoneStreak)].join('|');
   if (key === hudKey) return;
   hudKey = key;
 
@@ -1313,6 +1351,10 @@ function drawHud(xr) {
 
   g.fillStyle = zc; g.font = '700 150px system-ui, sans-serif';
   g.fillText(bpmText, W / 2 - 50, 110);
+  if (trendShown && c.phase !== Phase.Finished) { // arrow: where your heart rate is heading
+    g.fillStyle = trendShown === 'climbing' ? '#4dff73' : '#7fd8ff'; g.font = '700 70px system-ui, sans-serif';
+    g.fillText(trendShown === 'climbing' ? '\u25B2' : '\u25BC', W / 2 - 50 - bpmText.length * 46 - 50, 105);
+  }
   g.fillStyle = '#dfe3ea'; g.font = '600 44px system-ui, sans-serif'; g.textAlign = 'left';
   g.fillText('BPM', W / 2 + (bpmText.length * 42), 128);
   g.textAlign = 'center';
@@ -1365,6 +1407,9 @@ function drawHud(xr) {
   g.font = '26px system-ui, sans-serif'; g.fillStyle = '#c9ced8';
   g.fillText(`combo ${score.combo} (best ${score.best})`, 760, 100);
   g.fillText(`in zone ${mmss(c.secondsInZone)}`, 760, 136);
+  if (zoneStreak >= ZONE_STREAK_STEP && c.phase !== Phase.Finished) {
+    g.fillStyle = '#ffc04d'; g.fillText(`streak ${mmss(zoneStreak)}`, 760, 172);
+  }
 
   hudTex.needsUpdate = true;
 }
@@ -1786,11 +1831,13 @@ function frame(time) {
     if (controller.phase !== Phase.CoolDown) boost.update(gdt, { status: controller.status, intensity: controller.intensity, bpmTrend: controller.bpmTrend });
     else boost.value = Math.max(0, boost.value - gdt / 10);
     attribution.update(gameTime, src.hasReading && controller.status !== Zone.NoSignal ? src.currentBpm : null);
+    updateStreak(gdt);
     if (gameTime - gainsSavedAt > 30) { gainsSavedAt = gameTime; saveGains(); }
     logTimer += gdt;
     if (logTimer >= 1) { logTimer = 0; logRow(); }
   }
   difficulty = boostDifficulty(difficultyFor(controller.intensity), boost.value);
+  updateTrend(rawDt, src);
   if (controller.phase === Phase.Training && src.hasReading && !paused) { avgSum += src.currentBpm; avgN++; }
   if (controller.status === Zone.InZone && lastStatus !== Zone.InZone && controller.phase !== Phase.Finished) audio.sfx('zone');
   lastStatus = controller.status;
@@ -1986,7 +2033,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), trend: trendShown, zoneStreak: Math.floor(zoneStreak), projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };

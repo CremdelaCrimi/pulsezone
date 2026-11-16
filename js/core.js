@@ -755,6 +755,9 @@ export class HeartRateAttribution {
     this.prior = Object.fromEntries(ACTIVITIES.map((a) => [a.key, a.prior]));
     this.w = Object.fromEntries(ACTIVITIES.map((a) => [a.key, weights?.[a.key] != null ? 0.7 * weights[a.key] + 0.3 * a.prior : a.prior]));
     this.rate = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0])); // smoothed reps/min
+    // Same, but over ~12 s: "how hard you're working right now", before your heart has caught up.
+    this.fastTau = 12;
+    this.fast = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
     this.counts = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
     this.base = null;          // learned resting-ish level
     this.lastT = null;
@@ -765,7 +768,8 @@ export class HeartRateAttribution {
   decayTo(t) {
     if (this.lastT != null && t > this.lastT) {
       const f = Math.exp(-(t - this.lastT) / this.tau);
-      for (const k of ACTIVITY_KEYS) this.rate[k] *= f;
+      const ff = Math.exp(-(t - this.lastT) / this.fastTau);
+      for (const k of ACTIVITY_KEYS) { this.rate[k] *= f; this.fast[k] *= ff; }
     }
     this.lastT = t;
   }
@@ -774,6 +778,7 @@ export class HeartRateAttribution {
     if (!(key in this.w)) return;
     this.decayTo(t);
     this.rate[key] += 60 / this.tau; // a steady r reps/min settles at rate = r
+    this.fast[key] += 60 / this.fastTau;
     this.counts[key]++;
   }
 
@@ -799,11 +804,39 @@ export class HeartRateAttribution {
     return true;
   }
 
+  /**
+   * Where your heart rate is heading if you keep up what you've been doing for the last ~12 s
+   * (null until the model has a baseline). Heart rate lags effort by 30-40 s; this doesn't.
+   */
+  projected() {
+    if (this.base == null) return null;
+    return ACTIVITY_KEYS.reduce((s, k) => s + this.w[k] * this.fast[k], this.base);
+  }
+
   /** Activities sorted by estimated effect: BPM added per 10 reps/minute, plus this session's reps. */
   ranking() {
     return ACTIVITIES.map((a) => ({ key: a.key, label: a.label, bpmPer10: this.w[a.key] * 10, reps: this.counts[a.key] }))
       .sort((p, q) => q.bpmPer10 - p.bpmPer10);
   }
+}
+
+/**
+ * Bridge the heart's lag on the HUD. 'climbing': you're below the zone but working hard enough
+ * that your heart rate is on its way up into it. 'easing': you're above it but have eased off
+ * enough that it's coming down. Otherwise null (just follow the usual cue).
+ */
+export function heartTrend({ status, bpm, projected, target, half = 5, margin = 4 }) {
+  if (projected == null || !bpm) return null;
+  if (status === 'Below' && projected >= target - half && projected - bpm >= margin) return 'climbing';
+  if (status === 'Above' && projected <= target + half && bpm - projected >= margin) return 'easing';
+  return null;
+}
+
+/** Zone streaks: which milestone (1 = 15 s, 2 = 30 s, ...) was just reached, or 0. */
+export const ZONE_STREAK_STEP = 15;
+export function streakMilestone(before, after, step = ZONE_STREAK_STEP) {
+  const a = Math.floor(before / step), b = Math.floor(after / step);
+  return b > a ? b : 0;
 }
 
 // ---------------------------------------------------------------- music tempo as a pacing cue
