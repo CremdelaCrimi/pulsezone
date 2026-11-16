@@ -103,7 +103,8 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - Heat gauge (thermometer) on the left: frosty below the zone, a lively flame in the zone, a hyper flame above.
 - In-world scoreboard: heart rate, target, phase and time, intensity, score, combo, challenge boost, phone status and pairing code, short call-outs ("Stand tall!", "Ride the rope!", "Perfect hook!").
 - **In the zone, the world lights up:** equalizer pillars pulse to the beat along the lane, embers drift up, fists leave glowing trails, the lane rails turn from blue to orange, the sky warms.
-- Controller haptics on hits, blocks and while on the rope.
+- Controller haptics on hits, blocks and while on the rope; a wrong-hand hit double-buzzes the correct controller.
+- **First-time hints:** the first two times a player meets a guard shot, rope, two-hand rope or slam bar, see-through ghost fists demonstrate the move.
 - **Heart-lag bridge:** when you're below the zone but a ~12 s effort estimate (from the learning model) says your heart rate is heading into it, the scoreboard shows a green ▲ and "CLIMBING – KEEP IT UP"; above the zone, "SETTLING" with a ▼ once you've eased off enough.
 - **Zone streaks:** every 15 s in the zone: a rising bell chord, the rails flare, bonus points and reactor charge; the current streak is on the scoreboard.
 - **End-of-workout board:** heart-rate graph (coloured by zone) over the target band, time in zone %, average/peak, longest streak, score, reactor level, top heart-raising move.

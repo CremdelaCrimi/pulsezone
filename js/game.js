@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v16';
+} from './core.js?v17';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v16';
+import { AudioEngine } from './audio.js?v17';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v16';
-import { loadTuning, createDevPanel } from './dev.js?v16';
+import { OptionsPanel } from './options.js?v17';
+import { loadTuning, createDevPanel } from './dev.js?v17';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -620,7 +620,7 @@ function spawnGuard(head, standing) {
   group.add(core, halo, icon);
   group.position.set(centerX, standing - 0.08, head.z - SPAWN_DISTANCE);
   scene.add(group);
-  guards.push({ group, core, halo, icon, speed: difficulty.orbSpeed * 0.9, hitZ: head.z - 0.35, announced: false });
+  guards.push({ group, core, halo, icon, speed: difficulty.orbSpeed * 0.9, hitZ: head.z - 0.35, announced: false, teach: teach('guard') });
 }
 /** Both fists up by your face, in front of you. */
 function isGuarding(head, xr) {
@@ -1125,7 +1125,7 @@ function spawnTrace(head, standing, two = false) {
     ? [makeStrand(group, ptsAt(-SWEEP_HALF_GAP), 'left'), makeStrand(group, ptsAt(SWEEP_HALF_GAP), 'right')]
     : [makeStrand(group, ptsAt(0), ctrl.reduce((sum, [x]) => sum + x, 0) < 0 ? 'left' : 'right')];
   scene.add(group);
-  traces.push({ group, strands, two, length, speed, planeZ: head.z - 0.5, started: false, totalTime: 0 });
+  traces.push({ group, strands, two, length, speed, planeZ: head.z - 0.5, started: false, totalTime: 0, teach: teach(two ? 'sweep' : 'trace') });
   // Two-hand rope: a slam bar follows SLAM_GAP s after the tail (booked in its lane slot).
   if (two) spawnSlam(head, standing, { dist: 14 + length + SLAM_GAP * speed, speed });
 }
@@ -1219,7 +1219,7 @@ function spawnSlam(head, standing, { dist = SPAWN_DISTANCE, speed = difficulty.o
   const arrows = [-0.3, 0, 0.3].map((x) => { const a = new THREE.Mesh(slamArrowGeo, slamMat); a.position.set(x, 0.3, 0); group.add(a); return a; });
   group.position.set(centerX, standing - 0.02, head.z - dist);
   scene.add(group);
-  slams.push({ group, arrows, speed, t: { left: null, right: null }, passZ: head.z + 0.4, announced: false, age: 0 });
+  slams.push({ group, arrows, speed, t: { left: null, right: null }, passZ: head.z + 0.4, announced: false, age: 0, teach: teach('slam') });
 }
 function endSlam(s, i, hit) {
   if (hit) {
@@ -1266,6 +1266,56 @@ function desktopSlam(head) {
   return true;
 }
 
+// ------------------------------------------------------------------ first-time hints (ghost fists)
+
+/**
+ * The first couple of times you ever meet a guard shot, a rope, a two-hand rope or a slam bar,
+ * see-through "ghost" fists show you the move: fists up by your chin, a hand riding the ring,
+ * both fists smashing down. What you've seen is remembered in the browser.
+ */
+const SEEN_KEY = 'pulsezone.seen';
+const TEACH_TIMES = 2;
+let seen = (() => { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); } catch { return {}; } })();
+/** Should this new guard/rope/slam come with a hint? (counts it as seen) */
+function teach(kind) {
+  if ((seen[kind] || 0) >= TEACH_TIMES) return false;
+  seen[kind] = (seen[kind] || 0) + 1;
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch { /* ignore */ }
+  return true;
+}
+const ghostMat = (hand) => new THREE.MeshBasicMaterial({ color: HAND_COLOR[hand], transparent: true, opacity: 0.45, depthWrite: false });
+const ghostFists = { left: new THREE.Mesh(ghostGeo, ghostMat('left')), right: new THREE.Mesh(ghostGeo, ghostMat('right')) };
+for (const g of Object.values(ghostFists)) { g.scale.set(1.4, 1.2, 1.75); g.visible = false; scene.add(g); } // fist-sized, see-through
+const teachTmp = new THREE.Vector3();
+function updateTeach(head) {
+  ghostFists.left.visible = ghostFists.right.visible = false;
+  const show = (hand, x, y, z) => { const g = ghostFists[hand]; g.visible = true; g.position.set(x, y, z); };
+  // Guard: fists up by your chin while the shot comes in.
+  const g = guards.find((x) => x.teach && x.group.position.z > head.z - 7);
+  if (g) {
+    camera.getWorldPosition(teachTmp);
+    const bob = 0.02 * Math.sin(gameTime * 8);
+    // A little lower and further than real guard fists, so they show the pose without hiding the shot.
+    show('left', teachTmp.x - 0.15, teachTmp.y - 0.22 + bob, teachTmp.z - 0.45);
+    show('right', teachTmp.x + 0.15, teachTmp.y - 0.22 + bob, teachTmp.z - 0.45);
+    if (!g.taught) { g.taught = true; say('Guard: both fists up to your chin!'); }
+    return;
+  }
+  // Ropes: a ghost hand rides each ring.
+  const t = traces.find((x) => x.teach && x.started);
+  if (t) {
+    for (const r of t.strands) show(r.hand, r.contact.x, r.contact.y, r.contact.z);
+    if (!t.taught) { t.taught = true; say(t.two ? 'One hand on each rope - follow the rings!' : 'Keep your hand inside the ring as the rope slides by'); }
+    return;
+  }
+  // Slam: both fists come down on the bar, over and over.
+  const s = slams.find((x) => x.teach && x.group.position.z > head.z - 5);
+  if (s) {
+    const p = s.group.position, k = (gameTime * 1.6) % 1;
+    for (const [hand, dx] of [['left', -0.15], ['right', 0.15]]) show(hand, p.x + dx, p.y + 0.6 - 0.55 * k, p.z + 0.1); // between the arrows
+  }
+}
+
 function removeOrb(orb) {
   scene.remove(orb.group);
   const i = orbs.indexOf(orb);
@@ -1290,6 +1340,9 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
     score.wrongHand(orb.hand);
     audio.sfx('wrong');
     pulse(fist, 0.2, 30);
+    // A double buzz on the hand you should have used, so you feel which one without looking.
+    const right = fistByHand[orb.hand];
+    pulse(right, 0.7, 45); setTimeout(() => pulse(right, 0.7, 45), 130);
     flashWeak();
     return false;
   }
@@ -2119,6 +2172,7 @@ function frame(time) {
     updateGuards(gdt, xr, head);
     updateSlams(gdt, xr, head);
     updateShift(head, standing);
+    updateTeach(head);
     if (bag) updateBag(gdt, xr);
     if (ropes) updateRopes(gdt, xr, head);
   }
@@ -2271,7 +2325,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };
