@@ -114,7 +114,8 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - **Drift guard:** more than 55 cm from where you should be (centre or the side-shift spot) shows an amber floor arrow pointing back.
 - **Spotlight** line on the scoreboard during a spotlight round, with a countdown; **combo clear** pops a floating "COMBO CLEAR +N".
 - **First-time hints:** the first two times a player meets a guard shot, rope, two-hand rope or slam bar, see-through ghost fists demonstrate the move.
-- **Heart-lag bridge:** when you're below the zone but a ~12 s effort estimate (from the learning model) says your heart rate is heading into it, the scoreboard shows a green ▲ and "CLIMBING – KEEP IT UP"; above the zone, "SETTLING" with a ▼ once you've eased off enough.
+- **Call-out priority (round 5):** tier 1 do-this-now / safety, tier 2 workout news, tier 3 praise; a lower tier can't replace a higher one still showing (1.8 s). Per-hit points float at the orb in world space. CHALLENGE % text removed (the red glow past the intensity bar shows it); breathing is one steady line.
+- **Heart-lag bridge:** when you're below the zone but a ~12 s effort estimate (from the learning model) says your heart rate is heading into it, the scoreboard shows a green ▲ and "CLIMBING"; above the zone, "SETTLING" with a ▼ once you've eased off enough.
 - **Zone streaks:** every 15 s in the zone: a rising bell chord, the rails flare, bonus points and reactor charge; the current streak is on the scoreboard.
 - **End-of-workout board:** heart-rate graph (coloured by zone) over the target band, time in zone %, average/peak, longest streak, score, reactor level, top heart-raising move.
 - **Personal bests** (time in zone %, streak, score, reactor) saved in the browser, gold NEW BEST tags, and a "To beat" line during warm-up.

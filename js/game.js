@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v26';
+} from './core.js?v27';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v26';
+import { AudioEngine } from './audio.js?v27';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v26';
-import { loadTuning, createDevPanel } from './dev.js?v26';
+import { OptionsPanel } from './options.js?v27';
+import { loadTuning, createDevPanel } from './dev.js?v27';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -152,6 +152,7 @@ document.addEventListener('keydown', unlockAudio, true);
 // ------------------------------------------------------------------ fists (colour = hand)
 
 const HAND_COLOR = { left: 0x3fa9ff, right: 0xff7a3d };
+const HAND_CSS = { left: '#7cc4ff', right: '#ffa070' };
 const FIST_R = 0.055;
 function makeFist(hand) {
   const m = new THREE.Mesh(
@@ -376,7 +377,7 @@ function updatePhoneFallback(xr, dt) {
     sim.hasReading = true;
     sim.secondsSinceLastReading = 0;
     sim.signalLost = false;
-    say('Phone went quiet - estimating from movement');
+    say('Phone went quiet - estimating from movement', 1);
     audio.sfx('alert');
     pulseBoth(0.8, 150);
   } else if (phoneFallback && remote.secondsSinceLastReading < 2) {
@@ -411,13 +412,13 @@ const score = {
     this.hits++; this.combo++; this.best = Math.max(this.best, this.combo);
     const pts = Math.round(10 * bonus * Math.min(4, 1 + Math.floor(this.combo / 10)) * (this.inZone() ? 2 : 1));
     this.score += pts;
-    say(`${label}+${pts}${this.inZone() ? '  IN ZONE x2' : ''}`);
+    return `${label}+${pts}${this.inZone() ? '  x2' : ''}`; // shown as floating text at the orb
   },
   dodge() {
     this.dodges++; this.combo++; this.best = Math.max(this.best, this.combo);
     const pts = 15 * (this.inZone() ? 2 : 1);
     this.score += pts;
-    say(`Dodged! +${pts}`);
+    say(`Dodged! +${pts}`, 3);
   },
   miss() { this.misses++; this.combo = 0; },
   weakHit(msg = 'Punch harder!') { this.weak++; say(msg); },
@@ -425,9 +426,21 @@ const score = {
   wallHit() { this.wallHits++; this.combo = 0; },
 };
 score.reset();
-let lastEvent = '', lastEventAt = -10;
+let lastEvent = '', lastEventAt = -10, lastTier = 3;
 const now = () => performance.now() / 1000;
-function say(text) { lastEvent = text; lastEventAt = now(); }
+/**
+ * One call-out slot on the scoreboard, with priorities so the important ones aren't buried:
+ * tier 1 = do this now / safety (walls, guard, slam, step, drift, phone), 2 = workout news
+ * (zone, waves, spotlight, streaks, results), 3 = praise. A lower tier can't replace a higher one
+ * that's still showing (tiers 1-2 show for 1.8 s, praise for 0.9 s).
+ */
+const SAY_HOLD = { 1: 1.8, 2: 1.8, 3: 0.9 };
+function say(text, tier = 2) {
+  const t = now();
+  if (t - lastEventAt < SAY_HOLD[lastTier] && tier > lastTier) return;
+  lastEvent = text; lastEventAt = t; lastTier = tier;
+}
+const sayFresh = () => now() - lastEventAt < SAY_HOLD[lastTier];
 
 // ------------------------------------------------------------------ orbs, swing guides, walls, bursts
 
@@ -663,7 +676,7 @@ function updateGuards(dt, xr, head) {
     g.core.rotation.x += dt * 5; g.core.rotation.y += dt * 3;
     g.halo.scale.setScalar(1 + 0.15 * Math.sin(gameTime * 18 + i));
     g.icon.lookAt(camera.getWorldPosition(new THREE.Vector3()));
-    if (!g.announced && g.group.position.z > head.z - 7) { g.announced = true; say('Incoming! GUARD UP - both fists by your chin'); audio.sfx('alert'); }
+    if (!g.announced && g.group.position.z > head.z - 7) { g.announced = true; say('Incoming! GUARD UP - both fists by your chin', 1); audio.sfx('alert'); }
     if (g.group.position.z < g.hitZ) continue;
     const pos = g.group.position.clone();
     if (isGuarding(head, xr)) {
@@ -677,7 +690,7 @@ function updateGuards(dt, xr, head) {
       spawnCounter(head, standing);
     } else {
       score.guardsMissed++; score.combo = 0;
-      say('Guard up! Both fists by your chin');
+      say('Guard up! Both fists by your chin', 1);
       audio.sfx('wall');
       pulseBoth(1, 160);
       hitFlash = 1;
@@ -974,7 +987,7 @@ function spawnBag(head, standing) {
     group, body, mat, label, lc, tex, station, startZ: head.z - 10, age: 0, duration: 4 + 1 * (1 - difficulty.intensity),
     hits: 0, armed: { left: true, right: true }, off: new THREE.Vector3(), offV: new THREE.Vector3(), labelKey: '', smokeT: 0,
   };
-  say('SPEED BAG! Hit it fast!');
+  say('SPEED BAG! Hit it fast!', 1);
   audio.sfx('burst');
   pulseBoth(0.4, 60);
 }
@@ -1067,7 +1080,7 @@ function spawnRopes(head, standing) {
     };
   });
   ropes = { sides, age: 0, duration: 6, onTime: 0, credited: 0, points: 0, lowTime: 0, tip: '', dummy: new THREE.Object3D() };
-  say('BATTLE ROPES! Pump both arms, stay low!');
+  say('BATTLE ROPES! Pump both arms, stay low!', 1);
   audio.sfx('burst');
   pulseBoth(0.4, 60);
 }
@@ -1238,7 +1251,7 @@ function updateTraces(dt, xr) {
     t.group.position.z += t.speed * dt;
     const localZ = t.planeZ - t.group.position.z;   // which part of the rope is at your hand plane
     if (localZ > 0) continue;                        // front end hasn't reached you yet
-    if (!t.started) { t.started = true; say(t.two ? 'Both hands on the ropes!' : 'Ride the rope!'); }
+    if (!t.started) { t.started = true; say(t.two ? 'Both hands on the ropes!' : 'Ride the rope!', 1); }
     if (localZ < -t.length) { endTrace(t, i); continue; } // tail has passed
     t.totalTime += dt;
     for (const r of t.strands) {
@@ -1309,7 +1322,7 @@ function updateSlams(dt, xr, head) {
     s.group.position.z += s.speed * dt;
     const bob = Math.sin(s.age * 9);
     s.arrows.forEach((a) => { a.position.y = 0.3 + 0.05 * bob; });
-    if (!s.announced && s.group.position.z > head.z - 6) { s.announced = true; say('SLAM IT - both fists, down!'); }
+    if (!s.announced && s.group.position.z > head.z - 6) { s.announced = true; say('SLAM IT - both fists, down!', 1); }
     const bar = s.group.position;
     if (SMOKE && bar.z > head.z - 0.5) { endSlam(s, i, true); continue; }
     if (xr || !SMOKE) {
@@ -1362,14 +1375,14 @@ function updateTeach(head) {
     // A little lower and further than real guard fists, so they show the pose without hiding the shot.
     show('left', teachTmp.x - 0.15, teachTmp.y - 0.22 + bob, teachTmp.z - 0.45);
     show('right', teachTmp.x + 0.15, teachTmp.y - 0.22 + bob, teachTmp.z - 0.45);
-    if (!g.taught) { g.taught = true; say('Guard: both fists up to your chin!'); }
+    if (!g.taught) { g.taught = true; say('Guard: both fists up to your chin!', 1); }
     return;
   }
   // Ropes: a ghost hand rides each ring.
   const t = traces.find((x) => x.teach && x.started);
   if (t) {
     for (const r of t.strands) show(r.hand, r.contact.x, r.contact.y, r.contact.z);
-    if (!t.taught) { t.taught = true; say(t.two ? 'One hand on each rope - follow the rings!' : 'Keep your hand inside the ring as the rope slides by'); }
+    if (!t.taught) { t.taught = true; say(t.two ? 'One hand on each rope - follow the rings!' : 'Keep your hand inside the ring as the rope slides by', 1); }
     return;
   }
   // Slam: both fists come down on the bar, over and over.
@@ -1456,33 +1469,41 @@ function spawnWeights() {
   return { ...(tuning.weights || {}), [spotlight.key]: ((tuning.weights || {})[spotlight.key] ?? a.base) * SPOTLIGHT.boost };
 }
 
-// Combo finisher: a floating "COMBO CLEAR +N" where the last punch landed.
-const popCanvas = document.createElement('canvas');
-popCanvas.width = 512; popCanvas.height = 128;
-const popTex = new THREE.CanvasTexture(popCanvas);
-popTex.colorSpace = THREE.SRGBColorSpace;
-const popMat = new THREE.MeshBasicMaterial({ map: popTex, transparent: true, depthWrite: false, depthTest: false });
-const popMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.15), popMat);
-popMesh.visible = false; popMesh.renderOrder = 10;
-scene.add(popMesh);
-let popAge = 0;
+// Floating text at a hit point (per-hit points, combo clears). A pool of 3, oldest reused.
+const pops = Array.from({ length: 3 }, () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 128;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.15), mat);
+  mesh.visible = false; mesh.renderOrder = 10;
+  scene.add(mesh);
+  return { canvas, tex, mat, mesh, age: 0 };
+});
+let popNext = 0;
 function popText(text, pos, color = '#ffc04d') {
-  const g = popCanvas.getContext('2d');
+  if (!text) return;
+  const p = pops[popNext]; popNext = (popNext + 1) % pops.length;
+  const g = p.canvas.getContext('2d');
   g.clearRect(0, 0, 512, 128);
   g.font = '800 64px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.lineWidth = 10; g.strokeStyle = 'rgba(0,0,0,0.6)'; g.strokeText(text, 256, 64);
   g.fillStyle = color; g.fillText(text, 256, 64);
-  popTex.needsUpdate = true;
-  popMesh.position.copy(pos).add(new THREE.Vector3(0, 0.12, 0));
-  popMesh.visible = true; popAge = 0;
+  p.tex.needsUpdate = true;
+  p.mesh.position.set(pos.x, pos.y + 0.12, pos.z);
+  p.mesh.visible = true; p.age = 0;
 }
 function updatePop(rawDt) {
-  if (!popMesh.visible) return;
-  popAge += rawDt;
-  popMesh.position.y += rawDt * 0.35;
-  popMat.opacity = Math.max(0, 1 - popAge / 0.9);
-  popMesh.lookAt(camera.getWorldPosition(camTmp));
-  if (popAge > 0.9) popMesh.visible = false;
+  camera.getWorldPosition(camTmp);
+  for (const p of pops) {
+    if (!p.mesh.visible) continue;
+    p.age += rawDt;
+    p.mesh.position.y += rawDt * 0.35;
+    p.mat.opacity = Math.max(0, 1 - p.age / 0.9);
+    p.mesh.lookAt(camTmp);
+    if (p.age > 0.9) p.mesh.visible = false;
+  }
 }
 
 function removeOrb(orb) {
@@ -1545,7 +1566,7 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
   }
   if (bonus > 1 && !orb.power) power = Math.max(power, 0.7);
   pulse(fist, 0.35 + 0.65 * power, 30 + 60 * power);
-  score.hit(bonus, label);
+  popText(score.hit(bonus, label), orb.group.position, label ? '#ffffff' : HAND_CSS[orb.hand]);
   audio.sfx(orb.power ? 'power' : bonus > 1 ? 'perfect' : 'hit', { hand, power });
   attribution.record(orb.activity, gameTime);
   if (orb.combo) comboResult(orb, true);
@@ -1743,8 +1764,8 @@ function statusLabel(c) {
   if (c.phase === Phase.Finished) return 'NICE WORK';
   if (c.phase === Phase.CoolDown && c.status !== Zone.SafetyBrake) return 'COOLING DOWN';
   // Heart rate lags effort by 30-40 s: say so when you're already doing the right thing.
-  if (trendShown === 'climbing' && c.status === Zone.Below) return 'CLIMBING - KEEP IT UP';
-  if (trendShown === 'easing' && c.status === Zone.Above) return 'SETTLING - NICE';
+  if (trendShown === 'climbing' && c.status === Zone.Below) return 'CLIMBING';
+  if (trendShown === 'easing' && c.status === Zone.Above) return 'SETTLING';
   return { InZone: 'IN THE ZONE', Below: 'PICK IT UP', Above: 'EASE OFF', SafetyBrake: 'SAFETY BRAKE - SLOW DOWN', NoSignal: 'NO HEART-RATE SIGNAL' }[c.status];
 }
 const PROFILE_LABEL = { steady: 'steady', waves: 'waves', build: 'build & peak' };
@@ -1753,7 +1774,7 @@ const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart
 
 function drawHud(xr) {
   const c = controller, src = source();
-  const fresh = now() - lastEventAt < 0.9;
+  const fresh = sayFresh();
   // "~" and a muted colour while the heart rate is only estimated (phone asleep).
   const bpmText = src.hasReading && c.status !== Zone.NoSignal ? `${phoneFallback ? '~' : ''}${src.currentBpm}` : '--';
   const remaining = Math.max(0, c.phaseDuration - c.phaseElapsedSeconds);
@@ -1761,7 +1782,7 @@ function drawHud(xr) {
   const boostPct = Math.round(boost.value * 100);
   const key = [bpmText, c.status, c.phase, Math.floor(remaining), Math.round(c.intensity * 100), score.score, score.combo,
     fresh ? lastEvent : '', statusLine, sourceKind, phoneFallback, workloadMode, link.code, xr, Math.round(c.currentSetpoint), c.s.targetBpm,
-    Math.round(boostPct / 5), options.open, trendShown, Math.floor(zoneStreak), breathCue, spotlight && spotlight.key,
+    Math.round(boostPct / 5), options.open, trendShown, Math.floor(zoneStreak), !!breathCue, spotlight && spotlight.key,
     spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds)].join('|');
   if (key === hudKey) return;
   hudKey = key;
@@ -1792,7 +1813,7 @@ function drawHud(xr) {
 
   g.fillStyle = '#c9ced8'; g.font = '30px system-ui, sans-serif';
   const srcName = sourceKind === 'sim' ? `SIM HR (${workloadMode})` : phoneFallback ? 'ESTIMATED HR (phone asleep)' : 'PHONE HR';
-  const boostText = boostPct >= 5 ? `  ·  CHALLENGE +${boostPct}%` : '';
+  const boostText = ''; // the challenge boost shows as the red glow past the intensity bar
   g.fillText(c.phase === Phase.Finished ? 'WORKOUT COMPLETE'
     : options.open ? 'PAUSED - options open'
       : `${PHASE_LABEL[c.phase]} ${mmss(remaining)}  ·  intensity ${Math.round(c.intensity * 100)}%${boostText}  ·  ${srcName}`, W / 2, 290);
@@ -1827,7 +1848,7 @@ function drawHud(xr) {
   }
   if (breathCue && c.phase !== Phase.Finished) { // its own line, so hit call-outs don't hide it
     g.fillStyle = '#7fd8ff'; g.font = '600 34px system-ui, sans-serif';
-    g.fillText(breathCue === 'in' ? 'BREATHE IN...  (4)' : 'BREATHE OUT... slowly  (6)', W / 2, 455);
+    g.fillText('Breathe with the reactor: 4 in, 6 out', W / 2, 455);
   }
   if (statusLine) {
     const ok = !phoneFallback && src.hasReading && src.secondsSinceLastReading < 5;
@@ -2254,7 +2275,7 @@ function updateDrift(head, xr, paused) {
   const home = centerX + shiftOffsetAt(shiftPlan, gameTime);
   const dx = head.x - home;
   if (!active) drifting = false;
-  else if (!drifting && Math.abs(dx) > DRIFT_OUT) { drifting = true; say(dx > 0 ? '<<  Step back to the centre' : 'Step back to the centre  >>'); }
+  else if (!drifting && Math.abs(dx) > DRIFT_OUT) { drifting = true; say(dx > 0 ? '<<  Step back to the centre' : 'Step back to the centre  >>', 1); }
   else if (drifting && Math.abs(dx) < DRIFT_BACK) drifting = false;
   driftArrow.visible = drifting;
   if (drifting) {
@@ -2289,7 +2310,7 @@ function updateShift(head, standing) {
     shiftPadMat.opacity = 0.55 + 0.35 * Math.abs(Math.sin(gameTime * 5));
   }
   // One-way stages ('' -> 'go' -> 'back'), so each call-out fires exactly once.
-  if (shiftSaid === '' && gameTime >= showFrom) { shiftSaid = 'go'; say(p.offset > 0 ? 'STEP RIGHT  >>' : '<<  STEP LEFT'); audio.sfx('burst'); }
+  if (shiftSaid === '' && gameTime >= showFrom) { shiftSaid = 'go'; say(p.offset > 0 ? 'STEP RIGHT  >>' : '<<  STEP LEFT', 1); audio.sfx('burst'); }
   if (shiftSaid === 'go' && gameTime >= p.end) { shiftSaid = 'back'; say('Back to the centre'); }
   if (gameTime > p.end + SHIFT.margin) { shiftPlan = null; shiftSaid = ''; }
 }
@@ -2472,13 +2493,13 @@ function frame(time) {
     const w = walls[i];
     w.mesh.position.z += w.speed * gdt;
     const far = w.mesh.position.z, near = far + w.depth;
-    if (!w.announced && near > head.z - 6) { w.announced = true; say(w.label); }
+    if (!w.announced && near > head.z - 6) { w.announced = true; say(w.label, 1); }
     // You're inside the box while its near face has passed you and its far face hasn't.
     if (!w.hit && near >= head.z && far <= head.z && wallHitsHead(w.poly, head.x - centerX, head.y)) {
       w.hit = true;
       w.fill.material = MAT.wallHit;
       score.wallHit();
-      say(w.type === 'rise' ? 'Stand up!' : w.type === 'duck' || w.type.startsWith('squat') ? 'Get lower!' : 'Move over!');
+      say(w.type === 'rise' ? 'Stand up!' : w.type === 'duck' || w.type.startsWith('squat') ? 'Get lower!' : 'Move over!', 1);
       audio.sfx('wall');
       pulseBoth(1, 120);
     }
