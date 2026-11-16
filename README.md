@@ -38,7 +38,7 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 - **In the zone, the world lights up:** equalizer pillars rise along the lane to the music's beat, embers drift up, your fists leave glowing trails, and the lane rails turn from blue to orange.
 - **Your heart is on its way:** heart rate lags effort by 30–40 seconds. When you're below the zone but already working hard enough to get there, the scoreboard shows a green ▲ and **CLIMBING – KEEP IT UP** instead of "pick it up" (and **SETTLING** with a ▼ when you've eased off enough above it). It's estimated from what you've done in the last ~12 seconds, using what the game has learned about your heart.
 - **Zone streaks:** every 15 seconds you hold the zone, a bell chord rings (a little higher each time), the lane rails flare, and you get bonus points and reactor charge. The scoreboard shows your current streak.
-- **Workout summary:** when you finish, a board below the scoreboard graphs your heart rate over the whole workout (coloured by zone) against your target band, with time in zone, average and peak BPM, longest zone streak, score, reactor level and the move that raises YOUR heart rate most.
+- **Workout summary:** when you finish, a board below the scoreboard graphs your heart rate over the whole workout (coloured by zone) against your target band, with time in zone, average and peak BPM, longest zone streak, score, reactor level and your top 3 heart-raising moves (with bars).
 - **Personal bests:** time in zone (%), longest streak, score and reactor level are saved in the browser. Beat one and it's marked **NEW BEST** in gold. During warm-up the scoreboard shows what to beat. Workouts under 3 minutes of training don't set records.
 - **Finishing slam:** battle ropes and two-hand ropes end with a wide gold bar at head height. Raise both fists and smash it **down** together (within 0.3 s of each other), like a medicine-ball slam. In Touch mode, reaching it with both hands is enough.
 - **Side shifts (footwork):** when you're below your zone (and not already climbing), the game may call **STEP RIGHT** or **STEP LEFT**: for 8 seconds the orbs come 35 cm to that side, and a glowing pad on the floor shows where to stand. The scoreboard, walls, ropes and bursts stay centred; walls and ropes wait until the shift is over. At most one every ~40 s. Switch it off with **Shift** in the Walls row.
@@ -130,7 +130,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v30` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v31` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

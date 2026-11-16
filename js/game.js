@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v30';
+} from './core.js?v31';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v30';
+import { AudioEngine } from './audio.js?v31';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v30';
-import { loadTuning, createDevPanel } from './dev.js?v30';
+import { OptionsPanel } from './options.js?v31';
+import { loadTuning, createDevPanel } from './dev.js?v31';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -1708,8 +1708,18 @@ function drawSummary(w, records) {
   stat('Longest streak', mmss(w.streak), 640, 380, isNew('streak'));
   stat('Score', String(w.score), 48, 490, isNew('score'));
   stat('Reactor', `level ${w.reactor}`, 400, 490, isNew('reactor'));
-  const top = attribution.ranking()[0];
-  stat('Raises YOUR heart most', top.label, 640, 490, false);
+  // Your top 3 heart-raising moves (learned), with bars: BPM added per 10 reps/min, and reps today.
+  const rank = attribution.ranking().slice(0, 3);
+  const maxG = Math.max(1, ...rank.map((r) => r.bpmPer10));
+  g.textAlign = 'left'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
+  g.fillText('Raises YOUR heart most', 640, 490);
+  rank.forEach((r, i) => {
+    const y = 522 + i * 28;
+    g.fillStyle = i === 0 ? '#ffffff' : '#c9ced8'; g.font = `${i === 0 ? '700 ' : ''}22px system-ui, sans-serif`;
+    g.fillText(r.label, 640, y, 170);
+    g.fillStyle = '#262a38'; g.fillRect(820, y - 9, 150, 18);
+    g.fillStyle = `hsl(${20 + 160 * (1 - r.bpmPer10 / maxG)} 85% 55%)`; g.fillRect(820, y - 9, Math.max(6, 150 * (r.bpmPer10 / maxG)), 18);
+  });
   g.textAlign = 'center'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
   const short = !w.real ? 'Simulator / estimated heart rate: personal bests not saved'
     : w.trainingSeconds < MIN_RECORD_SECONDS ? 'Workouts under 3 min don\'t set records' : '';

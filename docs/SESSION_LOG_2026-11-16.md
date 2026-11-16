@@ -87,3 +87,8 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - **Found with the new diagnostics and fixed:** the "where heart rate is heading" estimate was biased early on (e.g. 155 vs an actual 111 while the model was still settling), which would make CLIMBING show whenever you were below the zone and so hold back the challenge boost and side shifts. It now adds the learned effect of the last ~12 s vs ~35 s of effort to your current heart rate, so the model's baseline error cancels out (new test: ~0 for steady effort, +30 after a burst).
 - Fixed: "COMBO CLEAR +N" was clipped at both ends; long floating text now squeezes to fit, and the combo label floats above the hit's own points.
 - Checked: 116 checks pass; all four test buttons; 3-minute auto-play, 0 overlaps, no console errors; CLIMBING now shows only during the actual climb.
+
+## Cycle 15 (10:47 AM)
+- **Built:** the end-of-workout board now lists your top 3 learned heart-raising moves with bars (instead of one name), as Gemini suggested in round 5.
+- Reported round 5 to Gemini and asked round 6: what else could silently break the heart-rate loop in a real session.
+- Checked: 116 checks pass; a short full workout to the end board (snapshot), no console errors.

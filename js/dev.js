@@ -2,7 +2,7 @@
 // Values are saved in this browser (localStorage) and applied on "Apply & restart".
 // To change the defaults for every device, edit EASY / HARD / ACTIVITIES / defaultZoneSettings
 // in js/core.js, e.g. in the GitHub web editor at https://github.dev/CremdelaCrimi/pulsezone.
-import { EASY, HARD, ACTIVITIES, defaultZoneSettings } from './core.js?v30';
+import { EASY, HARD, ACTIVITIES, defaultZoneSettings } from './core.js?v31';
 
 const KEY = 'pulsezone.tuning';
 
