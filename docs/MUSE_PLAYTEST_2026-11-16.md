@@ -80,3 +80,17 @@ Checks: core tests pass; idle desktop run (2 min) earned no dodge points; test b
 - **Bridge URL still breaks mid-word.** *The URL is longer than the panel, so it still breaks inside "bridge.html"; needs break points at each "/".*
 - **Walls can cover the options board while it's open.**
 - **Suggestion:** show the version number on screen.
+
+## What was done after the re-check (v48)
+
+- **Idle score leak:** found it. A rope passing through a resting mouse (or a still hand on a straight rope) scored a partial follow. Ropes now only score if your hand moved 10 cm or more while it passed. Idle desktop now earns only in-zone rewards (zone streaks, reactor level-ups).
+- **Sled / Heavy test buttons:** an automatic burst could replace a waiting test burst. A waiting test burst can no longer be replaced. Checked: Sled 5.0 s and 7.3 s, Heavy 4.5 s and 4.8 s.
+- **In-zone corner counter** now shows the same number as the end board once the workout is over.
+- **Combo vs hits + dodges:** the end line now also lists guard blocks, which build the combo.
+- **Top-3 bars:** titled "Starting estimates" when the workout wasn't driven by real heart rate (learning needs the real thing).
+- **Walls you got hit by** (red/orange) now fade in the last metre too.
+- **Bridge link** can break only after a "/" or before "?code=", never inside a word.
+- **Options board:** the lane hides while the board is open (the game is paused), so nothing frozen covers it.
+- **Version on screen:** the landing panel title and the scoreboard's bottom line show the version (v48).
+
+Checks: core tests pass; 6-minute idle desktop run scored only zone rewards; 3-minute auto-play to the end board with 0 overlaps and no errors.

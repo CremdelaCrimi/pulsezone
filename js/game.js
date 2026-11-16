@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v47';
+} from './core.js?v48';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v47';
+import { AudioEngine } from './audio.js?v48';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v47';
-import { loadTuning, createDevPanel } from './dev.js?v47';
+import { OptionsPanel } from './options.js?v48';
+import { loadTuning, createDevPanel } from './dev.js?v48';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -160,6 +160,8 @@ document.addEventListener('keydown', unlockAudio, true);
 // ------------------------------------------------------------------ fists (colour = hand)
 
 const HAND_COLOR = { left: 0x3fa9ff, right: 0xff7a3d };
+const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v48
+{ const el = document.getElementById('version'); if (el) el.textContent = VERSION; }
 const HAND_CSS = { left: '#7cc4ff', right: '#ffa070' };
 const FIST_R = 0.055;
 function makeFist(hand) {
@@ -498,6 +500,7 @@ const MAT = {
   ghostR: new THREE.MeshBasicMaterial({ color: HAND_COLOR.right, transparent: true, opacity: 0.9 }),
   wall: new THREE.MeshBasicMaterial({ color: 0xd94cf2, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false }),
   wallEdge: new THREE.LineBasicMaterial({ color: 0xf5a3ff }),
+  wallHitNear: new THREE.MeshBasicMaterial({ color: 0xff2626, transparent: true, opacity: 0.15, side: THREE.DoubleSide, depthWrite: false }),
   wallNear: new THREE.MeshBasicMaterial({ color: 0xd94cf2, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false }),
   wallHit: new THREE.MeshBasicMaterial({ color: 0xff2626, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }),
   flash: new THREE.MeshBasicMaterial({ color: 0xffffff }),
@@ -557,6 +560,15 @@ let bagReadyAt = 0, ropesReadyAt = 0;                // burst cooldowns (game se
 let centerX = 0;
 let recenterSoon = true;
 
+let laneHidden = false;
+function setLaneVisible(v) {
+  laneHidden = !v;
+  for (const o of orbs) o.group.visible = v;
+  for (const w of walls) w.mesh.visible = v;
+  for (const t of traces) { t.group.visible = v; for (const r of t.strands) r.marker.visible = v; }
+  for (const x of [...guards, ...slams, ...bombs]) x.group.visible = v;
+  for (const b of [bag, heavy]) if (b) b.group.visible = v;
+}
 function clearObstacles() {
   for (const o of [...orbs, ...walls, ...bursts]) scene.remove(o.group || o.mesh);
   for (const p of shardPool) p.alive = false;
@@ -1604,7 +1616,9 @@ function ropeAt(strand, localZ, out) {
 }
 function endTrace(t, i) {
   // Two ropes: your score is the average of both hands.
-  const frac = t.totalTime > 0 ? t.strands.reduce((sum, r) => sum + r.onTime, 0) / t.strands.length / t.totalTime : 0;
+  // Only counts if your hand actually followed it (moved 10 cm+), not if it just sat where the rope passed.
+  const moved = t.strands.some((r) => r.box && Math.max(r.box.x1 - r.box.x0, r.box.y1 - r.box.y0) >= 0.1);
+  const frac = !moved ? 0 : t.totalTime > 0 ? t.strands.reduce((sum, r) => sum + r.onTime, 0) / t.strands.length / t.totalTime : 0;
   const pts = Math.round(tracePoints(frac) * (t.two ? 1.5 : 1)) * (score.inZone() ? 2 : 1);
   score.score += pts;
   if (frac >= 0.6) { score.hits++; score.combo++; score.best = Math.max(score.best, score.combo); } else score.combo = 0;
@@ -1652,6 +1666,8 @@ function updateTraces(dt, xr) {
       ropeAt(r, handLocalZ, traceTmp);
       r.on = onRope(r.on, Math.hypot(hand.x - traceTmp.x, hand.y - traceTmp.y), dz);
       if (r.on) r.onTime += dt;
+      if (!r.box) r.box = { x0: hand.x, x1: hand.x, y0: hand.y, y1: hand.y };
+      else { r.box.x0 = Math.min(r.box.x0, hand.x); r.box.x1 = Math.max(r.box.x1, hand.x); r.box.y0 = Math.min(r.box.y0, hand.y); r.box.y1 = Math.max(r.box.y1, hand.y); }
       r.marker.visible = true;
       r.marker.position.copy(r.contact);
       r.face.lookAt(camTmp);
@@ -2094,7 +2110,7 @@ function drawSummary(w, records) {
   const rank = attribution.ranking().slice(0, 3);
   const maxG = Math.max(1, ...rank.map((r) => r.bpmPer10));
   g.textAlign = 'left'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
-  g.fillText('Raises YOUR heart most', 640, 490);
+  g.fillText(w.real ? 'Raises YOUR heart most' : 'Starting estimates', 640, 490, 360); // learning needs your real heart rate
   rank.forEach((r, i) => {
     const y = 522 + i * 28;
     g.fillStyle = i === 0 ? '#ffffff' : '#c9ced8'; g.font = `${i === 0 ? '700 ' : ''}22px system-ui, sans-serif`;
@@ -2249,7 +2265,7 @@ function drawHud(xr) {
     const avgTxt = sw ? (sw.avgBpm || '--') : avgN ? Math.round(avgSum / avgN) : '--';
     const top = attribution.ranking()[0];
     g.font = '600 32px system-ui, sans-serif';
-    g.fillText(`Score ${score.score}  ·  ${score.hits} hits${score.perfect ? ` (${score.perfect} perfect)` : ''}  ·  ${score.dodges + score.bombDodges} dodges  ·  reactor level ${reactor.level}`, W / 2, 392, W - 60);
+    g.fillText(`Score ${score.score}  ·  ${score.hits} hits${score.perfect ? ` (${score.perfect} perfect)` : ''}  ·  ${score.dodges + score.bombDodges} dodges${score.blocks ? `  ·  ${score.blocks} blocks` : ''}  ·  reactor level ${reactor.level}`, W / 2, 392, W - 60);
     g.fillText(`Time in zone ${pctZone}%  ·  avg ${avgTxt} BPM  ·  best for you: ${top.label}`, W / 2, 436, W - 60);
     g.fillText(xr ? 'Press A to go again' : 'Press R to go again', W / 2, 480);
   } else if (fresh) {
@@ -2283,14 +2299,14 @@ function drawHud(xr) {
   const phoneLive = sourceKind === 'phone' && !phoneFallback && src.hasReading; // linked: no need to show the code
   const codeText = phoneLive ? 'phone live' : `code ${link.code}`;
   g.fillText(xr ? `${settings.gameType === 'touch' ? 'TOUCH MODE' : 'blue = left · orange = right'} · white curve = swing path · Y = options · ${codeText}`
-    : `blue = left click · orange = right click · O = options · ${phoneLive ? 'phone live' : `phone code ${link.code}`}`, W / 2, 595);
+    : `blue = left click · orange = right click · O = options · ${phoneLive ? 'phone live' : `phone code ${link.code}`} · ${VERSION}`, W / 2, 595);
   }
 
   g.textAlign = 'left'; g.fillStyle = '#ffffff'; g.font = '600 30px system-ui, sans-serif';
   g.fillText(`SCORE ${score.score}`, 760, 60);
   g.font = '26px system-ui, sans-serif'; g.fillStyle = '#c9ced8';
   g.fillText(`combo ${score.combo} (best ${score.best})`, 760, 100);
-  g.fillText(`in zone ${mmss(c.secondsInZone)}`, 760, 136);
+  g.fillText(`in zone ${mmss(c.phase === Phase.Finished && lastSummary ? lastSummary.w.inZoneSeconds : c.secondsInZone)}`, 760, 136);
   if (zoneStreak >= ZONE_STREAK_STEP && c.phase !== Phase.Finished) {
     g.fillStyle = '#ffc04d'; g.fillText(`streak ${mmss(zoneStreak)}`, 760, 172);
   }
@@ -2528,7 +2544,7 @@ function updatePanel(force) {
   const url = new URL('bridge.html', location.href);
   url.search = `?code=${link.code}`;
   panel.link.href = url.toString();
-  panel.link.replaceChildren(`${url.origin}${url.pathname}`, document.createElement('wbr'), url.search);
+  panel.link.replaceChildren(...`${url.origin}${url.pathname}${url.search}`.split(/(?<=\/)|(?=\?)/).flatMap((part) => [part, document.createElement('wbr')]));
   panel.srcName.textContent = sourceKind === 'sim' ? `Simulator (${workloadMode})` : phoneFallback ? 'Estimated (phone asleep)' : 'Phone (Charge 6)';
   updateRemoteStatus();
   panel.srcStatus.textContent = sourceKind === 'sim' ? `Phone: ${remote.statusText}` : remote.statusText;
@@ -2662,6 +2678,7 @@ function trySpawn(activity, extra = {}) {
   if (activity === 'combo') return queuedCombo ? spawnCombo(head, standing, queuedCombo) : true;
   if (activity === 'barrage') return spawnBarrage(head, standing);
   if (BURSTS.includes(activity)) {
+    if (pendingBurst && pendingBurstTest) return true; // a test burst is waiting: drop the automatic one
     pendingBurst = activity; pendingBurstTest = false;
     say({ bag: 'Speed bag coming...', ropes: 'Battle ropes coming...', heavy: 'Heavy bag coming...', sled: 'Sled run coming...' }[activity]);
     return true;
@@ -2783,6 +2800,7 @@ function frame(time) {
   if (btn.b) options.toggle();                                   // B / Y = options
   if (btn.a && controller.phase === Phase.Finished && !options.open) startWorkout();
   const paused = options.open;
+  if (paused !== laneHidden) setLaneVisible(!paused);
   const gdt = paused ? 0 : dt;                                   // game time stops while options are open
 
   camera.getWorldPosition(head);
@@ -2960,7 +2978,8 @@ function frame(time) {
     w.mesh.position.z += w.speed * gdt;
     const far = w.mesh.position.z, near = far + w.depth;
     if (!w.announced && near > head.z - 6) { w.announced = true; say(w.label, 1); }
-    if (!w.hit && !w.faded && near > head.z - 1.0) { w.faded = true; w.fill.material = MAT.wallNear; } // you've seen it: don't hide the scoreboard
+    if (!w.faded && near > head.z - 1.0) { w.faded = true; if (!w.hit) w.fill.material = MAT.wallNear; }
+    if (w.faded && w.hit && w.fill.material !== MAT.wallHitNear) w.fill.material = MAT.wallHitNear; // you've seen it: don't hide the scoreboard
     // You're inside the box while its near face has passed you and its far face hasn't.
     if (!w.hit && near >= head.z && far <= head.z && wallHitsHead(w.poly, head.x - centerX, head.y)) {
       w.hit = true;
