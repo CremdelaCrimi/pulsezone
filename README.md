@@ -8,6 +8,8 @@ Charge 6 ──Bluetooth──► iPhone (Bluefy browser, bridge.html) ──dir
 
 The Quest Browser can't talk to Bluetooth devices from a web page, so the phone relays the heart rate. The public PeerJS server only introduces the two devices to each other. After that, heart-rate readings go straight from phone to headset.
 
+**New on 2026-11-16:** a day of Claude + Gemini iterations added a lot (finishing slam, side shifts, boxing combos, workout shapes, spotlight rounds, breathing pacer, end-of-workout graph and personal bests, test tools and more). What changed and why is in [`docs/SESSION_LOG_2026-11-16.md`](docs/SESSION_LOG_2026-11-16.md); a 20-minute plan for trying it all in the headset is in [`docs/HEADSET_TEST_PLAN.md`](docs/HEADSET_TEST_PLAN.md).
+
 > Not a medical device. The safety ceiling is a rough estimate (208 − 0.7 × age). Stop if you feel unwell.
 
 ## Playing
@@ -23,45 +25,58 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 
 ## The game
 
+### Moves
+
 - **Orbs:** punch **blue** with your left hand and **orange** with your right. **Low orbs** (knee to hip height) mean squat and punch. In Punch mode a hit needs a real punch: your fist has to travel about 13–22 cm just before contact (more at higher intensity), so wrist flicks don't count.
 - **Power orbs** are faceted and wrapped in a spinning wireframe shell. They need a full punch from the shoulder (fast, with 30+ cm of travel) and score up to 3× depending on how hard you hit.
 - **Squat, then reach up:** a low orb for one hand, then a high orb for the other hand about 0.85 s later, joined by a dashed line. It's a squat jump without leaving the floor.
-- **Guard & counter:** a red-hot shot with a GUARD badge flies at your face. Don't punch it: bring both fists up by your chin and hold them there as it arrives. Block it and a counter orb comes straight in from close range for double points. Miss the guard and the sky flashes red.
-- **Hit feel:** a hit orb flashes white for a split second, then shatters, with the pieces flying the way your fist was going. Harder punches throw more pieces, sound bigger (a soft punch is a hollow thud, a hard one adds a bass thump and a glassy crack) and buzz harder.
+- **Guard & counter:** a white shot with a teal shield glow and a GUARD badge flies at your face. Don't punch it: bring both fists up by your chin and hold them there as it arrives. Block it and a counter orb comes straight in from close range for double points. Miss the guard and the sky flashes red.
 - **Swing orbs** have a glowing **white curve** through them, with a "ghost fist" sliding along it. Swing along the curve (an uppercut, or a hook from the outside in) for **double points**. Any solid punch still counts, so you're never punished for an imperfect angle.
 - **Walls (purple boxes):** get your head into the open gap: **duck**, **step aside** from a centre pillar, **lean left or right**, or **squat left or right**. Each wall is a box, and its length shows how long to hold the position (about 1.2 s for a duck). After every duck or squat box comes a low **Stand tall!** box, so you have to stand all the way back up instead of staying down.
 - **Rope tracing:** a long glowing rope in your hand's colour flows toward you along the lane, curving left, right, up and down (low dips mean squats). Where it crosses arm's length there's a ring: keep that hand on the rope as it slides past, and the ring turns green while you're on it. The catch is forgiving: your hand counts as on the rope within 20 cm of it, anywhere from 35 cm in front of the ring to 35 cm behind it (shown by a faint sleeve), and a small wobble won't knock you off. Points depend on how much of the rope you stayed on.
 - **Two-hand rope:** two ropes side by side, one per hand, that sweep wide from side to side and dip low, so you step, shift your weight and squat while following them. Score is the average of both hands.
+- **Finishing slam:** battle ropes and two-hand ropes end with a wide gold bar at head height. Raise both fists and smash it **down** together (within 0.3 s of each other), like a medicine-ball slam. In Touch mode, reaching it with both hands is enough.
+- **Boxing combos on the beat:** once intensity is up, a plain punch sometimes becomes a short combination (1-2, 1-1-2, 1-2-hook, 1-2-1-uppercut, squat-squat-hook-hook) with one orb per beat of the music (two beats when it's fast), the first landing on a beat. Clear the whole combo for a bonus: the last punch pops a floating "COMBO CLEAR +N" with a strong buzz. Combos only use moves you have switched on, and like other solo moves they get the lane to themselves.
+- **Side shifts (footwork):** when you're below your zone (and not already climbing), the game may call **STEP RIGHT** or **STEP LEFT**: for 8 seconds the orbs come 35 cm to that side, and a glowing pad on the floor shows where to stand. The scoreboard, walls, ropes and bursts stay centred; walls and ropes wait until the shift is over. At most one every ~40 s. Switch it off with **Shift** in the Walls row.
 - **Game type:** **Punch** (hit hard enough to pop orbs) or **Touch** (just hold your hand where the orb arrives and it pops on contact). Choose it on the options board.
+
+### Heart-rate feedback
+
 - **Heat gauge (left):** frosty when you're below your zone, a lively flame in it, and a hyper flame above it.
 - **Reactor (right):** a core that only charges while you're in your zone (about a minute of zone time per level, with a points bonus each level). Above the zone it overheats and stops charging until you ease off; below it stalls and turns icy. The end screen shows your reactor level.
+- **Your heart is on its way:** heart rate lags effort by 30–40 seconds. During training, when you're below the zone but already working hard enough to get there, the scoreboard shows a green ▲ and **CLIMBING** instead of "pick it up" (and **SETTLING** with a ▼ when you've eased off enough above it). It adds the learned effect of your last ~12 seconds of effort to your current heart rate.
+- **Breathing pacer:** above your zone during training, the reactor's cage swells and shrinks on a 4-seconds-in, 6-seconds-out rhythm ("Breathe with the reactor: 4 in, 6 out"), to help bring your heart rate down.
 - **In the zone, the world lights up:** equalizer pillars rise along the lane to the music's beat, embers drift up, your fists leave glowing trails, and the lane rails turn from blue to orange.
-- **Your heart is on its way:** heart rate lags effort by 30–40 seconds. When you're below the zone but already working hard enough to get there, the scoreboard shows a green ▲ and **CLIMBING – KEEP IT UP** instead of "pick it up" (and **SETTLING** with a ▼ when you've eased off enough above it). It's estimated from what you've done in the last ~12 seconds, using what the game has learned about your heart.
+- **Spotlight rounds:** every 4 minutes of training (first at 3:00), one move is featured for 60 seconds and sent 2.5x as often ("SPOTLIGHT: SQUAT ROUND 57s" on the scoreboard). When you're below your zone it's one of the three moves that raise YOUR heart rate most. Rounds end early if you go above the zone.
+
+### Rewards and progress
+
+- **Hit feel:** a hit orb flashes white for a split second, then shatters, with the pieces flying the way your fist was going. Harder punches throw more pieces, sound bigger (a soft punch is a hollow thud, a hard one adds a bass thump and a glassy crack) and buzz harder.
 - **Zone streaks:** every 15 seconds you hold the zone, a bell chord rings (a little higher each time), the lane rails flare, and you get bonus points and reactor charge. The scoreboard shows your current streak.
 - **Workout summary:** when you finish, a board below the scoreboard graphs your heart rate over the whole workout (coloured by zone) against your target band, with time in zone, average and peak BPM, longest zone streak, score, reactor level and your top 3 heart-raising moves (with bars).
 - **Personal bests:** time in zone (%), longest streak, score and reactor level are saved in the browser. Beat one and it's marked **NEW BEST** in gold. During warm-up the scoreboard shows what to beat. Workouts under 3 minutes of training don't set records.
-- **Finishing slam:** battle ropes and two-hand ropes end with a wide gold bar at head height. Raise both fists and smash it **down** together (within 0.3 s of each other), like a medicine-ball slam. In Touch mode, reaching it with both hands is enough.
-- **Side shifts (footwork):** when you're below your zone (and not already climbing), the game may call **STEP RIGHT** or **STEP LEFT**: for 8 seconds the orbs come 35 cm to that side, and a glowing pad on the floor shows where to stand. The scoreboard, walls, ropes and bursts stay centred; walls and ropes wait until the shift is over. At most one every ~40 s. Switch it off with **Shift** in the Walls row.
+
+### Comfort and clarity
+
+- **Spacing:** everything shares one lane, so the game books a time slot for when each thing reaches you. Plain orbs can come in groups, but a rope, a wall box, a power orb, a squat-and-reach pair or a guard shot always gets the lane to itself, with a short gap before and after. Nothing flies through anything else.
+- **Call-outs by priority:** one call-out slot on the scoreboard. "Do this now" calls (walls, guard, slam, step, drift, phone) can't be covered by workout news (zone, waves, spotlight, streaks), and news can't be covered by praise. Points for each hit float at the orb in your hand's colour instead of flashing on the scoreboard.
 - **First-time hints:** the first two times you ever meet a guard shot, a rope, a two-hand rope or a slam bar, see-through ghost fists show the move (fists up by your chin, a hand riding each ring, both fists smashing down) with a short call-out. Use the wrong hand on an orb and the correct controller gives a double buzz. What you've seen is remembered in the browser (`pulsezone.seen`).
 - **Drift guard:** if your head wanders more than 55 cm from where you should be (the lane centre, or the side-shift spot), an amber arrow on the floor and a call-out point you back; it clears once you're within 30 cm.
-- **Boxing combos on the beat:** once intensity is up, a plain punch sometimes becomes a short combination (1-2, 1-1-2, 1-2-hook, 1-2-1-uppercut, squat-squat-hook-hook) with one orb per beat of the music (two beats when it's fast), the first landing on a beat. Clear the whole combo for a bonus: the last punch pops a floating "COMBO CLEAR +N" with a strong buzz. Combos only use moves you have switched on, and like other solo moves they get the lane to themselves.
-- **Spotlight rounds:** every 4 minutes of training (first at 3:00), one move is featured for 60 seconds and sent 2.5x as often ("SPOTLIGHT: SQUAT ROUND 57s" on the scoreboard). When you're below your zone it's one of the three moves that raise YOUR heart rate most. Rounds end early if you go above the zone.
-- **Call-outs by priority:** one call-out slot on the scoreboard. "Do this now" calls (walls, guard, slam, step, drift, phone) can't be covered by workout news (zone, waves, spotlight, streaks), and news can't be covered by praise. Points for each hit float at the orb in your hand's colour instead of flashing on the scoreboard.
-- **Spacing:** everything shares one lane, so the game books a time slot for when each thing reaches you. Plain orbs can come in groups, but a rope, a wall box, a power orb, a squat-and-reach pair or a guard shot always gets the lane to itself, with a short gap before and after. Nothing flies through anything else.
-- **Breathing pacer:** above your zone during training, the reactor's cage swells and shrinks on a 4-seconds-in, 6-seconds-out rhythm and the scoreboard leads it ("BREATHE IN…" / "BREATHE OUT… slowly"), to help bring your heart rate down.
+
+### Sound
+
 - **Soundtrack:** "Hard-Knuckle Focus", an instrumental track made with Gemini's music tool (`assets/music/hard-knuckle-focus.mp3`, 121 BPM). The game **time-stretches it to your pace** with the pitch preserved, from 0.78× to 1.25×. It loops over 87 whole bars and skips the intro and the silent ending. The song also changes colour with your zone: muffled when you're well below, opening up as you climb, with extra bass in the zone; big hits briefly duck the music. Switch between **Song** and **Synth** on the options board. On the Quest the song can only start from a button press, so it starts when you enter VR or pull a trigger. If it's ever blocked, the synth music plays instead and the game says so.
 - **Music & sound (Synth):** synthesized live. The **tempo leads you**: it speeds up when you need to pick it up and slows when you need to ease off. You also get icy bells below your zone, a bright arpeggio in it, a soft heartbeat at your real BPM, and a sound for every hit, dodge and wall.
-
 ### When your heart rate won't climb
 
 - **Intensity:** the zone controller raises intensity whenever you're below target.
-- **Challenge boost:** if you stay below for about 15 seconds without heart rate rising (or the game is already at full intensity), a **challenge boost** builds up over about 45 seconds. It brings faster spawns, faster orbs and more walls and squat punches, and the scoreboard shows `CHALLENGE +NN%`. It fades once you reach the zone.
+- **Challenge boost:** if you stay below for about 15 seconds without heart rate rising (or the game is already at full intensity), a **challenge boost** builds up over about 45 seconds. It brings faster spawns, faster orbs and more of the moves that work for you, and shows as a red glow past the intensity bar. It fades once you reach the zone, and it never builds while the scoreboard says CLIMBING (pushing harder then would overshoot).
 - **Bursts:** the boost's main tool is a short all-out effort, sent once the lane is clear:
   - **Speed bag:** a bag hangs in front of your chest for 4–5 seconds. Hit it as many times as you can (5 points a hit, more for a big flurry). No aiming or reaction time needed, just effort.
   - **Battle ropes:** two ropes run from your hands down the lane for 6 seconds. Pump both arms up and down fast; the waves you make travel down the ropes. Staying low (half squat) scores 1.5×.
   - Each can come at most every 20 s (speed bag) or 30 s (ropes). You'll see the odd one in the zone too, for variety, and hardly any above it.
 - **What works for you:** the game **learns what raises YOUR heart rate**. It compares your heart rate with how many of each activity you've recently done (punches, squat punches, hooks and uppercuts, power punches, squat-and-reach pairs, guard and counter, rope tracing, two-hand rope, speed bag, battle ropes, ducks, side steps, side squats), allowing for the heart's 30–40 second lag. When you're below the zone, it sends more of whatever works for you. When you're above it, it sends easier punches. The estimates are saved in the browser and refine over several workouts. New players learn about 3x faster at first, easing to the normal rate over their first ~10 minutes of real data. Only real heart rate teaches it: not the simulator, and not the movement-based estimate while the phone is asleep (that's shown with a "~" and a muted colour, and a two-tone chime plays when the phone comes back). Personal bests likewise only count workouts driven mostly by real heart rate. It only counts reps you actually did (orbs hit, walls cleared, guard shots blocked, ropes followed at least 30%), and if the phone's reading hasn't changed for over 25 seconds while you're below the zone and clearly working (a stuck wrist sensor), it stops learning and the challenge boost holds still until the reading moves again ("Heart rate looks stuck - check the band is snug").
-- **Where to see it:** in VR it's on the options board, and the end screen names your best activity.
+- **Where to see it:** in VR it's on the options board (top 4), and the end-of-workout board shows your top 3.
 
 ### Options (in VR)
 

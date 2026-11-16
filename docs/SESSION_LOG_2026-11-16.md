@@ -119,3 +119,6 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - Asked Gemini for round 8, polish only. Its three: a calmer first 2 minutes (no predictive arrows in warm-up, hide the pairing code once the phone is live), one colour language (guard shots shouldn't use a hand colour), and test/note buttons hidden unless Diag is on.
 - **Built all three:** CLIMBING/SETTLING arrows only appear in training; the scoreboard footer says "phone live" instead of the pairing code once the phone's heart rate is coming in; guard shots are now a white core with a teal shield glow (was red-orange with an orange halo, too close to the right hand's orange), and block shards are teal; the VR board shows just a "Diag (test tools)" button until Diag is on, then the Test and Note rows.
 - Checked: all checks pass; snapshots of the guard shot and the tidy board; no console errors.
+
+## Cycle 20 (11:12 AM)
+- Reorganised the README: the long gameplay list is now grouped (Moves; Heart-rate feedback; Rewards and progress; Comfort and clarity; Sound), a "New on 2026-11-16" pointer at the top links this log and the headset test plan, and stale wording is fixed (guard shot colour, CLIMBING / breathing text, the removed CHALLENGE % label, the end board's top 3).
