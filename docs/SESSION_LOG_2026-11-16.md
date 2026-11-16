@@ -122,3 +122,8 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 
 ## Cycle 20 (11:12 AM)
 - Reorganised the README: the long gameplay list is now grouped (Moves; Heart-rate feedback; Rewards and progress; Comfort and clarity; Sound), a "New on 2026-11-16" pointer at the top links this log and the headset test plan, and stale wording is fixed (guard shot colour, CLIMBING / breathing text, the removed CHALLENGE % label, the end board's top 3).
+
+## Cycle 21 (11:14 AM)
+- Checked the 2D game page (what you see in the Quest browser before Enter VR): the new Workout shape radios, Two-hand rope / Side shifts checkboxes and Warm-up field all render fine.
+- Updated the page's "How to play" text for today's moves (stand-tall box, white/teal guard shot, ropes, gold slam bar, side-shift floor pad, the green climbing arrow) and added **G** = guard to the desktop keys.
+- Fixed: on narrow screens the panel ran ~34 px off the right edge (its width didn't include its padding).

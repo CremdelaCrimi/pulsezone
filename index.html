@@ -8,7 +8,7 @@
   <style>
     html, body { margin: 0; height: 100%; background: #0b0d12; overflow: hidden; font: 14px/1.5 system-ui, -apple-system, sans-serif; color: #dfe3ea; }
     canvas { display: block; }
-    #panel { position: fixed; top: 16px; left: 16px; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 100px); overflow: auto;
+    #panel { position: fixed; top: 16px; left: 16px; box-sizing: border-box; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 100px); overflow: auto;
              background: #0a0c12d9; border: 1px solid #262c3a; border-radius: 12px; padding: 14px 16px; backdrop-filter: blur(6px); }
     #panel h1 { font-size: 18px; margin: 0 0 6px; } #panel h1 span { color: #4fd1c5; }
     #panel .muted { color: #8d95a5; }
@@ -76,10 +76,13 @@
     <div class="card help">
       <b>How to play:</b> punch <b style="color:#3fa9ff">blue</b> orbs with your left hand and <b style="color:#ff7a3d">orange</b> with your right.
       Orbs with a white curve: swing along the curve (uppercut or hook) for double points. Low orbs: squat and punch.
-      Purple walls: get your head into the open gap (duck, lean, squat). If your heart rate stalls, the game adds challenge and leans on whatever raises it most for you.
+      Purple walls: get your head into the open gap (duck, lean, squat), then stand tall over the low box that follows.
+      White shot with a teal glow: don't punch it, raise both fists to your chin, then punch the counter. Ropes: keep your hand in the ring as the rope slides by.
+      Gold bar: smash it down with both fists together. Floor pad + STEP LEFT/RIGHT: take a side step and punch from there.
+      If your heart rate stalls, the game adds challenge and leans on whatever raises it most for you; a green arrow means you're already working hard enough and your heart is catching up.
       The gauge on the left freezes when you're below your zone and burns when you're in it.<br />
       <b>Quest:</b> press <b>Enter VR</b> below. <kbd>Y</kbd> or <kbd>B</kbd> opens the options board on your left (point with the laser, pull the trigger). <kbd>A</kbd>/<kbd>X</kbd> restarts after a workout.<br />
-      <b>Desktop test:</b> left click = left punch · right click = right punch · hold <kbd>C</kbd> duck · <kbd>A</kbd>/<kbd>D</kbd> lean · <kbd>[</kbd> <kbd>]</kbd> target · <kbd>B</kbd> source ·
+      <b>Desktop test:</b> left click = left punch · right click = right punch · hold <kbd>G</kbd> guard · hold <kbd>C</kbd> duck · <kbd>A</kbd>/<kbd>D</kbd> lean · <kbd>[</kbd> <kbd>]</kbd> target · <kbd>B</kbd> source ·
       <kbd>O</kbd> options · <kbd>Tab</kbd> sim mode · <kbd>↑</kbd><kbd>↓</kbd> effort · <kbd>L</kbd> drop signal · <kbd>M</kbd> sound · <kbd>T</kbd> fast-forward · <kbd>E</kbd> end · <kbd>R</kbd> restart
     </div>
   </div>
