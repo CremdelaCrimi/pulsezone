@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -288,6 +288,20 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     check(first.records.length === 0 && first.bests.pct === 75 && second.records.join() === 'pct' && second.bests.score === 900
       && tooShort.records.length === 0 && tooShort.bests.pct === 80 && tooShort.bests.workouts === 3 && tooShort.bests.totalZoneSeconds === 360,
       'personal bests: first workout sets the bar, only real improvements count, short workouts set no records');
+  }
+
+  // Finishing slam: both fists smashing down through the bar, together.
+  {
+    const bar = { x: 0, y: 1.68, z: -0.5 };
+    check(fistSlams({ x: -0.3, y: 1.6, z: -0.45, vy: -2 }, bar) && !fistSlams({ x: -0.3, y: 1.6, z: -0.45, vy: -0.3 }, bar)
+      && !fistSlams({ x: -0.3, y: 1.6, z: -0.45, vy: 2 }, bar) && !fistSlams({ x: -0.8, y: 1.6, z: -0.45, vy: -2 }, bar)
+      && fistSlams({ x: 0.2, y: 1.7, z: -0.5, vy: 0 }, bar, true),
+      'slam: a fist must come DOWN through the bar fast (touch mode: just reach it)');
+    check(slamTogether(10.0, 10.25) && !slamTogether(10.0, 10.5) && !slamTogether(10.0, null), 'slam: both fists within 0.3 s');
+    const sw = lanePlan('sweep', { now: 0, speed: 3, intensity: 0.5 }), tr = lanePlan('trace', { now: 0, speed: 3, intensity: 0.5 });
+    const slam = lanePlan('slam', { now: 0, speed: 3, dist: 7 });
+    check(sw.end - sw.start > tr.end - tr.start + SLAM_GAP && slam.kind === 'solo' && slam.start > 1 && slam.start < 2.5,
+      'two-hand rope books room for its slam; a slam after battle ropes comes in ~2 s');
   }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.

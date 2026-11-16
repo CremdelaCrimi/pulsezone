@@ -18,3 +18,8 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - Leftover orbs are now cleared when the workout ends, so nothing hangs in front of the board.
 - Checked: 95 checks pass; two full 4-minute auto-play workouts, 0 overlaps, no console errors; the second run marked 4 new bests.
 - Reported cycles 1–2 to Gemini and asked two design questions. Gemini's answers: (A) the finishing smash should be ONE wide two-handed overhead slam bar (both fists moving down together), not twin orbs: it drives a full-body slam and reads clearer; (B) the lane shift should move only where orbs spawn (±0.35 m, ~8 s, floor chevrons), keep the HUD, walls, ropes and bursts centred, and only happen below the zone. New onboarding ideas: ghost fists showing the pose the first time guard and ropes appear; a scripted warm-up sampler for new players; "SWING FULL" / "LEFT HAND" cues with a buzz on the correct controller for the first few mistakes.
+
+## Cycle 3 (9:25 AM)
+- **Built:** Gemini's (2), as it recommended in (A). A finishing slam: a wide gold bar at head height with arrows pointing down. Smash it down with both fists, each moving down at least 1.1 m/s, within 0.3 s of each other (Touch mode: just reach it with both hands). It comes 0.9 s after every two-hand rope (booked in the rope's lane slot) and ~2 s after battle ropes (booked as its own slot). +60 points (×2 in the zone), big boom, shards, strong buzz on both hands. Missing it breaks the combo. On desktop, a click while it's in reach counts.
+- Brief updated with cycles 1–3.
+- Checked: 98 checks pass; forced two-hand rope and battle ropes both produced a slam; 3-minute auto-play with 4 slams, 0 overlaps, no console errors.

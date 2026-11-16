@@ -69,6 +69,7 @@ Everything flies down one lane. Each thing books a time slot for when it reaches
 | Stand tall (auto) | After every duck/squat box: a low box you must stand fully up over | follows squats | — |
 | Speed bag (burst) | 4–5 s of rapid alternating punches on a bag | 0.35, or early when stuck | 0.3 per punch |
 | Battle ropes (burst) | 6 s of pumping both arms; staying low scores 1.5× | 0.45, or early when stuck | 1.6 per second |
+| Finishing slam (auto) | After battle ropes and two-hand ropes: a wide gold bar at head height; smash it DOWN with both fists together (within 0.3 s) | follows ropes | — |
 
 The player chooses their moveset with checkboxes (game page and VR options board, kept in sync). If everything is off, the game falls back to plain punches.
 
@@ -102,6 +103,10 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - In-world scoreboard: heart rate, target, phase and time, intensity, score, combo, challenge boost, phone status and pairing code, short call-outs ("Stand tall!", "Ride the rope!", "Perfect hook!").
 - **In the zone, the world lights up:** equalizer pillars pulse to the beat along the lane, embers drift up, fists leave glowing trails, the lane rails turn from blue to orange, the sky warms.
 - Controller haptics on hits, blocks and while on the rope.
+- **Heart-lag bridge:** when you're below the zone but a ~12 s effort estimate (from the learning model) says your heart rate is heading into it, the scoreboard shows a green ▲ and "CLIMBING – KEEP IT UP"; above the zone, "SETTLING" with a ▼ once you've eased off enough.
+- **Zone streaks:** every 15 s in the zone: a rising bell chord, the rails flare, bonus points and reactor charge; the current streak is on the scoreboard.
+- **End-of-workout board:** heart-rate graph (coloured by zone) over the target band, time in zone %, average/peak, longest streak, score, reactor level, top heart-raising move.
+- **Personal bests** (time in zone %, streak, score, reactor) saved in the browser, gold NEW BEST tags, and a "To beat" line during warm-up.
 
 ## 8. Music and sound (pace-leading audio)
 - **Song mode:** "Hard-Knuckle Focus" (121 BPM), time-stretched 0.78×–1.25× with pitch preserved to lead the player's pace. On Quest it starts from a button press (enter VR / trigger); if blocked, the synth plays instead.
@@ -133,7 +138,7 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - Open question: how much does each "fun" move actually raise heart rate? (the learned ranking answers this over several workouts)
 
 ## 12. Not yet tested in the headset
-Guard detection distance, speed bag distance, rope pump speed, zone visuals' frame rate, the music fix, the two-hand rope, stand-tall timing.
+The slam bar's height and downward-speed threshold, the climbing cue's accuracy with a real heart, guard detection distance, speed bag distance, rope pump speed, zone visuals' frame rate, the music fix, the two-hand rope, stand-tall timing.
 
 ## 13. Rejected or reworked ideas
 - 40/20 Tabata intervals: heart rate lags 30–40 s, so fixed short intervals fight the controller (consider effort-based or 2–3 min HR-gated intervals instead).

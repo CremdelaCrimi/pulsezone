@@ -40,6 +40,7 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 - **Zone streaks:** every 15 seconds you hold the zone, a bell chord rings (a little higher each time), the lane rails flare, and you get bonus points and reactor charge. The scoreboard shows your current streak.
 - **Workout summary:** when you finish, a board below the scoreboard graphs your heart rate over the whole workout (coloured by zone) against your target band, with time in zone, average and peak BPM, longest zone streak, score, reactor level and the move that raises YOUR heart rate most.
 - **Personal bests:** time in zone (%), longest streak, score and reactor level are saved in the browser. Beat one and it's marked **NEW BEST** in gold. During warm-up the scoreboard shows what to beat. Workouts under 3 minutes of training don't set records.
+- **Finishing slam:** battle ropes and two-hand ropes end with a wide gold bar at head height. Raise both fists and smash it **down** together (within 0.3 s of each other), like a medicine-ball slam. In Touch mode, reaching it with both hands is enough.
 - **Spacing:** everything shares one lane, so the game books a time slot for when each thing reaches you. Plain orbs can come in groups, but a rope, a wall box, a power orb, a squat-and-reach pair or a guard shot always gets the lane to itself, with a short gap before and after. Nothing flies through anything else.
 - **Soundtrack:** "Hard-Knuckle Focus", an instrumental track made with Gemini's music tool (`assets/music/hard-knuckle-focus.mp3`, 121 BPM). The game **time-stretches it to your pace** with the pitch preserved, from 0.78× to 1.25×. It loops over 87 whole bars and skips the intro and the silent ending. Switch between **Song** and **Synth** on the options board. On the Quest the song can only start from a button press, so it starts when you enter VR or pull a trigger. If it's ever blocked, the synth music plays instead and the game says so.
 - **Music & sound (Synth):** synthesized live. The **tempo leads you**: it speeds up when you need to pick it up and slows when you need to ease off. You also get icy bells below your zone, a bright arpeggio in it, a soft heartbeat at your real BPM, and a sound for every hit, dodge and wall.
@@ -87,7 +88,7 @@ Left click = left punch · right click = right punch · hold **G** guard · hold
 | `js/dev.js` | Developer tuning panel |
 | `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
 | `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
-| `test/core.test.mjs` | 95 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
+| `test/core.test.mjs` | 98 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
 
@@ -120,7 +121,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v14` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v15` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

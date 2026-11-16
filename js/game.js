@@ -7,15 +7,15 @@ import {
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
   HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
-  summarizeWorkout, updateBests, MIN_RECORD_SECONDS,
+  summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v14';
+} from './core.js?v15';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v14';
+import { AudioEngine } from './audio.js?v15';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v14';
-import { loadTuning, createDevPanel } from './dev.js?v14';
+import { OptionsPanel } from './options.js?v15';
+import { loadTuning, createDevPanel } from './dev.js?v15';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -477,6 +477,8 @@ function clearObstacles() {
   if (ropes) { endRopes(false); }
   for (const g of guards) scene.remove(g.group);
   guards.length = 0;
+  for (const s of slams) scene.remove(s.group);
+  slams.length = 0;
   pendingBurst = null;
   bagReadyAt = ropesReadyAt = 0;
   spawnTimer = 0;
@@ -1067,6 +1069,7 @@ function endRopes(award) {
   for (const s of ropes.sides) { scene.remove(s.mesh); s.mesh.dispose(); s.mat.dispose(); }
   ropes = null;
   ropesReadyAt = gameTime + 30;
+  if (award) trySpawn('slam'); // finish with a two-fisted slam
 }
 
 /**
@@ -1119,6 +1122,8 @@ function spawnTrace(head, standing, two = false) {
     : [makeStrand(group, ptsAt(0), ctrl.reduce((sum, [x]) => sum + x, 0) < 0 ? 'left' : 'right')];
   scene.add(group);
   traces.push({ group, strands, two, length, speed, planeZ: head.z - 0.5, started: false, totalTime: 0 });
+  // Two-hand rope: a slam bar follows SLAM_GAP s after the tail (booked in its lane slot).
+  if (two) spawnSlam(head, standing, { dist: 14 + length + SLAM_GAP * speed, speed });
 }
 /** Rope position at a given local depth z (0 = front end, -length = tail). */
 function ropeAt(strand, localZ, out) {
@@ -1190,6 +1195,71 @@ function updateTraces(dt, xr) {
       if (r.on && xr && Math.random() < 0.3) pulse(fistByHand[r.hand], 0.15, 15);
     }
   }
+}
+
+// ------------------------------------------------------------------ finishing slam (after ropes)
+
+/**
+ * A wide gold bar at head height with arrows pointing down: raise both fists and smash it DOWN
+ * together (a medicine-ball slam). Comes right after battle ropes and two-hand ropes.
+ */
+const slams = [];
+const slamBarGeo = new THREE.BoxGeometry(SLAM_BOX.x * 1.8, 0.12, 0.14);
+const slamEdgeGeo = new THREE.EdgesGeometry(slamBarGeo);
+const slamArrowGeo = new THREE.ConeGeometry(0.07, 0.16, 4).rotateX(Math.PI); // points down
+const slamMat = new THREE.MeshStandardMaterial({ color: 0xffc04d, emissive: 0xff9a1f, emissiveIntensity: 0.8, roughness: 0.35 });
+const slamEdgeMat = new THREE.LineBasicMaterial({ color: 0xb46bff });
+function spawnSlam(head, standing, { dist = SPAWN_DISTANCE, speed = difficulty.orbSpeed } = {}) {
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(slamBarGeo, slamMat), new THREE.LineSegments(slamEdgeGeo, slamEdgeMat));
+  const arrows = [-0.3, 0, 0.3].map((x) => { const a = new THREE.Mesh(slamArrowGeo, slamMat); a.position.set(x, 0.3, 0); group.add(a); return a; });
+  group.position.set(centerX, standing - 0.02, head.z - dist);
+  scene.add(group);
+  slams.push({ group, arrows, speed, t: { left: null, right: null }, passZ: head.z + 0.4, announced: false, age: 0 });
+}
+function endSlam(s, i, hit) {
+  if (hit) {
+    const pts = 60 * (score.inZone() ? 2 : 1);
+    score.score += pts; score.hits++; score.combo++; score.best = Math.max(score.best, score.combo);
+    say(`SLAM!  +${pts}`);
+    audio.sfx('power', { power: 1 });
+    pulseBoth(1, 160);
+    for (const dx of [-0.35, 0.35]) shatter(s.group.position.clone().add(new THREE.Vector3(dx, 0, 0)), new THREE.Vector3(dx, -1, -0.3).normalize(), 0xffc04d, 1);
+  } else {
+    score.combo = 0;
+    say('Missed the slam - both fists down together');
+    audio.sfx('miss');
+  }
+  scene.remove(s.group);
+  slams.splice(i, 1);
+}
+const slamTmp = new THREE.Vector3();
+function updateSlams(dt, xr, head) {
+  for (let i = slams.length - 1; i >= 0; i--) {
+    const s = slams[i];
+    s.age += dt;
+    s.group.position.z += s.speed * dt;
+    const bob = Math.sin(s.age * 9);
+    s.arrows.forEach((a) => { a.position.y = 0.3 + 0.05 * bob; });
+    if (!s.announced && s.group.position.z > head.z - 6) { s.announced = true; say('SLAM IT - both fists, down!'); }
+    const bar = s.group.position;
+    if (SMOKE && bar.z > head.z - 0.5) { endSlam(s, i, true); continue; }
+    if (xr || !SMOKE) {
+      for (const f of fists) {
+        f.mesh.getWorldPosition(slamTmp);
+        if (fistSlams({ x: slamTmp.x, y: slamTmp.y, z: slamTmp.z, vy: f.vel.y }, bar, settings.gameType === 'touch')) s.t[f.hand] = gameTime;
+      }
+      if (slamTogether(s.t.left, s.t.right)) { endSlam(s, i, true); continue; }
+    }
+    if (bar.z > s.passZ) endSlam(s, i, false);
+  }
+}
+/** Desktop: a click while the bar is within reach counts as the slam. */
+function desktopSlam(head) {
+  const s = slams.find((x) => x.group.position.z > head.z - 1.4 && x.group.position.z < head.z + 0.2);
+  if (!s) return false;
+  endSlam(s, slams.indexOf(s), true);
+  return true;
 }
 
 function removeOrb(orb) {
@@ -1780,6 +1850,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 });
 
 function desktopPunch(hand) {
+  if (desktopSlam(head)) { punchTimer = 0.15; punchHand = hand; return; }
   raycaster.setFromCamera(pointer, camera);
   if (bag && bag.age >= BAG_ARRIVE && raycaster.intersectObject(bag.body, false).length) {
     punchTimer = 0.12; punchHand = hand;
@@ -1852,6 +1923,7 @@ function xrButtons() {
 // ------------------------------------------------------------------ sending things down the lane
 
 /** Send `activity` if its arrival slot is free. Returns false to try again a moment later. */
+const SLAM_DIST = 7; // after battle ropes the slam comes from 7 m, so it arrives in ~2 s
 function trySpawn(activity) {
   if (activity === 'bag' || activity === 'ropes') {
     pendingBurst = activity;
@@ -1864,11 +1936,12 @@ function trySpawn(activity) {
   const speed = difficulty.orbSpeed;
   const plan = lanePlan(activity, {
     now: gameTime, speed, intensity: difficulty.intensity,
-    depth: wallType ? wallDepth(wallType, speed * 0.8) : 0,
+    depth: wallType ? wallDepth(wallType, speed * 0.8) : 0, dist: SLAM_DIST,
   });
   if (!laneFree(lane, plan)) return false;
   if (plan) lane.push(plan);
-  if (wallType) spawnWall(head, standing, wallType, activity);
+  if (activity === 'slam') spawnSlam(head, standing, { dist: SLAM_DIST, speed });
+  else if (wallType) spawnWall(head, standing, wallType, activity);
   else if (activity === 'trace' || activity === 'sweep') spawnTrace(head, standing, activity === 'sweep');
   else if (activity === 'pair') spawnPair(head, standing);
   else if (activity === 'guard') spawnGuard(head, standing);
@@ -1959,7 +2032,7 @@ function frame(time) {
     lane = lane.filter((r) => r.end > gameTime);
     if (pendingBurst && !standNext) {
       // A burst waits until the lane is clear, then takes over for a few seconds.
-      if (!orbs.length && !walls.length && !traces.length && !guards.length) {
+      if (!orbs.length && !walls.length && !traces.length && !guards.length && !slams.length) {
         if (pendingBurst === 'bag') spawnBag(head, standing); else spawnRopes(head, standing);
         pendingBurst = null;
         spawnTimer = 0;
@@ -1985,6 +2058,7 @@ function frame(time) {
   if (!paused) {
     updateTraces(gdt, xr);
     updateGuards(gdt, xr, head);
+    updateSlams(gdt, xr, head);
     if (bag) updateBag(gdt, xr);
     if (ropes) updateRopes(gdt, xr, head);
   }
@@ -2137,7 +2211,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };
@@ -2177,6 +2251,7 @@ window.pz = {
     const items = [
       ...orbs.filter((o) => !o.dying).map((o) => ({ what: o.counter ? 'counter' : o.activity, a: (head.z - 0.5 - o.group.position.z) / o.speed, b: (head.z - 0.5 - o.group.position.z) / o.speed })),
       ...walls.map((w) => ({ what: 'wall', a: (head.z - w.mesh.position.z - w.depth) / w.speed, b: (head.z - w.mesh.position.z) / w.speed })),
+      ...slams.map((s) => ({ what: 'slam', a: (head.z - 0.8 - s.group.position.z) / s.speed, b: (head.z - 0.2 - s.group.position.z) / s.speed })),
       ...traces.map((t) => ({ what: 'rope', a: (t.planeZ - t.group.position.z) / t.speed, b: (t.planeZ - t.group.position.z + t.length) / t.speed })),
       ...guards.map((g) => ({ what: 'guard', a: (g.hitZ - g.group.position.z) / g.speed, b: (g.hitZ - g.group.position.z) / g.speed })),
     ];

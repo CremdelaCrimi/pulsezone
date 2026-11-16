@@ -649,7 +649,7 @@ export const tracePoints = (fraction) => Math.round(50 * clamp01(fraction) ** 1.
  * after every solo thing already on its way, or it would fly through it.
  */
 export const SPAWN_DISTANCE = 14;
-export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0 }) {
+export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0, dist = SPAWN_DISTANCE }) {
   const orbArrive = now + (SPAWN_DISTANCE - 0.5) / speed;
   switch (activity) {
     case 'jab': case 'low': case 'swing':
@@ -667,7 +667,12 @@ export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0 
       const ts = Math.max(2.2, speed * 0.85);
       const front = now + (SPAWN_DISTANCE - 0.5) / ts;
       const tail = front + (activity === 'sweep' ? sweepSeconds : traceSeconds)(intensity);
-      return { kind: 'solo', start: front - 0.9, end: tail + 0.7 };
+      // The two-hand rope ends with a slam bar SLAM_GAP s after its tail.
+      return { kind: 'solo', start: front - 0.9, end: tail + (activity === 'sweep' ? SLAM_GAP : 0) + 0.7 };
+    }
+    case 'slam': { // after battle ropes: a slam bar sent from closer in (`dist`), so it comes soon
+      const arrive = now + (dist - 0.5) / speed;
+      return { kind: 'solo', start: arrive - 0.7, end: arrive + 0.7 };
     }
     case 'duck': case 'lateral': case 'squatSide': case 'stand': {
       const ws = speed * 0.8;
@@ -676,6 +681,22 @@ export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0 
     default: return null;
   }
 }
+/**
+ * Finishing slam (after battle ropes and two-hand ropes): a wide bar at head height that you
+ * smash DOWN with both fists together, like a medicine-ball slam.
+ */
+export const SLAM_GAP = 0.9;          // seconds between a two-hand rope's tail and its slam bar
+export const SLAM_BOX = Object.freeze({ x: 0.5, y: 0.24, z: 0.3 }); // half-sizes of the hit zone
+export const SLAM_SPEED = 1.1;        // m/s downward a fist needs (Punch mode)
+export const SLAM_WINDOW = 0.3;       // both fists within this many seconds
+/** Is this fist (position, vertical speed) smashing down through the bar right now? */
+export function fistSlams(f, bar, touch = false) {
+  return Math.abs(f.x - bar.x) < SLAM_BOX.x && Math.abs(f.y - bar.y) < SLAM_BOX.y && Math.abs(f.z - bar.z) < SLAM_BOX.z
+    && (touch || f.vy < -SLAM_SPEED);
+}
+/** Both fists came down on it close enough together? (times in seconds, null = not yet) */
+export const slamTogether = (tLeft, tRight) => tLeft != null && tRight != null && Math.abs(tLeft - tRight) <= SLAM_WINDOW;
+
 /** Can `plan` be added to the booked `lane` slots without crowding anything? */
 export function laneFree(lane, plan) {
   if (!plan) return true;
