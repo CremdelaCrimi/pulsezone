@@ -1,6 +1,6 @@
 // Phone bridge: Charge 6 (Web Bluetooth, via the Bluefy browser on iPhone) -> game on the Quest.
-import { parseHeartRateMeasurement } from './core.js';
-import { BridgeLink, normalizeCode, codeFromInput } from './link.js';
+import { parseHeartRateMeasurement } from './core.js?v4';
+import { BridgeLink, normalizeCode, codeFromInput } from './link.js?v4';
 
 const $ = (id) => document.getElementById(id);
 const ui = {

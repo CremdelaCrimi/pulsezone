@@ -5,10 +5,10 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, estimatedMaxBpm, WALL_TYPES, pickWallType, wallPolygon, wallHitsHead,
   planOrb, swingMatches, heatLook,
-} from './core.js';
-import { HostLink } from './link.js';
-import { AudioEngine } from './audio.js';
-import { HeartThermometer } from './thermo.js';
+} from './core.js?v4';
+import { HostLink } from './link.js?v4';
+import { AudioEngine } from './audio.js?v4';
+import { HeartThermometer } from './thermo.js?v4';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
