@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -271,6 +271,23 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
       'climbing / easing only when effort already points into the zone');
     check(streakMilestone(14.9, 15.1) === 1 && streakMilestone(29, 31) === 2 && streakMilestone(15.2, 16) === 0 && streakMilestone(0, 0.5) === 0,
       'zone streak milestones every 15 s');
+  }
+
+  // End-of-workout summary and personal bests.
+  {
+    const rows = [];
+    for (let t = 0; t < 30; t++) rows.push({ t, phase: 'WarmUp', bpm: 90 + t, status: 'Below', target: 120 });
+    for (let t = 30; t < 230; t++) rows.push({ t, phase: 'Training', bpm: t < 80 ? 110 : 121, status: t < 80 ? 'Below' : 'InZone', target: 120 });
+    rows.push({ t: 230, phase: 'CoolDown', bpm: '', status: 'NoSignal', target: 120 });
+    const sum = summarizeWorkout(rows);
+    check(sum.trainingSeconds === 200 && sum.inZoneSeconds === 150 && sum.pct === 75 && sum.peakBpm === 121 && sum.avgBpm > 100,
+      `workout summary: time in zone counts training only (${JSON.stringify(sum)})`);
+    const first = updateBests(null, { ...sum, score: 900, streak: 150, reactor: 2 });
+    const second = updateBests(first.bests, { ...sum, pct: 80, score: 800, streak: 60, reactor: 2 });
+    const tooShort = updateBests(second.bests, { trainingSeconds: 60, inZoneSeconds: 60, pct: 100, score: 5000, streak: 60, reactor: 1 });
+    check(first.records.length === 0 && first.bests.pct === 75 && second.records.join() === 'pct' && second.bests.score === 900
+      && tooShort.records.length === 0 && tooShort.bests.pct === 80 && tooShort.bests.workouts === 3 && tooShort.bests.totalZoneSeconds === 360,
+      'personal bests: first workout sets the bar, only real improvements count, short workouts set no records');
   }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.

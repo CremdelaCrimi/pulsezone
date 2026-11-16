@@ -839,6 +839,46 @@ export function streakMilestone(before, after, step = ZONE_STREAK_STEP) {
   return b > a ? b : 0;
 }
 
+// ---------------------------------------------------------------- end-of-workout summary and personal bests
+
+/**
+ * Sum up a workout from its per-second log rows ({ t, phase, bpm, status, target }).
+ * Time in zone counts training only; `pct` is of the training actually done (ending early is fair).
+ */
+export function summarizeWorkout(rows) {
+  const training = rows.filter((r) => r.phase === 'Training');
+  const beats = rows.map((r) => Number(r.bpm)).filter((b) => b > 0);
+  const trainingBeats = training.map((r) => Number(r.bpm)).filter((b) => b > 0); // average = training, like the scoreboard
+  const inZone = training.filter((r) => r.status === 'InZone').length;
+  return {
+    seconds: rows.length,
+    trainingSeconds: training.length,
+    inZoneSeconds: inZone,
+    pct: training.length ? Math.round((100 * inZone) / training.length) : 0,
+    avgBpm: trainingBeats.length ? Math.round(trainingBeats.reduce((a, b) => a + b, 0) / trainingBeats.length) : 0,
+    peakBpm: beats.length ? Math.max(...beats) : 0,
+  };
+}
+
+/** Workouts shorter than this (training seconds) don't set records: too easy to fluke 100%. */
+export const MIN_RECORD_SECONDS = 180;
+/**
+ * Fold one finished workout into the saved personal bests.
+ * Returns { bests, records } where records lists the stats that are new bests this time.
+ */
+export function updateBests(prev, w) {
+  const b = { workouts: 0, totalZoneSeconds: 0, pct: 0, score: 0, streak: 0, reactor: 0, ...(prev || {}) };
+  b.workouts++;
+  b.totalZoneSeconds += w.inZoneSeconds || 0;
+  const records = [];
+  if (w.trainingSeconds >= MIN_RECORD_SECONDS) {
+    for (const k of ['pct', 'score', 'streak', 'reactor']) {
+      if ((w[k] || 0) > (b[k] || 0)) { if (prev) records.push(k); b[k] = w[k]; } // first workout: sets the bar, no "new best"
+    }
+  }
+  return { bests: b, records };
+}
+
 // ---------------------------------------------------------------- music tempo as a pacing cue
 
 /**

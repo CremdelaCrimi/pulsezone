@@ -7,14 +7,15 @@ import {
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
   HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
+  summarizeWorkout, updateBests, MIN_RECORD_SECONDS,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v13';
+} from './core.js?v14';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v13';
+import { AudioEngine } from './audio.js?v14';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v13';
-import { loadTuning, createDevPanel } from './dev.js?v13';
+import { OptionsPanel } from './options.js?v14';
+import { loadTuning, createDevPanel } from './dev.js?v14';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -292,7 +293,8 @@ function startWorkout() {
   gameTime = 0;
   sessionLog.length = 0;
   finishedPlayed = false;
-  zoneStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
+  zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
+  summaryBoard.visible = false; lastSummary = null;
   clearObstacles();
   score.reset();
   resetReactor();
@@ -750,6 +752,7 @@ let zoneAmt = 0;        // 0..1, eases in when you're in the zone
 let beatPhase = 0;      // music beats, for pulsing things to the tempo
 let hitFlash = 0;       // red flash when a guard shot gets through
 let zoneStreak = 0;     // seconds in the zone without dropping out (training only)
+let longestStreak = 0;
 let streakFlash = 0;    // lane rails flare up at each streak milestone
 let trend = null, trendShown = null, trendFor = 0, projSmooth = null; // 'climbing' / 'easing' (heart catching up with effort)
 const eqMats = [0xff8a3d, 0xff4fa3].map((c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.9, roughness: 0.5 }));
@@ -1282,6 +1285,102 @@ const hud = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.5), new THREE.MeshBasi
 scene.add(hud);
 let hudKey = '';
 
+// ------------------------------------------------------------------ end-of-workout summary board
+
+/**
+ * When the workout ends, a board below the scoreboard shows your heart rate over the whole
+ * workout against your target band, time in zone, and your personal bests (saved in the browser).
+ */
+const BESTS_KEY = 'pulsezone.bests';
+const loadBests = () => { try { return JSON.parse(localStorage.getItem(BESTS_KEY) || 'null'); } catch { return null; } };
+let bests = loadBests();
+const sumCanvas = document.createElement('canvas');
+sumCanvas.width = 1024; sumCanvas.height = 640;
+const sumTex = new THREE.CanvasTexture(sumCanvas);
+sumTex.colorSpace = THREE.SRGBColorSpace;
+const summaryBoard = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.125), new THREE.MeshBasicMaterial({ map: sumTex, transparent: true }));
+summaryBoard.visible = false;
+scene.add(summaryBoard);
+let lastSummary = null;
+
+function finishWorkout() {
+  const w = summarizeWorkout(sessionLog);
+  Object.assign(w, { score: score.score, streak: Math.floor(longestStreak), reactor: reactor.level, combo: score.best });
+  const { bests: b, records } = updateBests(bests, w);
+  bests = b;
+  try { localStorage.setItem(BESTS_KEY, JSON.stringify(bests)); } catch { /* ignore */ }
+  lastSummary = { w, records };
+  clearObstacles(); // nothing left hanging in front of the board
+  drawSummary(w, records);
+  summaryBoard.visible = true;
+}
+
+function drawSummary(w, records) {
+  const g = sumCanvas.getContext('2d'), W = sumCanvas.width, H = sumCanvas.height;
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = 'rgba(8,10,18,0.82)';
+  g.beginPath(); g.roundRect(8, 8, W - 16, H - 16, 28); g.fill();
+  g.textBaseline = 'middle';
+  g.fillStyle = '#e6e9ef'; g.font = '700 38px system-ui, sans-serif'; g.textAlign = 'left';
+  g.fillText('Your heart rate this workout', 48, 50);
+
+  // Graph: heart rate (coloured by zone) over time, the target band, warm-up / cool-down shaded.
+  const rows = sessionLog.filter((r) => Number(r.bpm) > 0);
+  const half = controller.s.zoneHalfWidth;
+  const x0 = 90, x1 = W - 40, y0 = 90, y1 = 320;
+  if (rows.length > 1) {
+    const tMin = rows[0].t, tMax = rows[rows.length - 1].t || 1;
+    const lo = Math.min(...rows.map((r) => Math.min(Number(r.bpm), r.target - half))) - 5;
+    const hi = Math.max(...rows.map((r) => Math.max(Number(r.bpm), r.target + half))) + 5;
+    const X = (t) => x0 + ((t - tMin) / Math.max(1, tMax - tMin)) * (x1 - x0);
+    const Y = (b) => y1 - ((b - lo) / Math.max(1, hi - lo)) * (y1 - y0);
+    for (const r of rows) if (r.phase !== 'Training') { g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(X(r.t), y0, Math.max(2, (x1 - x0) / rows.length), y1 - y0); }
+    g.fillStyle = 'rgba(77,255,115,0.16)';
+    const tgt = rows.find((r) => r.phase === 'Training')?.target ?? rows[0].target;
+    g.fillRect(x0, Y(tgt + half), x1 - x0, Y(tgt - half) - Y(tgt + half));
+    g.strokeStyle = 'rgba(77,255,115,0.5)'; g.lineWidth = 2; g.setLineDash([8, 8]);
+    g.beginPath(); g.moveTo(x0, Y(tgt)); g.lineTo(x1, Y(tgt)); g.stroke(); g.setLineDash([]);
+    g.lineWidth = 5; g.lineJoin = 'round';
+    for (let i = 1; i < rows.length; i++) {
+      const a = rows[i - 1], b = rows[i];
+      g.strokeStyle = ZONE_COLOR[b.status] || '#999999';
+      g.beginPath(); g.moveTo(X(a.t), Y(Number(a.bpm))); g.lineTo(X(b.t), Y(Number(b.bpm))); g.stroke();
+    }
+    g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif'; g.textAlign = 'right';
+    g.fillText(String(tgt + half), x0 - 10, Y(tgt + half)); g.fillText(String(tgt - half), x0 - 10, Y(tgt - half));
+    g.textAlign = 'left'; g.fillText('0:00', x0, y1 + 22);
+    g.textAlign = 'right'; g.fillText(mmss(tMax - tMin), x1, y1 + 22);
+  } else {
+    g.fillStyle = '#8d95a5'; g.font = '28px system-ui, sans-serif'; g.textAlign = 'center';
+    g.fillText('No heart-rate readings this time', W / 2, (y0 + y1) / 2);
+  }
+
+  // Stats, with gold "NEW BEST" tags.
+  const isNew = (k) => records.includes(k);
+  const stat = (label, value, x, y, rec) => {
+    g.textAlign = 'left'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif'; g.fillText(label, x, y);
+    g.fillStyle = rec ? '#ffc04d' : '#ffffff'; g.font = '700 40px system-ui, sans-serif'; g.fillText(value, x, y + 40);
+    if (rec) { g.font = '700 20px system-ui, sans-serif'; g.fillText('NEW BEST', x, y + 76); }
+  };
+  stat('Time in zone', `${mmss(w.inZoneSeconds)}  (${w.pct}%)`, 48, 380, isNew('pct'));
+  stat('Avg / peak', `${w.avgBpm || '--'} / ${w.peakBpm || '--'}`, 400, 380, false);
+  stat('Longest streak', mmss(w.streak), 640, 380, isNew('streak'));
+  stat('Score', String(w.score), 48, 490, isNew('score'));
+  stat('Reactor', `level ${w.reactor}`, 400, 490, isNew('reactor'));
+  const top = attribution.ranking()[0];
+  stat('Raises YOUR heart most', top.label, 640, 490, false);
+  g.textAlign = 'center'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
+  const short = w.trainingSeconds < MIN_RECORD_SECONDS ? '  ·  workouts under 3 min don\'t set records' : '';
+  g.fillText(bests ? `Bests: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points · ${bests.workouts} workout${bests.workouts === 1 ? '' : 's'}${short}` : '', W / 2, 600);
+  sumTex.needsUpdate = true;
+}
+
+/** A line for the scoreboard during warm-up: what to beat today. */
+function bestsLine() {
+  if (!bests || !bests.pct) return '';
+  return `To beat: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points`;
+}
+
 const thermo = new HeartThermometer();
 thermo.mesh.scale.setScalar(1.3);
 scene.add(thermo.mesh);
@@ -1307,6 +1406,7 @@ function updateStreak(gdt) {
   if (controller.phase !== Phase.Training || controller.status !== Zone.InZone) { zoneStreak = 0; return; }
   const before = zoneStreak;
   zoneStreak += gdt;
+  longestStreak = Math.max(longestStreak, zoneStreak);
   const m = streakMilestone(before, zoneStreak);
   if (!m) return;
   const bonus = 20 * Math.min(m, 8);
@@ -1391,6 +1491,9 @@ function drawHud(xr) {
     g.fillText(xr ? 'Press A to go again' : 'Press R to go again', W / 2, 480);
   } else if (fresh) {
     g.fillText(lastEvent, W / 2, 400);
+  } else if (c.phase === Phase.WarmUp && bestsLine()) {
+    g.fillStyle = '#ffc04d'; g.font = '600 32px system-ui, sans-serif';
+    g.fillText(bestsLine(), W / 2, 400);
   }
 
   if (statusLine) {
@@ -1841,7 +1944,7 @@ function frame(time) {
   if (controller.phase === Phase.Training && src.hasReading && !paused) { avgSum += src.currentBpm; avgN++; }
   if (controller.status === Zone.InZone && lastStatus !== Zone.InZone && controller.phase !== Phase.Finished) audio.sfx('zone');
   lastStatus = controller.status;
-  if (controller.phase === Phase.Finished && !finishedPlayed) { finishedPlayed = true; audio.sfx('finish'); saveSession(); }
+  if (controller.phase === Phase.Finished && !finishedPlayed) { finishedPlayed = true; audio.sfx('finish'); saveSession(); finishWorkout(); }
   audio.update({
     intensity: controller.intensity, status: controller.status, bpm: src.hasReading ? src.currentBpm : 0,
     phase: controller.phase, paused, target: controller.s.targetBpm,
@@ -1965,6 +2068,7 @@ function frame(time) {
 
   // Layout: scoreboard ahead, heat gauge and options tab to its left, options board on the left.
   hud.position.set(centerX, standing + 0.35, head.z - 3.2);
+  if (summaryBoard.visible) { summaryBoard.position.set(centerX, standing - 1.0, head.z - 2.5); summaryBoard.rotation.x = -0.35; }
   thermo.mesh.position.set(centerX - 1.65, standing + 0.3, head.z - 3.1);
   reactor.group.position.set(centerX + 1.65, standing + 0.45, head.z - 3.1);
   options.tab.position.set(centerX - 1.65, standing - 0.85, head.z - 3.05);
@@ -2033,7 +2137,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), trend: trendShown, zoneStreak: Math.floor(zoneStreak), projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };
