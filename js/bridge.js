@@ -189,8 +189,8 @@ async function keepAwake() {
 }
 function renderAwake() {
   ui.awake.textContent = awakeMode === 'off'
-    ? 'Screen may lock. Set Auto-Lock to Never (Settings > Display & Brightness) during workouts.'
-    : 'Trying to keep the screen on. For long workouts, also set Auto-Lock to Never.';
+    ? 'This browser may let the screen lock. Use Guided Access below so it stays on.'
+    : 'Trying to keep the screen on. For a whole workout, use Guided Access below.';
 }
 // Must start from a tap on iPhone.
 for (const el of [ui.linkBtn, ui.bleBtn, ui.bleAllBtn, ui.fake]) el.addEventListener('click', keepAwake);

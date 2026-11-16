@@ -35,6 +35,8 @@
     .banner.bad { background: #3a1518; border: 1px solid #6b2328; }
     .banner a { color: var(--warn); }
     details { color: var(--muted); font-size: 14px; }
+    details.guided { margin-top: 12px; color: var(--text); }
+    details.guided ol { padding-left: 20px; margin: 6px 0; }
     details p, details li { margin: 6px 0; }
     summary { cursor: pointer; color: var(--text); }
     label.toggle { display: flex; align-items: center; gap: 10px; font-size: 15px; }
@@ -74,6 +76,19 @@
   <section>
     <h2>3 · Keep this screen on</h2>
     <div class="pill" style="margin-top:0"><span class="dot warn"></span><span id="awake">Tap Link or Connect to start keep-awake.</span></div>
+    <details class="guided" open>
+      <summary>Lock the phone into this page (recommended)</summary>
+      <p>iPhone's <b>Guided Access</b> keeps Bluefy open with the screen on, so your heart rate never cuts out.</p>
+      <p><b>Set up once:</b></p>
+      <ol>
+        <li>Settings → Accessibility → <b>Guided Access</b> → turn it on.</li>
+        <li><b>Passcode Settings</b> → set a passcode (or use Face ID).</li>
+        <li><b>Display Auto-Lock</b> → <b>Never</b>.</li>
+      </ol>
+      <p><b>Each workout:</b> connect your Charge 6 here, then <b>triple-click the side button</b> and tap <b>Start</b>.
+         To finish, triple-click again, enter your passcode and tap <b>End</b>.</p>
+      <p>Turn off <b>Low Power Mode</b> first, because it forces the screen to lock after 30 seconds. Dimming the screen is fine.</p>
+    </details>
   </section>
 
   <section>
@@ -84,13 +99,13 @@
     <summary>Tips</summary>
     <ul>
       <li><b>Charge 6:</b> swipe down from the clock face and tap <b>Broadcast HR</b> (or use the exercise menu during a workout). Then tap <b>Connect Charge 6</b> here, pick it, and on the tracker tap <b>Share</b>, then <b>Start</b>. It can share with only one app or machine at a time.</li>
-      <li>Keep this page open with the screen on (iPhone pauses web pages when locked). Lowering the brightness is fine.</li>
+      <li>Keep this page open with the screen on (iPhone pauses web pages when locked or when you switch apps). Guided Access above is the easiest way.</li>
       <li>The phone and headset connect directly to each other, so the heart-rate readings go straight from the phone to the game.</li>
     </ul>
   </details>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script type="module" src="./js/bridge.js?v4"></script>
+<script type="module" src="./js/bridge.js?v5"></script>
 </body>
 </html>
