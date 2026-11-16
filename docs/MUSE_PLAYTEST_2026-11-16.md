@@ -94,3 +94,23 @@ Checks: core tests pass; idle desktop run (2 min) earned no dodge points; test b
 - **Version on screen:** the landing panel title and the scoreboard's bottom line show the version (v48).
 
 Checks: core tests pass; 6-minute idle desktop run scored only zone rewards; 3-minute auto-play to the end board with 0 overlaps and no errors.
+
+## Morty's re-check of v48 (4:57–5:10 PM)
+
+Build confirmed: "PulseZone VR v48" by the title.
+
+**Verified fixed:**
+- **Idle scoring:** 7+ min idle in Manual: score 0, 0 hits, 0 dodges; ropes passing the resting hands scored nothing.
+- **End board:** fully consistent. In-zone 0:43 on both boards; hits + dodges + blocks = best combo exactly (64 + 20 + 3 = 87); top-3 titled "Starting estimates".
+- **Close walls fade**, the **bridge link** wraps cleanly, and with **Options** open nothing covers the board (the scoreboard, gauge and reactor still show around it, reading as "paused and dimmed", which Morty found fine).
+
+**Still failing: test burst buttons (7 of 8 presses).**
+- Sled 0/2, with no call-out either time.
+- Heavy 1/2.
+- Speed 0/2, with no call-out.
+- Bombs 0/2. The first press said "after this burst" and never came; the second registered but a shift jab followed.
+- Morty's diagnosis: with the challenge boost firing constantly, test moves sit at the back of the automatic queue instead of jumping it (a barrage turned up ~86 s later, tagged "queued").
+
+**Minor:**
+- The version stamp isn't on screen mid-workout when the Diag line replaces the bottom line.
+- The in-zone counter read 0:51 during cool-down, then 0:43 at the end. The corner counter counts cool-down time in the zone; the end board counts training only.
