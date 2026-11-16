@@ -219,6 +219,9 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   const onlySome = count({ intensity: 0.9, status: 'Below', enabled: { duck: false, squatSide: false, swing: false } });
   check(!onlySome.duck && !onlySome.squatSide && !onlySome.swing && onlySome.jab && onlySome.lateral && onlySome.trace,
     `disabled activities never appear (${JSON.stringify(onlySome)})`);
+  const onlyDucks = count({ intensity: 0.05, status: 'Below', enabled: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, k === 'duck'])) });
+  check(Object.keys(onlyDucks).length === 1 && onlyDucks.duck, `only ducks chosen -> ducks even before they'd normally unlock (${JSON.stringify(onlyDucks)})`);
+  check(chooseActivity({ intensity: 0.5, status: 'Below', enabled: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, false])) }) === 'jab', 'everything off -> falls back to punches');
   const shapes = new Set(); for (let i = 0; i < 300; i++) shapes.add(wallTypeFor('lateral', Math.random, { lean: false, pillar: true }));
   check(shapes.size === 1 && shapes.has('pillar'), 'side steps can be limited to the centre pillar');
   check(wallTypeFor('lateral', Math.random, { lean: false, pillar: false }) === null, 'no side-step shapes allowed -> no wall');

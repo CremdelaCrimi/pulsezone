@@ -502,7 +502,7 @@ export const ACTIVITIES = Object.freeze([
   { key: 'duck', label: 'Ducks', kind: 'wall', from: 0.15, base: 0.3, prior: 1.2 },
   { key: 'lateral', label: 'Side steps', kind: 'wall', from: 0.25, base: 0.35, prior: 1.0 },
   { key: 'squatSide', label: 'Side squats', kind: 'wall', from: 0.4, base: 0.3, prior: 1.6 },
-  { key: 'trace', label: 'Tracing', kind: 'orb', from: 0.2, base: 0.35, prior: 0.8 },
+  { key: 'trace', label: 'Rope tracing', kind: 'orb', from: 0.2, base: 0.35, prior: 0.8 },
 ]);
 export const ACTIVITY_KEYS = ACTIVITIES.map((a) => a.key);
 
@@ -532,8 +532,14 @@ export function chooseActivity({ intensity, status, boost = 0, gains = null, bas
     }
     return w;
   });
-  const total = weights.reduce((s, w) => s + w, 0);
-  if (total <= 0) return 'jab';
+  let total = weights.reduce((s, w) => s + w, 0);
+  if (total <= 0) {
+    // Nothing allowed is unlocked yet (e.g. the player picked only ducks): ignore unlock levels
+    // and use whatever moves are switched on.
+    ACTIVITIES.forEach((a, i) => { weights[i] = enabled && enabled[a.key] === false ? 0 : (baseWeights?.[a.key] ?? a.base); });
+    total = weights.reduce((s, w) => s + w, 0);
+    if (total <= 0) return 'jab'; // everything switched off: fall back to punches
+  }
   let r = rng() * total;
   for (let i = 0; i < weights.length; i++) {
     r -= weights[i];

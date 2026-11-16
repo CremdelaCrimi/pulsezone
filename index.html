@@ -24,6 +24,10 @@
     #show { position: fixed; top: 16px; left: 16px; display: none; }
     kbd { background: #222837; border-radius: 4px; padding: 0 5px; font-size: 12px; }
     .help { font-size: 12px; color: #9aa3b2; }
+    .mv-title { font-size: 11px; color: #8d95a5; text-transform: uppercase; letter-spacing: .06em; margin: 8px 0 3px; }
+    .mv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; }
+    .mv-grid label { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 13px; color: #dfe3ea; }
+    .mv-grid input { margin: 0; }
   </style>
   <script type="importmap">
     {
@@ -52,6 +56,11 @@
     </div>
 
     <div class="card">
+      <b>Moveset</b> <span class="muted" style="font-size:12px">· also on the VR options board (Y)</span>
+      <div id="moves"></div>
+    </div>
+
+    <div class="card">
       <div class="grid">
         <label>Target BPM <input id="target" type="number" min="80" max="180" step="5" /></label>
         <label>Your age <input id="age" type="number" min="12" max="90" /></label>
@@ -76,6 +85,6 @@
   <button id="show" class="secondary">Show panel</button>
 
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <script type="module" src="./js/game.js?v6"></script>
+  <script type="module" src="./js/game.js?v7"></script>
 </body>
 </html>

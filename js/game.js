@@ -6,12 +6,12 @@ import {
   evaluateDifficulty, estimatedMaxBpm, EASY, HARD, WALL_TYPES, wallPolygon, wallHitsHead,
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
   HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints,
-} from './core.js?v6';
-import { HostLink } from './link.js?v6';
-import { AudioEngine } from './audio.js?v6';
-import { HeartThermometer } from './thermo.js?v6';
-import { OptionsPanel } from './options.js?v6';
-import { loadTuning, createDevPanel } from './dev.js?v6';
+} from './core.js?v7';
+import { HostLink } from './link.js?v7';
+import { AudioEngine } from './audio.js?v7';
+import { HeartThermometer } from './thermo.js?v7';
+import { OptionsPanel } from './options.js?v7';
+import { loadTuning, createDevPanel } from './dev.js?v7';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -24,21 +24,30 @@ const SETTINGS_KEY = 'pulsezone.settings';
 const settings = {
   targetBpm: 120, age: 30, trainingMinutes: 15, warmUpMinutes: 2, coolDownMinutes: 2, sound: true, volume: 0.8, challenge: 'normal',
   gameType: 'punch',   // 'punch' = hit hard enough; 'touch' = just hold your hand where the orb arrives
-  trace: true,         // tracing orbs (follow the orb along its string)
   musicStyle: 'song',  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
-  walls: { duck: true, squatSide: true, lean: true, pillar: true },
+  // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
+  moves: { jab: true, low: true, swing: true, trace: true, duck: true, squatSide: true, lean: true, pillar: true },
 };
 try {
   const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
-  Object.assign(settings, saved, { walls: { ...settings.walls, ...(saved.walls || {}) } });
+  const moves = { ...settings.moves, ...(saved.walls || {}), ...(saved.moves || {}) }; // older saves had walls/trace
+  if (typeof saved.trace === 'boolean' && !saved.moves) moves.trace = saved.trace;
+  Object.assign(settings, saved, { moves });
+  delete settings.walls; delete settings.trace;
 } catch { /* ignore */ }
-/** Which activities the options allow right now. */
+const MOVE_LABELS = {
+  jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', trace: 'Rope tracing',
+  duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar',
+};
+/** Which activities the moveset allows right now. */
 const enabledActivities = () => ({
-  duck: settings.walls.duck,
-  squatSide: settings.walls.squatSide,
-  lateral: settings.walls.lean || settings.walls.pillar,
-  swing: settings.gameType === 'punch',     // swing direction needs a real punch
-  trace: settings.trace,
+  jab: settings.moves.jab,
+  low: settings.moves.low,
+  swing: settings.moves.swing && settings.gameType === 'punch', // swing direction needs a real punch
+  trace: settings.moves.trace,
+  duck: settings.moves.duck,
+  squatSide: settings.moves.squatSide,
+  lateral: settings.moves.lean || settings.moves.pillar,
 });
 if (params.has('warmup')) settings.warmUpMinutes = Number(params.get('warmup'));
 if (params.has('minutes')) settings.trainingMinutes = Number(params.get('minutes'));
@@ -405,13 +414,14 @@ function swingGuide(swing, hand) {
 const orbs = [], walls = [], bursts = [];
 window.__orbs = orbs; // test hook
 window.__walls = walls;
+setTimeout(() => { window.__traces = traces; });
 let spawnTimer = 0, wallCooldown = 0;
 let centerX = 0;
 let recenterSoon = true;
 
 function clearObstacles() {
   for (const o of [...orbs, ...walls, ...bursts]) scene.remove(o.group || o.mesh);
-  for (const t of traces) scene.remove(t.group, t.orb, t.ring, t.tail);
+  for (const t of traces) scene.remove(t.group, t.ring);
   orbs.length = walls.length = bursts.length = traces.length = 0;
   spawnTimer = 0;
 }
@@ -465,52 +475,70 @@ function spawnOrb(head, standing, activity) {
 }
 
 /**
- * Tracing orb: arrives with its "string" (the path) already drawn at arm's reach, then glides
- * along it. Keep the matching hand inside the ring the whole way; points = how closely you followed.
+ * Tracing rope: a long glowing rope that curves left/right and up/down as it flows toward you
+ * along the lane. Where it crosses your "hand plane" (arm's reach) there's a ring: keep the
+ * matching hand on the rope at that point while it passes. Points = how closely you followed.
  */
 const traces = [];
 const ringGeo = new THREE.RingGeometry(0.1, 0.125, 32);
+const beadGeo = new THREE.SphereGeometry(0.06, 16, 12);
 const TRACE_RADIUS = 0.13;
+const ROPE_SAMPLES = 160;
 function spawnTrace(head, standing) {
-  const pts = tracePath(standing).map(([x, y]) => new THREE.Vector3(centerX + x, y, 0));
+  const speed = Math.max(2.2, difficulty.orbSpeed * 0.85);
+  const length = speed * traceSeconds(difficulty.intensity);        // rope length in metres
+  const ctrl = tracePath(standing, Math.random, 7);
+  // Control points run from the rope's front end (local z = 0) back to its tail (local z = -length).
+  const pts = ctrl.map(([x, y], i) => new THREE.Vector3(centerX + x, y, -length * (i / (ctrl.length - 1))));
   const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
-  const hand = pts.reduce((s, p) => s + p.x - centerX, 0) < 0 ? 'left' : 'right';
-  const planeZ = head.z - 0.5;                                        // arm's reach
+  const hand = ctrl.reduce((s, [x]) => s + x, 0) < 0 ? 'left' : 'right';
+  // Samples sorted by z, for "where is the rope at this depth?" lookups.
+  const samples = curve.getSpacedPoints(ROPE_SAMPLES).sort((a, b) => b.z - a.z);
   const group = new THREE.Group();
-  group.position.z = head.z - 14;     // the whole string flies in with the orb
-  const pathMat = new THREE.MeshBasicMaterial({ color: HAND_COLOR[hand], transparent: true, opacity: 0.55, depthWrite: false });
-  const path = new THREE.Mesh(new THREE.TubeGeometry(curve, 80, 0.012, 6, false), pathMat);
-  group.add(path);
-  const orb = new THREE.Mesh(orbGeo, MAT[hand]);
-  orb.scale.setScalar(0.07);
-  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
-  const tail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: HAND_COLOR[hand] }));
-  scene.add(group, orb, ring, tail);
-  const start = curve.getPoint(0);
-  orb.position.set(start.x, start.y, head.z - 14);
+  group.position.z = head.z - 14;                                    // front end starts 14 m away
+  const core = new THREE.Mesh(new THREE.TubeGeometry(curve, 220, 0.028, 10, false),
+    new THREE.MeshStandardMaterial({ color: HAND_COLOR[hand], emissive: HAND_COLOR[hand], emissiveIntensity: 0.6, roughness: 0.4 }));
+  const glow = new THREE.Mesh(new THREE.TubeGeometry(curve, 220, 0.06, 10, false),
+    new THREE.MeshBasicMaterial({ color: HAND_COLOR[hand], transparent: true, opacity: 0.18, depthWrite: false }));
+  const bead = new THREE.Mesh(beadGeo, MAT[hand]);                   // the rope's leading end
+  bead.position.copy(pts[0]);
+  group.add(core, glow, bead);
+  const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+  ring.visible = false;
+  scene.add(group, ring);
   traces.push({
-    group, path, orb, ring, tail, curve, hand, planeZ, speed: Math.max(3, difficulty.orbSpeed * 1.4), state: 'approach', u: 0,
-    duration: traceSeconds(difficulty.intensity), onTime: 0, totalTime: 0, history: [],
+    group, core, glow, ring, samples, hand, length, speed, planeZ: head.z - 0.5, contact: new THREE.Vector3(),
+    started: false, onTime: 0, totalTime: 0,
   });
   wallCooldown = Math.max(wallCooldown, 1.0);
+}
+/** Rope position at a given local depth z (0 = front end, -length = tail). */
+function ropeAt(t, localZ, out) {
+  const s = t.samples;
+  let i = 0;
+  while (i < s.length - 2 && s[i + 1].z > localZ) i++;
+  const a = s[i], b = s[i + 1];
+  const k = a.z === b.z ? 0 : (localZ - a.z) / (b.z - a.z);
+  return out.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, 0);
 }
 function endTrace(t, i) {
   const frac = t.totalTime > 0 ? t.onTime / t.totalTime : 0;
   const pts = tracePoints(frac) * (score.inZone() ? 2 : 1);
   score.score += pts;
   if (frac >= 0.6) { score.hits++; score.combo++; score.best = Math.max(score.best, score.combo); } else score.combo = 0;
-  say(`Traced ${Math.round(frac * 100)}%  +${pts}`);
+  say(`Rope ${Math.round(frac * 100)}%  +${pts}`);
   audio.sfx(frac >= 0.8 ? 'perfect' : frac >= 0.5 ? 'hit' : 'miss', { hand: t.hand });
   attribution.record('trace', gameTime);
-  scene.remove(t.group, t.orb, t.ring, t.tail);
-  t.path.geometry.dispose();
+  scene.remove(t.group, t.ring);
+  t.core.geometry.dispose();
+  t.glow.geometry.dispose();
   traces.splice(i, 1);
 }
 /** Where the player's hand is for tracing: the matching fist in VR, the mouse on desktop. */
 const tracePlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 function traceHandPos(t, xr) {
   if (xr) return fistByHand[t.hand].world;
-  if (SMOKE) return t.orb.position;
+  if (SMOKE) return t.contact;
   tracePlane.constant = -t.planeZ;
   raycaster.setFromCamera(pointer, camera);
   return raycaster.ray.intersectPlane(tracePlane, new THREE.Vector3()) || fistByHand[t.hand].world;
@@ -518,28 +546,22 @@ function traceHandPos(t, xr) {
 function updateTraces(dt, xr) {
   for (let i = traces.length - 1; i >= 0; i--) {
     const t = traces[i];
-    if (t.state === 'approach') {
-      t.group.position.z = Math.min(t.planeZ, t.group.position.z + t.speed * dt);
-      t.orb.position.z = t.group.position.z;
-      if (t.group.position.z >= t.planeZ) { t.state = 'trace'; say('Follow it!'); }
-    } else {
-      t.u = Math.min(1, Math.max(0, t.u + dt / t.duration));
-      const p = t.curve.getPoint(t.u);
-      t.orb.position.set(p.x, p.y, t.planeZ);
-      const hand = traceHandPos(t, xr);
-      const on = hand.distanceTo(t.orb.position) < TRACE_RADIUS;
-      t.totalTime += dt;
-      if (on) t.onTime += dt;
-      t.ring.material.color.set(on ? 0x4dff73 : 0xffffff);
-      if (on && xr && Math.random() < 0.3) pulse(fistByHand[t.hand], 0.15, 15);
-      // Short glowing tail behind the orb.
-      t.history.push(t.orb.position.clone());
-      if (t.history.length > 18) t.history.shift();
-      t.tail.geometry.setFromPoints(t.history);
-      if (t.u >= 1) { endTrace(t, i); continue; }
-    }
-    t.ring.position.copy(t.orb.position);
+    t.group.position.z += t.speed * dt;
+    const localZ = t.planeZ - t.group.position.z;   // which part of the rope is at your hand plane
+    if (localZ > 0) continue;                        // front end hasn't reached you yet
+    if (!t.started) { t.started = true; say('Ride the rope!'); }
+    if (localZ < -t.length) { endTrace(t, i); continue; } // tail has passed
+    ropeAt(t, localZ, t.contact);
+    t.contact.z = t.planeZ;
+    const on = traceHandPos(t, xr).distanceTo(t.contact) < TRACE_RADIUS;
+    t.totalTime += dt;
+    if (on) t.onTime += dt;
+    t.ring.visible = true;
+    t.ring.position.copy(t.contact);
     t.ring.lookAt(camera.getWorldPosition(new THREE.Vector3()));
+    t.ring.material.color.set(on ? 0x4dff73 : 0xffffff);
+    t.glow.material.opacity = on ? 0.32 : 0.18;
+    if (on && xr && Math.random() < 0.3) pulse(fistByHand[t.hand], 0.15, 15);
   }
 }
 
@@ -720,7 +742,7 @@ const options = new OptionsPanel({
   getState: () => ({
     target: settings.targetBpm, minutes: settings.trainingMinutes, source: sourceKind, sound: settings.sound,
     volume: Math.round(settings.volume * 10), challenge: settings.challenge,
-    gameType: settings.gameType, trace: settings.trace, walls: { ...settings.walls },
+    gameType: settings.gameType, moves: { ...settings.moves },
     musicStyle: settings.musicStyle, songAvailable,
     ranking: attribution.ranking().map((r) => ({ ...r, bpmPer10: Math.round(r.bpmPer10) })),
   }),
@@ -745,28 +767,68 @@ const options = new OptionsPanel({
         saveSettings();
         break;
       }
-      case 'mode-punch': case 'mode-touch': settings.gameType = id.slice(5); saveSettings(); say(settings.gameType === 'touch' ? 'Touch mode: just hold your hand there' : 'Punch mode'); break;
-      case 'trace': settings.trace = !settings.trace; saveSettings(); break;
+      case 'mode-punch': case 'mode-touch': setGameType(id.slice(5)); break;
       case 'music-song': case 'music-synth':
         settings.musicStyle = id.slice(6);
         audio.setMusicMode(songAvailable && settings.musicStyle === 'song' ? 'song' : 'synth');
         saveSettings();
         break;
-      case 'wall-duck': case 'wall-squatSide': case 'wall-lean': case 'wall-pillar': {
-        const k = id.slice(5);
-        settings.walls[k] = !settings.walls[k];
-        saveSettings();
+      default:
+        if (id.startsWith('move-')) toggleMove(id.slice(5));
         break;
-      }
       case 'restart': startWorkout(); options.toggle(false); break;
       case 'end': controller.beginCoolDown(); options.toggle(false); break;
       case 'close': options.toggle(false); break;
-      default: break;
     }
     $('target').value = settings.targetBpm; $('minutes').value = settings.trainingMinutes;
+    syncMovesUI();
     updatePanel(true);
   },
 });
+
+// ------------------------------------------------------------------ moveset (page checklist + VR board)
+
+function setGameType(type) {
+  settings.gameType = type;
+  saveSettings();
+  say(type === 'touch' ? 'Touch mode: just hold your hand there' : 'Punch mode');
+  syncMovesUI();
+}
+function toggleMove(key, on = !settings.moves[key]) {
+  settings.moves[key] = on;
+  saveSettings();
+  syncMovesUI();
+}
+function buildMovesUI() {
+  const box = $('moves');
+  const group = (title, keys) => `<div class="mv-title">${title}</div><div class="mv-grid">${keys.map((k) =>
+    `<label><input type="checkbox" data-move="${k}"> ${MOVE_LABELS[k]}</label>`).join('')}</div>`;
+  box.innerHTML = `
+    <div class="mv-title">Game type</div>
+    <div class="mv-grid">
+      <label><input type="radio" name="gtype" value="punch"> Punch (hit hard)</label>
+      <label><input type="radio" name="gtype" value="touch"> Touch (just hold your hand there)</label>
+    </div>
+    ${group('Orbs', ['jab', 'low', 'swing', 'trace'])}
+    ${group('Walls', ['duck', 'squatSide', 'lean', 'pillar'])}
+    <div class="muted" id="movesNote" style="font-size:12px"></div>`;
+  box.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.name === 'gtype') setGameType(t.value);
+    else if (t.dataset.move) toggleMove(t.dataset.move, t.checked);
+  });
+  syncMovesUI();
+}
+function syncMovesUI() {
+  const box = $('moves');
+  if (!box || !box.firstChild) return;
+  box.querySelectorAll('input[data-move]').forEach((el) => { el.checked = !!settings.moves[el.dataset.move]; });
+  box.querySelectorAll('input[name=gtype]').forEach((el) => { el.checked = el.value === settings.gameType; });
+  const notes = [];
+  if (settings.gameType === 'touch' && settings.moves.swing) notes.push('Hooks & uppercuts are skipped in Touch mode (they need a real swing).');
+  if (!Object.values(enabledActivities()).some(Boolean)) notes.push('Everything is off, so you\'ll get plain punches.');
+  $('movesNote').textContent = notes.join(' ');
+}
 scene.add(options.mesh, options.tab);
 
 // Laser pointers (controller target rays) for clicking the options panel in VR.
@@ -859,6 +921,7 @@ function openDev() {
   });
 }
 $('devBtn').addEventListener('click', (e) => { openDev(); e.target.blur(); });
+buildMovesUI();
 if (params.has('dev')) openDev();
 
 let panelTimer = 0;
@@ -1056,13 +1119,14 @@ function frame(time) {
   if (!paused && controller.phase !== Phase.Finished) {
     spawnTimer += gdt;
     wallCooldown -= gdt;
-    if (spawnTimer >= difficulty.spawnInterval && wallCooldown <= 0 && !traces.length) {
+    const ropeNear = traces.some((t) => t.group.position.z > t.planeZ - t.speed * 2.5); // keep the lane clear around a rope
+    if (spawnTimer >= difficulty.spawnInterval && wallCooldown <= 0 && !ropeNear) {
       spawnTimer = 0;
       const activity = chooseActivity({
         intensity: difficulty.intensity, status: controller.status, boost: boost.value, gains: attribution.w,
         baseWeights: tuning.weights, enabled: enabledActivities(),
       });
-      const wallType = wallTypeFor(activity, Math.random, settings.walls);
+      const wallType = wallTypeFor(activity, Math.random, settings.moves);
       if (wallType) spawnWall(head, standing, wallType, activity);
       else if (activity === 'trace') spawnTrace(head, standing);
       else if (ACTIVITIES.find((a) => a.key === activity).kind === 'orb') spawnOrb(head, standing, activity);

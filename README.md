@@ -26,7 +26,7 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 - **Orbs:** punch **blue** with your left hand and **orange** with your right. **Low orbs** (knee to hip height) mean squat and punch.
 - **Swing orbs** have a glowing **white curve** through them, with a "ghost fist" sliding along it. Swing along the curve (an uppercut, or a hook from the outside in) for **double points**. Any solid punch still counts, so you're never punished for an imperfect angle.
 - **Walls (purple boxes):** get your head into the open gap: **duck**, **step aside** from a centre pillar, **lean left or right**, or **squat left or right**. Each wall is a box, and its length shows how long to hold the position (about 1.2 s for a duck).
-- **Tracing orbs:** a small orb arrives with its **string** (the path) attached. When it reaches arm's length it glides along the string. Keep the matching hand inside its ring (it turns green) the whole way. Points depend on how closely you followed.
+- **Rope tracing:** a long glowing rope in your hand's colour flows toward you along the lane, curving left, right, up and down (low dips mean squats). Where it crosses arm's length there's a ring: keep that hand on the rope as it slides past, and the ring turns green while you're on it. Points depend on how closely you followed the whole rope.
 - **Game type:** **Punch** (hit hard enough to pop orbs) or **Touch** (just hold your hand where the orb arrives and it pops on contact). Choose it on the options board.
 - **Heat gauge (left):** frosty when you're below your zone, a lively flame in it, and a hyper flame above it.
 - **Soundtrack:** "Hard-Knuckle Focus", an instrumental track made with Gemini's music tool (`assets/music/hard-knuckle-focus.mp3`, 121 BPM). The game **time-stretches it to your pace** with the pitch preserved, from 0.78× to 1.25×. It loops over 87 whole bars and skips the intro and the silent ending. Switch between **Song** and **Synth** on the options board.
@@ -47,8 +47,8 @@ Press **Y** (or **B**) to open the options board on your left, point at it with 
 - Choose phone or simulator heart rate.
 - Turn music on or off and change the volume.
 - Set the challenge level: **Gentle / Normal / Hard** changes how hard the game pushes and how fast the boost builds.
-- Choose the game type (Punch or Touch) and turn tracing orbs on or off.
-- Pick which walls you get: straight **Duck**, **Side squat** (left/right), **Lean** (left/right), and the centre **Pillar**.
+- Choose the game type (Punch or Touch).
+- Pick your **moveset**: orbs (**Punch**, **Squat punch**, **Hook/uppercut**, **Rope**) and walls (**Duck**, **Side squat**, **Lean**, **Pillar**). Highlighted means on. The same checklist is on the game page under **Moveset**, and the two stay in sync. If you pick moves that normally unlock later (e.g. only ducks), you get them straight away.
 - See the "what raises your heart rate" chart.
 - Restart, end the workout, or close the board.
 
@@ -70,7 +70,7 @@ Left click = left punch · right click = right punch · hold **C** duck · **A/D
 | `js/dev.js` | Developer tuning panel |
 | `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
 | `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
-| `test/core.test.mjs` | 67 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, activity mix, challenge boost, heart-rate learning, music tempo |
+| `test/core.test.mjs` | 69 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, activity mix, challenge boost, heart-rate learning, music tempo |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
 
@@ -103,7 +103,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v6` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v7` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

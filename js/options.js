@@ -98,9 +98,11 @@ export class OptionsPanel {
     label('Workout length'); button('minutes-', '−', 520, 100); value(`${s.minutes} min`, 630, 230); button('minutes+', '+', 870, 100); y += R;
     label('Heart rate from'); button('src-phone', 'Phone', 520, 215, s.source === 'phone'); button('src-sim', 'Simulator', 755, 215, s.source === 'sim'); y += R;
     label('Game type'); button('mode-punch', 'Punch', 520, 215, s.gameType === 'punch'); button('mode-touch', 'Touch', 755, 215, s.gameType === 'touch'); y += R;
-    label('Tracing orbs'); button('trace', s.trace ? 'On' : 'Off', 520, 215, s.trace); y += R;
-    label('Walls'); button('wall-duck', 'Duck', 230, 160, s.walls.duck); button('wall-squatSide', 'Side squat', 400, 215, s.walls.squatSide);
-    button('wall-lean', 'Lean', 625, 160, s.walls.lean); button('wall-pillar', 'Pillar', 795, 175, s.walls.pillar); y += R;
+    // Moveset: tap to switch each move on/off (highlighted = on).
+    label('Orbs'); button('move-jab', 'Punch', 175, 165, s.moves.jab); button('move-low', 'Squat punch', 350, 230, s.moves.low);
+    button('move-swing', 'Hook/upper', 590, 215, s.moves.swing && s.gameType === 'punch'); button('move-trace', 'Rope', 815, 160, s.moves.trace); y += R;
+    label('Walls'); button('move-duck', 'Duck', 175, 165, s.moves.duck); button('move-squatSide', 'Side squat', 350, 230, s.moves.squatSide);
+    button('move-lean', 'Lean', 590, 215, s.moves.lean); button('move-pillar', 'Pillar', 815, 160, s.moves.pillar); y += R;
     label('Music & sounds'); button('sound', s.sound ? 'On' : 'Off', 520, 140, s.sound); button('vol-', 'Vol −', 680, 140); button('vol+', 'Vol +', 830, 140); y += R;
     label(s.songAvailable ? 'Music style' : 'Music style (no song file yet)');
     button('music-song', 'Song', 520, 215, s.musicStyle === 'song' && s.songAvailable); button('music-synth', 'Synth', 755, 215, s.musicStyle === 'synth' || !s.songAvailable); y += R;
