@@ -57,14 +57,18 @@
         <label>Your age <input id="age" type="number" min="12" max="90" /></label>
         <label>Minutes <input id="minutes" type="number" min="1" max="60" /></label>
       </div>
-      <div style="margin-top:8px"><button id="apply">Apply &amp; restart</button></div>
+      <div style="margin-top:8px;display:flex;gap:14px;align-items:center"><button id="apply">Apply &amp; restart</button>
+        <label style="display:flex;flex-direction:row;gap:6px;align-items:center;font-size:13px;color:#dfe3ea"><input type="checkbox" id="sound" /> Music &amp; sounds</label></div>
       <div class="muted" style="font-size:12px;margin-top:6px">Includes a 2-minute warm-up and cool-down. Not a medical device. Stop if you feel unwell.</div>
     </div>
 
     <div class="card help">
+      <b>How to play:</b> punch <b style="color:#3fa9ff">blue</b> orbs with your left hand and <b style="color:#ff7a3d">orange</b> with your right.
+      White ring = hit twice. White arrow = swing that way (uppercut or hook). Purple walls: get your head into the open gap (duck, lean, squat).
+      The gauge on the left freezes when you're below your zone and burns when you're in it.<br />
       <b>Quest:</b> press <b>Enter VR</b> below. <kbd>B</kbd>/<kbd>Y</kbd> switch simulator / phone heart rate, <kbd>A</kbd>/<kbd>X</kbd> restart when finished.<br />
-      <b>Desktop test:</b> click = punch · hold <kbd>C</kbd> = duck · <kbd>[</kbd> <kbd>]</kbd> target · <kbd>B</kbd> switch source · <kbd>Tab</kbd> sim mode · <kbd>↑</kbd><kbd>↓</kbd> effort ·
-      <kbd>L</kbd> drop signal · <kbd>T</kbd> fast-forward · <kbd>E</kbd> end · <kbd>R</kbd> restart
+      <b>Desktop test:</b> left click = left punch · right click = right punch · hold <kbd>C</kbd> duck · <kbd>A</kbd>/<kbd>D</kbd> lean · <kbd>[</kbd> <kbd>]</kbd> target · <kbd>B</kbd> source ·
+      <kbd>Tab</kbd> sim mode · <kbd>↑</kbd><kbd>↓</kbd> effort · <kbd>L</kbd> drop signal · <kbd>M</kbd> sound · <kbd>T</kbd> fast-forward · <kbd>E</kbd> end · <kbd>R</kbd> restart
     </div>
   </div>
   <button id="show" class="secondary">Show panel</button>

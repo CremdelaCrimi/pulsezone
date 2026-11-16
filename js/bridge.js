@@ -6,7 +6,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   code: $('code'), linkBtn: $('linkBtn'), linkDot: $('linkDot'), linkText: $('linkText'),
   bleBtn: $('bleBtn'), bleAllBtn: $('bleAllBtn'), bleDot: $('bleDot'), bleText: $('bleText'),
-  bpm: $('bpm'), fake: $('fake'), noBle: $('noBle'),
+  bpm: $('bpm'), fake: $('fake'), noBle: $('noBle'), awake: $('awake'),
 };
 
 const hasBle = !!(navigator.bluetooth && navigator.bluetooth.requestDevice);
@@ -150,12 +150,63 @@ setInterval(() => {
   if (lastBpmAt && performance.now() - lastBpmAt > 8000) ui.bpm.textContent = '--';
 }, 2000);
 
-// Keep the screen on where supported.
+// ------------------------------------------------------------------ keep the screen on
+// iPhone pauses web pages when the screen locks, which cuts off the heart rate. Try the Wake Lock
+// API first; otherwise play an invisible, silent looping video (which also keeps iOS awake).
+// The reliable fix is iPhone Settings > Display & Brightness > Auto-Lock > Never.
+let awakeVideo = null;
+let awakeMode = 'off';
 async function keepAwake() {
-  try { await navigator.wakeLock?.request('screen'); } catch { /* not supported or denied */ }
+  try {
+    if (navigator.wakeLock) {
+      await navigator.wakeLock.request('screen');
+      awakeMode = 'wake lock';
+      renderAwake();
+      return;
+    }
+  } catch { /* fall through to the video trick */ }
+  try {
+    if (!awakeVideo) {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 2;
+      const g = canvas.getContext('2d');
+      setInterval(() => { g.fillStyle = `rgb(${(Math.random() * 255) | 0},0,0)`; g.fillRect(0, 0, 2, 2); }, 500);
+      awakeVideo = document.createElement('video');
+      awakeVideo.muted = true;
+      awakeVideo.playsInline = true;
+      awakeVideo.setAttribute('playsinline', '');
+      awakeVideo.setAttribute('muted', '');
+      awakeVideo.srcObject = canvas.captureStream(2);
+      awakeVideo.style.cssText = 'position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none';
+      document.body.appendChild(awakeVideo);
+    }
+    await awakeVideo.play();
+    awakeMode = 'video';
+  } catch {
+    awakeMode = 'off';
+  }
+  renderAwake();
 }
+function renderAwake() {
+  ui.awake.textContent = awakeMode === 'off'
+    ? 'Screen may lock. Set Auto-Lock to Never (Settings > Display & Brightness) during workouts.'
+    : 'Trying to keep the screen on. For long workouts, also set Auto-Lock to Never.';
+}
+// Must start from a tap on iPhone.
+for (const el of [ui.linkBtn, ui.bleBtn, ui.bleAllBtn, ui.fake]) el.addEventListener('click', keepAwake);
 keepAwake();
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') keepAwake(); });
+
+// When the phone wakes up again: reconnect everything straight away.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    link.send({ t: 'status', text: 'Phone screen locked - heart rate paused' });
+    return;
+  }
+  keepAwake();
+  if (link.code && link.state !== 'linked') link.connect(link.code);
+  if (wantConnected && device && !device.gatt?.connected) { reconnectDelay = 1000; connectGatt(); }
+  sendStatus();
+});
 
 // For automated testing.
 window.pzBridge = { link, get bleState() { return bleState; } };

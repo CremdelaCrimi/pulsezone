@@ -2,7 +2,7 @@
 // Run:  node test/core.test.mjs     (exit code 0 = all passed)
 import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
-  evaluateDifficulty, parseHeartRateMeasurement,
+  evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -119,7 +119,34 @@ check(codeFromInput('https://cremdelacrimi.github.io/pulsezone/') === '', 'link 
 
 const easy = evaluateDifficulty(0), max = evaluateDifficulty(1);
 check(easy.spawnInterval > max.spawnInterval && easy.orbSpeed < max.orbSpeed, 'difficulty monotonic at the ends');
-check(evaluateDifficulty(0.2).duckBarChance === 0, 'no squats at low intensity');
+check(evaluateDifficulty(0.2).obstacleChance === 0, 'no walls at low intensity');
+
+console.log('\n== Walls, hands and swing directions');
+const standing = 1.7;
+const inWall = (type, x, y) => wallHitsHead(wallPolygon(type, standing), x, y);
+check(inWall('duck', 0, standing) && !inWall('duck', 0, standing - 0.35), 'duck: standing hits, ducking 35 cm clears');
+check(inWall('pillar', 0, standing) && !inWall('pillar', -0.35, standing) && !inWall('pillar', 0.35, standing), 'pillar: centre hits, either side clears');
+check(inWall('dodgeLeft', 0, standing) && !inWall('dodgeLeft', -0.3, standing) && inWall('dodgeLeft', 0.3, standing), 'dodge left: only left is open');
+check(inWall('dodgeRight', 0, standing) && !inWall('dodgeRight', 0.3, standing), 'dodge right: only right is open');
+check(inWall('squatLeft', -0.3, standing) && inWall('squatLeft', 0.3, standing - 0.5) && !inWall('squatLeft', -0.3, standing - 0.5),
+  'squat left: must be low AND left');
+check(!inWall('squatRight', 0.3, standing - 0.5) && inWall('squatRight', -0.3, standing - 0.5), 'squat right: low and right');
+check(pickWallType(0.2) === null && pickWallType(0.31, () => 0.99) === 'duck', 'only ducking unlocked at first');
+const seen = new Set();
+for (let i = 0; i < 200; i++) seen.add(pickWallType(0.9));
+check(seen.size === 6, `all six wall types appear at high intensity (${[...seen].join(', ')})`);
+const dLow = evaluateDifficulty(0.2), dHigh = evaluateDifficulty(1);
+check(planOrb(-0.3, dLow).hand === 'left' && planOrb(0.3, dLow).hand === 'right' && planOrb(0.3, dLow).swing === null,
+  'low intensity: side decides the hand, no swing arrows');
+let cross = 0, arrows = 0;
+for (let i = 0; i < 1000; i++) { const o = planOrb(0.4, dHigh); if (o.hand === 'left') cross++; if (o.swing) arrows++; }
+check(cross > 150 && cross < 350 && arrows > 300 && arrows < 500, `high intensity: some cross-body (${cross}/1000) and arrow orbs (${arrows}/1000)`);
+check(swingMatches('up', [0.1, 2, -0.5]) && !swingMatches('up', [0, -1, 0]), 'uppercut must move up');
+check(swingMatches('left', [-2, 0.2, -1]) && !swingMatches('left', [0, 0, -3]), 'hook must move sideways; a straight jab fails');
+check(swingMatches(null, [0, 0, -1]), 'plain orbs take any punch');
+const hz = heatLook('InZone', 120, 120), hc = heatLook('Below', 95, 120), hh = heatLook('Above', 140, 120);
+check(hz.flame === 1 && hc.cold === 1 && hh.hyper === 1 && heatLook('Below', 112, 120).cold < 1, 'thermometer looks: frost / flame / hyper');
+
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

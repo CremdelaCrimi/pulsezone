@@ -17,13 +17,22 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 3. **On the Charge 6:** swipe down from the clock face and tap **Broadcast HR** (or use the exercise menu during a workout). Then tap **Connect Charge 6** in the bridge and pick it (if it isn't listed, use **Show all Bluetooth devices**). When the tracker asks to share your heart rate, tap **Share**, then **Start**.
 4. **Back on the Quest:** press **Enter VR**. The game switches to your phone's heart rate as soon as readings arrive.
 
-Keep the bridge page open with the iPhone screen on, because iOS pauses web pages when the phone locks. **B/Y** switches between the simulator and phone heart rate. **A/X** restarts after a workout.
+**Keep the iPhone awake:** iOS pauses web pages when the phone locks, which cuts off your heart rate. The bridge tries to keep the screen on, but the reliable fix is **Settings → Display & Brightness → Auto-Lock → Never** during workouts. If the phone still goes quiet, the game switches to an estimate based on your movement after 6 seconds, starting from your last real BPM. It switches back as soon as the phone wakes, and the bridge reconnects by itself.
+
+**B/Y** switches between the simulator and phone heart rate. **A/X** restarts after a workout.
+
+## The game
+
+- **Orbs:** punch **blue** with your left hand and **orange** with your right. A **white ring** means hit it twice. A **white arrow** means swing that way: an uppercut, or a hook from the outside in. Arrow orbs score ×1.5. At high intensity, some orbs cross over to the other side for twisting cross-body punches.
+- **Walls (purple):** get your head into the open gap as the wall passes: **duck**, **step aside** from a centre pillar, **lean left or right**, or **squat left or right** (the open gap is low on one side). Duck walls start at 30% intensity, and side squats at 55%.
+- **Heat gauge (left):** frosty and icy when you're below your zone, a lively flame in it, and a hyper flame with embers above it. The green mark shows your target zone.
+- **Music & sound:** synthesized live, with no audio files. The tempo (about 95–145 BPM) and the layers rise with intensity. You get icy bells below your zone, a bright arpeggio in it, and driving hats above it. A soft heartbeat plays at your real BPM, and every hit, miss, dodge and wall has its own sound. **M** toggles it, or use the checkbox on the panel.
 
 **No tracker yet?** The game runs on a simulated heart. In the headset it responds to how hard you actually move. The bridge also has a **Test without a tracker** switch that sends a fake heart rate, which is handy for checking the phone link.
 
 ## Desktop testing
 
-Click = punch · hold **C** = duck · **[ ]** target · **B** switch source · **Tab** simulator mode · **↑↓** effort (Manual) · **L** drop signal · **T** 5× speed · **E** end · **R** restart
+Left click = left punch · right click = right punch · hold **C** duck · **A/D** lean · **[ ]** target · **B** switch source · **Tab** simulator mode · **↑↓** effort (Manual) · **L** drop signal · **M** sound · **T** 5× speed · **E** end · **R** restart
 
 ## Files
 
@@ -32,8 +41,10 @@ Click = punch · hold **C** = duck · **[ ]** target · **B** switch source · *
 | `index.html`, `js/game.js` | The game: three.js + WebXR, fists, orbs, ducking bars, in-world scoreboard |
 | `bridge.html`, `js/bridge.js` | iPhone bridge: Web Bluetooth Heart Rate client, reconnects automatically |
 | `js/link.js` | Pairing code + WebRTC link (PeerJS), with heartbeat and auto-reconnect |
-| `js/core.js` | Engine-free logic: heart simulator, PID zone controller, difficulty curve, Bluetooth packet parser |
-| `test/core.test.mjs` | 30 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts) plus packet parsing |
+| `js/core.js` | Engine-free logic: heart simulator, PID zone controller, difficulty curve, wall shapes, hand/swing rules, Bluetooth packet parser |
+| `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
+| `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
+| `test/core.test.mjs` | 49 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
 

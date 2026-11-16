@@ -152,6 +152,9 @@ export class BridgeLink {
       this.set('connecting');
     } else if (this.peer.open) {
       this.dial();
+    } else if (this.peer.disconnected) {
+      this.set('connecting');
+      this.peer.reconnect(); // 'open' fires again and dials
     }
   }
 

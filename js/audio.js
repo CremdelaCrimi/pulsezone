@@ -1,0 +1,281 @@
+// PulseZone adaptive soundtrack + sound effects, synthesized live with Web Audio (no audio files).
+//
+// Music follows the game: tempo and layers rise with intensity, the colour follows your zone
+// (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
+// thump plays at your real BPM.
+
+const CHORDS = [
+  // A minor - F - C - G, as [root Hz, chord tones Hz]
+  [110.0, [220.0, 261.63, 329.63]],
+  [87.31, [174.61, 220.0, 261.63]],
+  [130.81, [261.63, 329.63, 392.0]],
+  [98.0, [196.0, 246.94, 293.66]],
+];
+
+export class AudioEngine {
+  constructor() {
+    this.ctx = null;
+    this.enabled = true;
+    this.state = { intensity: 0.15, status: 'NoSignal', bpm: 0, phase: 'WarmUp' };
+    this.smoothIntensity = 0.15;
+    this.step = 0;            // 16th-note counter
+    this.nextStepTime = 0;
+    this.nextBeatTime = 0;    // heartbeat
+    this.timer = 0;
+  }
+
+  /** Must be called from a user gesture (tap / click / Enter VR). Safe to call repeatedly. */
+  unlock() {
+    if (!this.ctx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      this.ctx = new Ctx();
+      this.build();
+    }
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+    if (!this.timer) this.timer = setInterval(() => this.schedule(), 25);
+  }
+
+  build() {
+    const c = this.ctx;
+    this.master = c.createGain();
+    this.master.gain.value = this.enabled ? 0.8 : 0;
+    const comp = c.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.ratio.value = 4;
+    this.master.connect(comp).connect(c.destination);
+
+    this.music = c.createGain(); this.music.gain.value = 0.55; this.music.connect(this.master);
+    this.fx = c.createGain(); this.fx.gain.value = 0.9; this.fx.connect(this.master);
+
+    // Echo send for bells / arp.
+    this.echo = c.createDelay(1.0);
+    this.echoFb = c.createGain(); this.echoFb.gain.value = 0.35;
+    this.echoOut = c.createGain(); this.echoOut.gain.value = 0.35;
+    this.echo.connect(this.echoFb).connect(this.echo);
+    this.echo.connect(this.echoOut).connect(this.music);
+
+    // One second of white noise, reused for drums and whooshes.
+    this.noise = c.createBuffer(1, c.sampleRate, c.sampleRate);
+    const d = this.noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+
+    // Sustained pad.
+    this.padFilter = c.createBiquadFilter();
+    this.padFilter.type = 'lowpass'; this.padFilter.frequency.value = 600; this.padFilter.Q.value = 0.7;
+    this.padGain = c.createGain(); this.padGain.gain.value = 0.0;
+    this.padFilter.connect(this.padGain).connect(this.music);
+    this.padOscs = [0, 1, 2].map((i) => {
+      const o = c.createOscillator();
+      o.type = 'sawtooth';
+      o.detune.value = (i - 1) * 7;
+      o.frequency.value = CHORDS[0][1][i];
+      o.connect(this.padFilter);
+      o.start();
+      return o;
+    });
+    this.nextStepTime = c.currentTime + 0.1;
+    this.nextBeatTime = c.currentTime + 0.5;
+  }
+
+  setEnabled(on) {
+    this.enabled = on;
+    if (this.master) this.master.gain.setTargetAtTime(on ? 0.8 : 0, this.ctx.currentTime, 0.1);
+  }
+
+  /** Feed the current game state every frame. */
+  update(state) { Object.assign(this.state, state); }
+
+  get tempo() { return 92 + 56 * this.smoothIntensity; }
+
+  // ------------------------------------------------------------ scheduler
+
+  schedule() {
+    const c = this.ctx;
+    if (!c || c.state !== 'running') return;
+    const s = this.state;
+    this.smoothIntensity += (s.intensity - this.smoothIntensity) * 0.02;
+    const playing = s.phase !== 'Finished';
+
+    // Pad follows the zone colour.
+    const bright = s.status === 'InZone' ? 1500 : s.status === 'Above' || s.status === 'SafetyBrake' ? 2200 : 700;
+    this.padFilter.frequency.setTargetAtTime(bright + 600 * this.smoothIntensity, c.currentTime, 0.8);
+    this.padGain.gain.setTargetAtTime(playing ? 0.05 : 0.025, c.currentTime, 1.5);
+
+    const sixteenth = 60 / this.tempo / 4;
+    while (this.nextStepTime < c.currentTime + 0.12) {
+      if (playing) this.playStep(this.step, this.nextStepTime, sixteenth);
+      this.nextStepTime += sixteenth;
+      this.step++;
+    }
+
+    // Heartbeat at the real BPM (lub-dub), quiet; louder when the safety brake is on.
+    if (s.bpm >= 35 && s.status !== 'NoSignal') {
+      while (this.nextBeatTime < c.currentTime + 0.12) {
+        const vol = s.status === 'SafetyBrake' ? 0.5 : 0.18;
+        this.thump(this.nextBeatTime, vol);
+        this.thump(this.nextBeatTime + 0.13, vol * 0.6);
+        this.nextBeatTime += 60 / s.bpm;
+      }
+    } else {
+      this.nextBeatTime = c.currentTime + 0.5;
+    }
+  }
+
+  playStep(step, t, sixteenth) {
+    const s = this.state;
+    const k = this.smoothIntensity;
+    const inStep = step % 16;             // position in the bar
+    const bar = Math.floor(step / 16);
+    const [root, chord] = CHORDS[bar % CHORDS.length];
+    const brake = s.status === 'SafetyBrake';
+
+    if (inStep === 0) chord.forEach((f, i) => this.padOscs[i].frequency.setTargetAtTime(f, t, 0.15));
+
+    // Kick: four on the floor, half-time when easy, off during the safety brake.
+    if (!brake && inStep % 4 === 0 && (k > 0.2 || inStep % 8 === 0)) this.kick(t, 0.7 + 0.3 * k);
+    // Clap on 2 and 4.
+    if (!brake && k > 0.3 && (inStep === 4 || inStep === 12)) this.clap(t, 0.35);
+    // Hats: 8ths, then 16ths when it's hard or you're above the zone.
+    const sixteenths = k > 0.6 || s.status === 'Above';
+    if (!brake && k > 0.2 && (sixteenths || inStep % 2 === 0)) this.hat(t, inStep % 4 === 2 ? 0.16 : 0.09);
+    // Bass: whole notes when easy, driving 8ths when harder.
+    if (k > 0.15 ? inStep % 2 === 0 : inStep === 0) this.bass(t, root, k > 0.15 ? sixteenth * 1.8 : sixteenth * 14, k);
+    // In the zone: a bright 16th-note arpeggio.
+    if (s.status === 'InZone' && k > 0.25) {
+      const notes = [chord[0] * 2, chord[1] * 2, chord[2] * 2, chord[1] * 2];
+      this.pluck(t, notes[inStep % 4], 0.07);
+    }
+    // Below the zone: sparse icy bells.
+    if (s.status === 'Below' && inStep % 4 === 0 && Math.random() < 0.35) {
+      this.bell(t, chord[Math.floor(Math.random() * 3)] * 4, 0.06);
+    }
+  }
+
+  // ------------------------------------------------------------ instruments
+
+  env(g, t, peak, attack, decay) {
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+  }
+
+  kick(t, vol) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    this.env(g, t, vol, 0.002, 0.25);
+    o.connect(g).connect(this.music);
+    o.start(t); o.stop(t + 0.3);
+  }
+
+  noiseHit(t, type, freq, q, vol, decay, dest = this.music) {
+    const c = this.ctx, src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    src.buffer = this.noise;
+    f.type = type; f.frequency.value = freq; f.Q.value = q;
+    this.env(g, t, vol, 0.002, decay);
+    src.connect(f).connect(g).connect(dest);
+    src.start(t, Math.random() * 0.5, decay + 0.05);
+  }
+
+  clap(t, vol) { this.noiseHit(t, 'bandpass', 1800, 0.8, vol, 0.14); }
+
+  hat(t, vol) { this.noiseHit(t, 'highpass', 7500, 0.5, vol, 0.04); }
+
+  bass(t, freq, dur, k) {
+    const c = this.ctx, o = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+    o.type = 'sawtooth'; o.frequency.value = freq;
+    f.type = 'lowpass'; f.frequency.value = 250 + 1400 * k; f.Q.value = 4;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(f).connect(g).connect(this.music);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+
+  pluck(t, freq, vol) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = 'triangle'; o.frequency.value = freq;
+    this.env(g, t, vol, 0.003, 0.14);
+    o.connect(g); g.connect(this.music); g.connect(this.echo);
+    o.start(t); o.stop(t + 0.2);
+  }
+
+  bell(t, freq, vol) {
+    const c = this.ctx;
+    for (const [mult, v] of [[1, 1], [2.76, 0.4], [5.4, 0.2]]) {
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = 'sine'; o.frequency.value = freq * mult;
+      this.env(g, t, vol * v, 0.002, 1.2 / mult);
+      o.connect(g); g.connect(this.music); g.connect(this.echo);
+      o.start(t); o.stop(t + 1.4);
+    }
+  }
+
+  thump(t, vol) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.frequency.setValueAtTime(70, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.1);
+    this.env(g, t, vol, 0.005, 0.14);
+    o.connect(g).connect(this.music);
+    o.start(t); o.stop(t + 0.2);
+  }
+
+  tone(t, freq, type, vol, decay, glideTo, dest = this.fx) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, t + decay);
+    this.env(g, t, vol, 0.003, decay);
+    o.connect(g).connect(dest);
+    o.start(t); o.stop(t + decay + 0.05);
+  }
+
+  // ------------------------------------------------------------ sound effects
+
+  sfx(name, opts = {}) {
+    const c = this.ctx;
+    if (!c || c.state !== 'running') return;
+    const t = c.currentTime + 0.005;
+    switch (name) {
+      case 'hit': { // punchy thwack, pitched by hand
+        const base = opts.hand === 'left' ? 520 : 660;
+        this.noiseHit(t, 'bandpass', 2500, 1.2, 0.5, 0.06, this.fx);
+        this.tone(t, base, 'square', 0.12, 0.09, base * 1.5);
+        break;
+      }
+      case 'heavy':
+        this.noiseHit(t, 'lowpass', 900, 0.7, 0.7, 0.18, this.fx);
+        this.tone(t, 180, 'sine', 0.5, 0.2, 60);
+        break;
+      case 'crack': // first hit on a two-hit orb
+        this.noiseHit(t, 'bandpass', 1200, 2, 0.45, 0.08, this.fx);
+        break;
+      case 'weak': this.tone(t, 160, 'triangle', 0.2, 0.12, 110); break;
+      case 'wrong': this.tone(t, 140, 'sawtooth', 0.12, 0.18); this.tone(t + 0.09, 120, 'sawtooth', 0.12, 0.18); break;
+      case 'miss': this.tone(t, 300, 'sine', 0.08, 0.2, 200); break;
+      case 'wall': // you clipped a wall
+        this.noiseHit(t, 'lowpass', 400, 0.7, 0.8, 0.3, this.fx);
+        this.tone(t, 90, 'square', 0.25, 0.25, 50);
+        break;
+      case 'dodge': { // whoosh
+        const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+        src.buffer = this.noise;
+        f.type = 'bandpass'; f.Q.value = 1.5;
+        f.frequency.setValueAtTime(400, t); f.frequency.exponentialRampToValueAtTime(3000, t + 0.25);
+        this.env(g, t, 0.35, 0.05, 0.25);
+        src.connect(f).connect(g).connect(this.fx);
+        src.start(t, 0, 0.35);
+        break;
+      }
+      case 'zone': // entered the zone: rising chime
+        [523.25, 659.25, 783.99].forEach((f, i) => this.tone(t + i * 0.07, f, 'triangle', 0.15, 0.4));
+        break;
+      case 'alert': // phone lost
+        this.tone(t, 880, 'sine', 0.18, 0.15); this.tone(t + 0.2, 660, 'sine', 0.18, 0.25);
+        break;
+      case 'finish':
+        [392, 523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.tone(t + i * 0.1, f, 'triangle', 0.16, 0.6));
+        break;
+      default: break;
+    }
+  }
+}

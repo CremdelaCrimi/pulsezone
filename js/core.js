@@ -342,11 +342,11 @@ export class ZoneController {
 
 export const EASY = Object.freeze({
   spawnInterval: 2.2, orbSpeed: 1.6, horizontalSpread: 0.25, verticalSpread: 0.1,
-  duckBarChance: 0, heavyOrbChance: 0, minPunchSpeed: 0.6,
+  obstacleChance: 0, heavyOrbChance: 0, minPunchSpeed: 0.6, directionalChance: 0, crossBodyChance: 0,
 });
 export const HARD = Object.freeze({
   spawnInterval: 0.45, orbSpeed: 4.5, horizontalSpread: 0.75, verticalSpread: 0.55,
-  duckBarChance: 0.3, heavyOrbChance: 0.35, minPunchSpeed: 1.6,
+  obstacleChance: 0.32, heavyOrbChance: 0.3, minPunchSpeed: 1.6, directionalChance: 0.4, crossBodyChance: 0.25,
 });
 
 const ramp = (t, start) => (t <= start ? 0 : (t - start) / (1 - start));
@@ -355,15 +355,135 @@ const ramp = (t, start) => (t <= start ? 0 : (t - start) / (1 - start));
 export function evaluateDifficulty(intensity, easy = EASY, hard = HARD) {
   const t = clamp01(intensity);
   return {
+    intensity: t,
     spawnInterval: Math.exp(lerp(Math.log(easy.spawnInterval), Math.log(hard.spawnInterval), t)),
     orbSpeed: lerp(easy.orbSpeed, hard.orbSpeed, t),
     horizontalSpread: lerp(easy.horizontalSpread, hard.horizontalSpread, t),
     verticalSpread: lerp(easy.verticalSpread, hard.verticalSpread, t),
-    duckBarChance: lerp(easy.duckBarChance, hard.duckBarChance, ramp(t, 0.3)),
+    obstacleChance: lerp(easy.obstacleChance, hard.obstacleChance, ramp(t, 0.3)),
     heavyOrbChance: lerp(easy.heavyOrbChance, hard.heavyOrbChance, ramp(t, 0.5)),
     minPunchSpeed: lerp(easy.minPunchSpeed, hard.minPunchSpeed, t),
+    // Swing-direction orbs (uppercuts / hooks) from medium intensity.
+    directionalChance: lerp(easy.directionalChance, hard.directionalChance, ramp(t, 0.35)),
+    // Cross-body punches (left hand on the right side) twist the core; hard intensities only.
+    crossBodyChance: lerp(easy.crossBodyChance, hard.crossBodyChance, ramp(t, 0.6)),
   };
 }
 
 /** Tanaka estimate of max heart rate. */
 export const estimatedMaxBpm = (age) => 208 - 0.7 * age;
+
+// ---------------------------------------------------------------- walls (dodge / duck / squat)
+
+/**
+ * Wall types and the intensity at which each unlocks. Each wall is a blocking polygon in the
+ * plane it flies through (x = metres right of your starting position, y = metres up).
+ * Your head must be in the open part when the wall reaches you.
+ */
+export const WALL_TYPES = Object.freeze([
+  { type: 'duck', label: 'Duck!', from: 0.3 },
+  { type: 'pillar', label: 'Step aside!', from: 0.35 },
+  { type: 'dodgeLeft', label: 'Lean left!', from: 0.4 },
+  { type: 'dodgeRight', label: 'Lean right!', from: 0.4 },
+  { type: 'squatLeft', label: 'Squat left!', from: 0.55 },
+  { type: 'squatRight', label: 'Squat right!', from: 0.55 },
+]);
+
+/** Which wall to send at this intensity (rng returns 0..1). Unlocked types are equally likely. */
+export function pickWallType(intensity, rng = Math.random) {
+  const open = WALL_TYPES.filter((w) => intensity >= w.from);
+  if (!open.length) return null;
+  return open[Math.min(open.length - 1, Math.floor(rng() * open.length))].type;
+}
+
+/** Blocking polygon [[x, y], ...] for a wall, given the player's standing head height. */
+export function wallPolygon(type, standing) {
+  const W = 1.3, TOP = Math.max(2.4, standing + 0.6);
+  const duckY = standing - 0.22;   // head must drop ~30 cm
+  const squatY = standing - 0.32;  // a bit deeper for the side squats
+  switch (type) {
+    case 'duck': return [[-W, duckY], [W, duckY], [W, TOP], [-W, TOP]];
+    case 'pillar': return [[-0.22, 0], [0.22, 0], [0.22, TOP], [-0.22, TOP]];
+    case 'dodgeLeft': return [[-0.12, 0], [W, 0], [W, TOP], [-0.12, TOP]];   // wall on the right: go left
+    case 'dodgeRight': return [[-W, 0], [0.12, 0], [0.12, TOP], [-W, TOP]];  // wall on the left: go right
+    case 'squatLeft': return [[-W, squatY], [-0.05, squatY], [-0.05, 0], [W, 0], [W, TOP], [-W, TOP]]; // open low-left
+    case 'squatRight': return [[W, squatY], [0.05, squatY], [0.05, 0], [-W, 0], [-W, TOP], [W, TOP]];   // open low-right
+    default: return null;
+  }
+}
+
+function pointInPolygon(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy || 1e-9;
+  const t = clamp(((px - ax) * dx + (py - ay) * dy) / len2, 0, 1);
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/** True if a head (sphere of radius r at x, y) touches the wall polygon. */
+export function wallHitsHead(poly, x, y, r = 0.09) {
+  if (!poly) return false;
+  if (pointInPolygon(x, y, poly)) return true;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    if (distToSegment(x, y, poly[j][0], poly[j][1], poly[i][0], poly[i][1]) < r) return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------- orbs: hands and swing directions
+
+/** Unit vectors for the swing an arrow orb asks for (x right, y up, z toward the player). */
+export const SWING = Object.freeze({
+  up: [0, 1, 0],     // uppercut
+  left: [-1, 0, 0],  // hook travelling right-to-left
+  right: [1, 0, 0],  // hook travelling left-to-right
+});
+
+/**
+ * Choose which hand an orb belongs to and whether it needs a particular swing.
+ * Orbs on your left are for the left hand, unless it's a cross-body orb.
+ */
+export function planOrb(x, d, rng = Math.random) {
+  let hand = x < 0 ? 'left' : 'right';
+  if (rng() < d.crossBodyChance) hand = hand === 'left' ? 'right' : 'left';
+  let swing = null;
+  if (rng() < d.directionalChance) {
+    // Hooks come from the outside in: right hand hooks leftward, left hand hooks rightward.
+    swing = rng() < 0.5 ? 'up' : (hand === 'right' ? 'left' : 'right');
+  }
+  return { hand, swing };
+}
+
+/** Did a fist moving with velocity v ([x, y, z]) swing the right way? */
+export function swingMatches(swing, v, minDot = 0.45) {
+  if (!swing) return true;
+  const len = Math.hypot(v[0], v[1], v[2]);
+  if (len < 1e-6) return false;
+  const s = SWING[swing];
+  return (v[0] * s[0] + v[1] * s[1] + v[2] * s[2]) / len >= minDot;
+}
+
+// ---------------------------------------------------------------- heart thermometer
+
+/**
+ * Target looks for the heat gauge: how frosty / flaming / hyper it should be (0..1 each).
+ * Frost grows the further below the zone you are; above the zone it's a hyper flame.
+ */
+export function heatLook(status, bpm, target) {
+  switch (status) {
+    case 'InZone': return { cold: 0, flame: 1, hyper: 0 };
+    case 'Below': return { cold: clamp((target - bpm) / 20, 0.35, 1), flame: 0, hyper: 0 };
+    case 'Above': return { cold: 0, flame: 0.4, hyper: clamp((bpm - target) / 15, 0.5, 1) };
+    case 'SafetyBrake': return { cold: 0, flame: 0.3, hyper: 1 };
+    default: return { cold: 0, flame: 0, hyper: 0 };
+  }
+}
