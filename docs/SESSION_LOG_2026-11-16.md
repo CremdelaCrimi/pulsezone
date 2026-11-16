@@ -203,3 +203,11 @@ From the review's "plausible" list, two changes to the dodge barrage:
 - **Separate bomb tally.** Bomb dodges no longer count toward the walls stat or pop "Dodged! +15" on every bomb. The Diag line shows `bombs hit x/y`; dodges still feed the combo and score (+10, x2 in the zone).
 
 Smoke: 3 barrages, 20 dodged, 0 overlaps, no errors.
+
+## 14:20 — Gemini round 12: polish for the new moves (v44)
+
+Shared the player's second feedback round and the three new moves with Gemini; asked for the 1–2 smallest polish changes. Gemini suggested: (a) a 0.3 s pre-flash on the next heavy-bag patch, (b) a cadence "whoosh" for sled strokes, (c) a directional "incoming" whistle per bomb. Gemini then hit its daily limit, so this was the last consult today.
+
+Built (c), adapted: each bomb plays a short falling whistle, panned to its side, at the moment it stops following your head (0.7 s before arrival). That's exactly when you need to move, so the dodge reads by ear as well as by eye. (a) and (b) are noted as next ideas for after the headset test (stroke sounds already play on sled strokes).
+
+Brief updated (moves table, second feedback round, untested thresholds, third review). Smoke: 2 barrages, 15 dodged, 0 overlaps, no errors; the whistle verified in an audio context directly.

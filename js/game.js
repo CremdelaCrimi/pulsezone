@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v43';
+} from './core.js?v44';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v43';
+import { AudioEngine } from './audio.js?v44';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v43';
-import { loadTuning, createDevPanel } from './dev.js?v43';
+import { OptionsPanel } from './options.js?v44';
+import { loadTuning, createDevPanel } from './dev.js?v44';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -1403,6 +1403,9 @@ function updateBombs(dt, head) {
       const ty = Math.max(0.7, head.y + b.oy);
       b.group.position.x += (tx - b.group.position.x) * k;
       b.group.position.y += (ty - b.group.position.y) * k;
+    } else if (!b.passed && !b.locked) {
+      b.locked = true; // stops following you now: whistle from its side so you know to move
+      audio.sfx('incoming', { pan: (b.group.position.x - head.x) / 0.4 });
     }
     b.group.rotation.x += dt * 4; b.group.rotation.y += dt * 3;
     if (!b.passed && b.group.position.z >= head.z) {

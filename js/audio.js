@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo, songTone, breakdownDue, BREAKDOWN_BARS, BREAKDOWN_EVERY } from './core.js?v43';
+import { musicTempo, songTone, breakdownDue, BREAKDOWN_BARS, BREAKDOWN_EVERY } from './core.js?v44';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
@@ -428,6 +428,12 @@ export class AudioEngine {
         this.noiseHit(t, 'lowpass', 400, 0.7, 0.8, 0.3, this.fx);
         this.tone(t, 90, 'square', 0.25, 0.25, 50);
         break;
+      case 'incoming': { // a bomb just locked on: a falling whistle from its side, so you know when to move
+        const pan = c.createStereoPanner ? c.createStereoPanner() : null;
+        if (pan) { pan.pan.value = Math.max(-1, Math.min(1, opts.pan ?? 0)); pan.connect(this.fx); setTimeout(() => pan.disconnect(), 600); }
+        this.tone(t, 1900, 'sine', 0.1, 0.3, 850, pan || this.fx);
+        break;
+      }
       case 'dodge': { // whoosh
         const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
         src.buffer = this.noise;

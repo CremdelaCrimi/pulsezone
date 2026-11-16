@@ -2,7 +2,7 @@
 
 A brainstorming reference for PulseZone, a heart-rate-adaptive VR workout for Meta Quest.
 Live game: https://cremdelacrimi.github.io/pulsezone/ · iPhone bridge: https://cremdelacrimi.github.io/pulsezone/bridge.html
-Last updated: 2026-11-16, 12:10 PM (after the first headset play test and a day of Claude + Gemini iterations).
+Last updated: 2026-11-16, 2:10 PM (after the first headset play test and a day of Claude + Gemini iterations).
 
 ## 1. Core idea
 
@@ -77,7 +77,7 @@ Everything flies down one lane. Each thing books a time slot for when it reaches
 | Speed bag (burst) | 4–5 s of rapid alternating punches on a bag | 0.35, or early when stuck | 0.3 per punch |
 | Heavy bag (burst) | 6 s on a big bag; a lit patch (hand-coloured) shows left hook / right hook / uppercut / power; hard punches score more, the lit patch doubles it | 0.4, or early when stuck | 0.9 per strong punch |
 | Sled run (burst) | 8 s: squat into a tuck and double-pole (both fists down together); tucked strokes 1.5x, tuck time scores | 0.45, or early when stuck | 1.5 per stroke |
-| Dodge barrage | 4–6 bombs aimed near your head ~0.8 s apart; lean/duck/shift 20 cm+ to dodge (core work) | 0.3 | 1.3 per dodge |
+| Dodge barrage | 4–6 bombs ~0.8 s apart that follow your head until 0.7 s out, then lock; lean/duck/shift 20 cm+ to dodge (core work). Own tally (bombs hit x/y), not counted as walls | 0.3 | 1.3 per dodge |
 | Battle ropes (burst) | 6 s of pumping both arms; staying low scores 1.5× | 0.45, or early when stuck | 1.6 per second |
 | Boxing combo | 2–4 orbs one beat apart (1-2, 1-1-2, 1-2-hook, 1-2-1-upper, squat-squat-hook-hook); bonus + floating COMBO CLEAR for clearing it | replaces a plain punch, 25–60% chance from intensity 0.25, at most ~every 9 s | (counts as its punches) |
 | Side shift (footwork) | Below the zone: for 8 s plain orbs come 35 cm to one side; a floor pad shows where to step; walls/ropes/bursts wait | below zone, intensity ≥ 0.35 or boost | — (part of the orbs) |
@@ -154,13 +154,15 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - Wanted a two-handed rope variation → two-hand rope (done).
 - Song music was silent on Quest → fixed to start from button presses (needs re-test).
 - Warm-up felt too long → 30 s default, adjustable (done).
+- Second round (after more play): punch orbs too wide → narrowed (done). Loved the speed bag → added a heavy bag with hooks/uppercuts (done). Ropes fantastic → added a sled run (tuck + double-pole) (done). Core dodging of shots at the head in another game raised heart rate a lot → dodge barrage (done).
 - Open question: how much does each "fun" move actually raise heart rate? (the learned ranking answers this over several workouts)
 
 ## 12. Not yet tested in the headset
-Everything added on 2026-11-16 morning (slam bar height and 1.1 m/s threshold, side-shift comfort, combos' beat timing, waves, spotlight, breathing pacer, song filter), the climbing cue's accuracy with a real heart, the climbing cue's accuracy with a real heart, guard detection distance, speed bag distance, rope pump speed, zone visuals' frame rate, the music fix, the two-hand rope, stand-tall timing.
+Everything added on 2026-11-16 morning (slam bar height and 1.1 m/s threshold, side-shift comfort, combos' beat timing, waves, spotlight, breathing pacer, song filter), the climbing cue's accuracy with a real heart, heavy bag patch reach, sled stroke thresholds (1.0 m/s down, both fists within 0.35 s) and tuck depth (15 cm), bomb tracking/lock time (0.7 s), guard detection distance, speed bag distance, rope pump speed, zone visuals' frame rate, the music fix, the two-hand rope, stand-tall timing.
 
 ## 12b. Robustness checks done (2026-11-16)
 - Two independent code reviews (10:11 and 10:59) found 7 real bugs, all fixed (e.g. side-shift call-out spam, Build warm-up jump, simulator data being learned, test moves dropped behind stand-up boxes, spotlight on locked moves).
+- A third review (14:00) of the heavy bag, sled and bombs found 4 more (stacked test bursts, buried uppercut patch, small GPU leaks, clipped options buttons), all fixed.
 - A sweep of six 4-minute auto-played workouts (Touch; ropes only; walls only; Build + Hard; everything off; Waves + Gentle punches only): 0 overlaps, 0 errors, no stuck queues.
 
 ## 13. Rejected or reworked ideas
