@@ -132,3 +132,17 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - Asked Gemini (round 9) to choose between song breakdowns and 45-second move-family blocks for faster learning. It chose the breakdowns: no risk to the heart-rate loop with a headset test coming, whereas the blocks touch the spawner and learning.
 - **Built:** every 24 bars of the song (counted in song time, so independent of the playback rate) a breakdown of up to 4 bars thins the song out (a high-pass rises to ~380 Hz, the zone bass boost is off). The full sound slams back in on the next big hit (power orb, slam bar, combo clear, zone streak, burst warning) or after 4 bars. Never starts above the zone or while paused, and ends at once if you go above the zone. Tempo, spawns and the controller are untouched.
 - Checked: new test passes; in the browser a breakdown started at bar 24 (high-pass 376 Hz) and a power hit dropped it straight back (20 Hz); no console errors.
+
+## Cycle 23 (11:23 AM): robustness sweep (no code changes)
+Six ~4-minute auto-played workouts with different settings, each checked for overlaps, console errors, long quiet stretches and stuck queues:
+
+| Settings | Result |
+|---|---|
+| A: Touch mode, all moves | 0 overlaps, 0 errors; power orbs and hooks correctly skipped in Touch mode; 3 slams, 7 combos |
+| B: ropes only (rope + two-hand rope) | 0 overlaps; 18 ropes, 20 two-hand ropes, 20 slams |
+| C: walls only (+ Shift) | 0 overlaps; 119 walls cleared; no side shifts (correct: shifts need punch orbs) |
+| D: Build & peak + Hard | 0 overlaps; spotlight, a side shift, combos and slams all appeared |
+| E: every move switched off | falls back to plain punches (as designed), 0 overlaps |
+| F: Waves + Gentle, punches only | 0 overlaps; the target followed the waves (115–125 in training) |
+
+Longest quiet stretch in training: 11 s (during a two-hand rope); longest a move waited in the queue: 11 s (the queue gives up at 10 s and picks something else). Local test data was cleared afterwards.
