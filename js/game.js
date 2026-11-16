@@ -8,15 +8,15 @@ import {
   HeartRateAttribution, PROFILES, profileOffset, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
-  SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan,
+  SHIFT, shiftWanted, shiftOffsetAt, breathAt, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v21';
+} from './core.js?v23';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v21';
+import { AudioEngine } from './audio.js?v23';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v21';
-import { loadTuning, createDevPanel } from './dev.js?v21';
+import { OptionsPanel } from './options.js?v23';
+import { loadTuning, createDevPanel } from './dev.js?v23';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -344,6 +344,7 @@ function setProfile(p) {
   if (!PROFILES.includes(p)) return;
   settings.profile = p;
   controller.s.profile = p;
+  waveState = 0; // start the call-outs fresh for the new shape
   document.querySelectorAll('input[name=profile]').forEach((r) => { r.checked = r.value === p; });
   saveSettings();
 }
@@ -741,6 +742,12 @@ function updateReactor(dt, rawDt, status, running) {
   r.coreMat.emissiveIntensity = r.state === 'zone' ? 0.7 + 0.8 * beat : r.state === 'overheat' ? 0.6 + 0.6 * Math.random() : 0.25;
   r.core.rotation.y += rawDt * (r.state === 'zone' ? 2.2 : r.state === 'overheat' ? 4 : 0.4);
   r.cage.rotation.y -= rawDt * 0.5; r.cage.rotation.x += rawDt * 0.2;
+  // Above the zone: the cage breathes (4 s in, 6 s out) and the scoreboard leads your breathing.
+  const pace = running && r.state === 'overheat' && controller.phase === Phase.Training;
+  if (pace) { if (breathFrom == null) breathFrom = gameTime; } else breathFrom = null;
+  const b = pace ? breathAt(gameTime - breathFrom) : null;
+  breathCue = b ? b.phase : null;
+  r.cage.scale.setScalar(b ? 1 + 0.5 * b.fill : 1);
   r.core.position.x = r.state === 'overheat' ? (Math.random() - 0.5) * 0.02 : 0;
   r.core.scale.setScalar(1 + (r.state === 'zone' ? 0.12 * beat : 0));
   const pct = Math.floor(r.charge * 100);
@@ -770,6 +777,7 @@ function updateReactor(dt, rawDt, status, running) {
 let zoneAmt = 0;        // 0..1, eases in when you're in the zone
 let beatPhase = 0;      // music beats, for pulsing things to the tempo
 let hitFlash = 0;       // red flash when a guard shot gets through
+let breathFrom = null, breathCue = null; // paced breathing while above the zone
 let zoneStreak = 0;     // seconds in the zone without dropping out (training only)
 let longestStreak = 0;
 let streakFlash = 0;    // lane rails flare up at each streak milestone
@@ -1317,7 +1325,7 @@ function desktopSlam(head) {
  */
 const SEEN_KEY = 'pulsezone.seen';
 const TEACH_TIMES = 2;
-let seen = (() => { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); } catch { return {}; } })();
+let seen = (() => { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}') || {}; } catch { return {}; } })();
 /** Should this new guard/rope/slam come with a hint? (counts it as seen) */
 function teach(kind) {
   if ((seen[kind] || 0) >= TEACH_TIMES) return false;
@@ -1587,7 +1595,7 @@ function drawSummary(w, records) {
   stat('Raises YOUR heart most', top.label, 640, 490, false);
   g.textAlign = 'center'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
   const short = w.trainingSeconds < MIN_RECORD_SECONDS ? '  ·  workouts under 3 min don\'t set records' : '';
-  g.fillText(bests ? `Bests: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points · ${bests.workouts} workout${bests.workouts === 1 ? '' : 's'}${short}` : '', W / 2, 600);
+  g.fillText(bests ? `Bests: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points · ${bests.workouts} workout${bests.workouts === 1 ? '' : 's'}${short}` : '', W / 2, 600, W - 60);
   sumTex.needsUpdate = true;
 }
 
@@ -1670,7 +1678,7 @@ function drawHud(xr) {
   const boostPct = Math.round(boost.value * 100);
   const key = [bpmText, c.status, c.phase, Math.floor(remaining), Math.round(c.intensity * 100), score.score, score.combo,
     fresh ? lastEvent : '', statusLine, sourceKind, phoneFallback, workloadMode, link.code, xr, Math.round(c.currentSetpoint), c.s.targetBpm,
-    Math.round(boostPct / 5), options.open, trendShown, Math.floor(zoneStreak)].join('|');
+    Math.round(boostPct / 5), options.open, trendShown, Math.floor(zoneStreak), breathCue].join('|');
   if (key === hudKey) return;
   hudKey = key;
 
@@ -1729,6 +1737,10 @@ function drawHud(xr) {
     g.fillText(bestsLine(), W / 2, 400);
   }
 
+  if (breathCue && c.phase !== Phase.Finished) { // its own line, so hit call-outs don't hide it
+    g.fillStyle = '#7fd8ff'; g.font = '600 34px system-ui, sans-serif';
+    g.fillText(breathCue === 'in' ? 'BREATHE IN...  (4)' : 'BREATHE OUT... slowly  (6)', W / 2, 455);
+  }
   if (statusLine) {
     const ok = !phoneFallback && src.hasReading && src.secondsSinceLastReading < 5;
     g.fillStyle = ok ? '#b8bfcc' : '#ffd34d'; g.font = '26px system-ui, sans-serif';
@@ -2166,6 +2178,7 @@ function updateDrift(head, xr, paused) {
 /** Plan a shift when you're stuck below the zone, if no wall/rope/etc. would arrive during it. */
 function maybePlanShift() {
   if (!settings.moves.shift || shiftPlan || bag || ropes || pendingBurst) return;
+  if (!PLAIN_ORBS.some((k) => enabledActivities(true)[k])) return; // shifts are plain punches only
   if (trendShown === 'climbing') return; // already working hard enough: your heart just needs time
   if (!shiftWanted({ status: controller.status, phase: controller.phase, intensity: controller.intensity, boost: boost.value, now: gameTime, readyAt: shiftReadyAt })) return;
   const start = gameTime + (SPAWN_DISTANCE - 0.5) / difficulty.orbSpeed + 0.4;
@@ -2187,8 +2200,9 @@ function updateShift(head, standing) {
     shiftPad.scale.set(p.offset > 0 ? 1.8 : -1.8, 1.8, 1.8); // arrow points the way to step
     shiftPadMat.opacity = 0.55 + 0.35 * Math.abs(Math.sin(gameTime * 5));
   }
-  if (gameTime >= showFrom && shiftSaid !== 'go') { shiftSaid = 'go'; say(p.offset > 0 ? 'STEP RIGHT  >>' : '<<  STEP LEFT'); audio.sfx('burst'); }
-  if (gameTime >= p.end && shiftSaid !== 'back') { shiftSaid = 'back'; say('Back to the centre'); }
+  // One-way stages ('' -> 'go' -> 'back'), so each call-out fires exactly once.
+  if (shiftSaid === '' && gameTime >= showFrom) { shiftSaid = 'go'; say(p.offset > 0 ? 'STEP RIGHT  >>' : '<<  STEP LEFT'); audio.sfx('burst'); }
+  if (shiftSaid === 'go' && gameTime >= p.end) { shiftSaid = 'back'; say('Back to the centre'); }
   if (gameTime > p.end + SHIFT.margin) { shiftPlan = null; shiftSaid = ''; }
 }
 
@@ -2477,7 +2491,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, drifting, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, drifting, breath: breathCue, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };

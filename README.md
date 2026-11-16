@@ -46,7 +46,8 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 - **Drift guard:** if your head wanders more than 55 cm from where you should be (the lane centre, or the side-shift spot), an amber arrow on the floor and a call-out point you back; it clears once you're within 30 cm.
 - **Boxing combos on the beat:** once intensity is up, a plain punch sometimes becomes a short combination (1-2, 1-1-2, 1-2-hook, 1-2-1-uppercut, squat-squat-hook-hook) with one orb per beat of the music (two beats when it's fast), the first landing on a beat. Clear the whole combo for a bonus. Combos only use moves you have switched on, and like other solo moves they get the lane to themselves.
 - **Spacing:** everything shares one lane, so the game books a time slot for when each thing reaches you. Plain orbs can come in groups, but a rope, a wall box, a power orb, a squat-and-reach pair or a guard shot always gets the lane to itself, with a short gap before and after. Nothing flies through anything else.
-- **Soundtrack:** "Hard-Knuckle Focus", an instrumental track made with Gemini's music tool (`assets/music/hard-knuckle-focus.mp3`, 121 BPM). The game **time-stretches it to your pace** with the pitch preserved, from 0.78× to 1.25×. It loops over 87 whole bars and skips the intro and the silent ending. Switch between **Song** and **Synth** on the options board. On the Quest the song can only start from a button press, so it starts when you enter VR or pull a trigger. If it's ever blocked, the synth music plays instead and the game says so.
+- **Breathing pacer:** above your zone during training, the reactor's cage swells and shrinks on a 4-seconds-in, 6-seconds-out rhythm and the scoreboard leads it ("BREATHE IN…" / "BREATHE OUT… slowly"), to help bring your heart rate down.
+- **Soundtrack:** "Hard-Knuckle Focus", an instrumental track made with Gemini's music tool (`assets/music/hard-knuckle-focus.mp3`, 121 BPM). The game **time-stretches it to your pace** with the pitch preserved, from 0.78× to 1.25×. It loops over 87 whole bars and skips the intro and the silent ending. The song also changes colour with your zone: muffled when you're well below, opening up as you climb, with extra bass in the zone; big hits briefly duck the music. Switch between **Song** and **Synth** on the options board. On the Quest the song can only start from a button press, so it starts when you enter VR or pull a trigger. If it's ever blocked, the synth music plays instead and the game says so.
 - **Music & sound (Synth):** synthesized live. The **tempo leads you**: it speeds up when you need to pick it up and slows when you need to ease off. You also get icy bells below your zone, a bright arpeggio in it, a soft heartbeat at your real BPM, and a sound for every hit, dodge and wall.
 
 ### When your heart rate won't climb
@@ -93,7 +94,7 @@ Left click = left punch · right click = right punch · hold **G** guard · hold
 | `js/dev.js` | Developer tuning panel |
 | `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
 | `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
-| `test/core.test.mjs` | 109 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
+| `test/core.test.mjs` | 112 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
 
@@ -126,7 +127,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v21` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v23` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

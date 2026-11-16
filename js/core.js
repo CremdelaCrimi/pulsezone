@@ -324,8 +324,10 @@ export class ZoneController {
     const s = this.s;
     if (this.phase === Phase.Training) return this.trainingTarget(this.phaseElapsedSeconds);
     if (this.phase !== Phase.WarmUp) return s.targetBpm;
-    const start = Number.isNaN(this.warmUpStartBpm) ? s.targetBpm : Math.min(this.warmUpStartBpm, s.targetBpm);
-    return lerp(start, s.targetBpm, clamp01(this.phaseElapsedSeconds / Math.max(1, s.warmUpSeconds)));
+    // Warm up toward where training will start (with Build & peak that's below your target).
+    const goal = this.trainingTarget(0);
+    const start = Number.isNaN(this.warmUpStartBpm) ? goal : Math.min(this.warmUpStartBpm, goal);
+    return lerp(start, goal, clamp01(this.phaseElapsedSeconds / Math.max(1, s.warmUpSeconds)));
   }
 
   /** Training target at time t (s into training): your target plus the workout shape, kept under the ceiling. */
@@ -339,7 +341,7 @@ export class ZoneController {
     // Training with a shaped workout: how fast the target is moving (feeds the controller's D term).
     if (this.phase === Phase.Training) return this.trainingTarget(this.phaseElapsedSeconds + 1) - this.trainingTarget(this.phaseElapsedSeconds);
     if (Number.isNaN(this.warmUpStartBpm) || this.phaseElapsedSeconds >= s.warmUpSeconds) return 0;
-    return Math.max(0, s.targetBpm - this.warmUpStartBpm) / Math.max(1, s.warmUpSeconds);
+    return Math.max(0, this.trainingTarget(0) - this.warmUpStartBpm) / Math.max(1, s.warmUpSeconds);
   }
 
   advancePhaseIfDue() {
@@ -962,6 +964,33 @@ export function updateBests(prev, w) {
     }
   }
   return { bests: b, records };
+}
+
+// ---------------------------------------------------------------- music colour and breathing
+
+/**
+ * The song's tone by zone: low-pass cutoff (Hz) and bass shelf (dB). Well below the zone it's
+ * muffled (2.5 kHz) and opens up (to 18 kHz) as you climb to the target; in the zone it's fully
+ * open with +4 dB of bass; above the zone a little darker again, to calm things down.
+ */
+export function songTone({ status, bpm, target }) {
+  if (status === 'InZone') return { cutoff: 18000, bassDb: 4 };
+  if (status === 'Above' || status === 'SafetyBrake') return { cutoff: 7000, bassDb: 0 };
+  if (status === 'Below' && bpm && target) {
+    const close = clamp01(1 - (target - bpm) / 25);
+    return { cutoff: Math.round(2500 * Math.pow(18000 / 2500, close)), bassDb: 0 };
+  }
+  return { cutoff: 18000, bassDb: 0 };
+}
+
+/**
+ * Paced breathing for coming back down when you're above the zone: 4 s in, 6 s out.
+ * Returns 'in' or 'out' and how full the breath is (0..1, eased).
+ */
+export function breathAt(t) {
+  const u = ((t % 10) + 10) % 10;
+  if (u < 4) return { phase: 'in', fill: 0.5 - 0.5 * Math.cos((Math.PI * u) / 4) };
+  return { phase: 'out', fill: 0.5 + 0.5 * Math.cos((Math.PI * (u - 4)) / 6) };
 }
 
 // ---------------------------------------------------------------- music tempo as a pacing cue

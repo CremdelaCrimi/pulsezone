@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo } from './core.js?v21';
+import { musicTempo, songTone } from './core.js?v23';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
@@ -126,7 +126,13 @@ export class AudioEngine {
     s.node = this.ctx.createMediaElementSource(el);
     s.gain = this.ctx.createGain();
     s.gain.gain.value = 0;
-    s.node.connect(s.gain).connect(this.music);
+    // The song runs through a low-pass filter and a bass shelf so it changes with your zone:
+    // muffled when you're well below, opening up as you climb, full and punchier in the zone.
+    s.filter = this.ctx.createBiquadFilter();
+    s.filter.type = 'lowpass'; s.filter.frequency.value = 18000; s.filter.Q.value = 0.5;
+    s.shelf = this.ctx.createBiquadFilter();
+    s.shelf.type = 'lowshelf'; s.shelf.frequency.value = 90; s.shelf.gain.value = 0;
+    s.node.connect(s.filter).connect(s.shelf).connect(s.gain).connect(this.music);
   }
 
   setMusicMode(mode) { this.musicMode = mode; this.playSong(); }
@@ -142,6 +148,9 @@ export class AudioEngine {
     // Bar-aligned loop: jump back by exactly the loop length so the beat carries straight through.
     if (s.loopEnd && s.el.currentTime >= s.loopEnd) s.el.currentTime = s.loopStart + (s.el.currentTime - s.loopEnd);
     s.gain.gain.setTargetAtTime(on ? 1.6 : 0, this.ctx.currentTime, on ? 0.4 : 0.25);
+    const tone = songTone(this.state);
+    s.filter.frequency.setTargetAtTime(tone.cutoff, this.ctx.currentTime, 1.5);
+    s.shelf.gain.setTargetAtTime(tone.bassDb, this.ctx.currentTime, 1.5);
     // Retry now and then (works on desktop; on Quest the next gesture starts it, see unlock()).
     const t = this.ctx.currentTime;
     if (on && s.el.paused && t - (s.lastTry || 0) > 2) { s.lastTry = t; this.playSong(); }
@@ -150,6 +159,17 @@ export class AudioEngine {
     // How long the song has been wanted but silent (the game says so and the synth fills in).
     s.silentFor = on && !this.songLive ? (s.silentFor || 0) + (t - (s.lastDrive ?? t)) : 0;
     s.lastDrive = t;
+  }
+
+  /** Dip the music for a moment so a big hit lands harder (like sidechain compression). */
+  duck(amount = 0.35, seconds = 0.12) {
+    const c = this.ctx;
+    if (!c || !this.music) return;
+    const g = this.music.gain, t = c.currentTime;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(0.55 * (1 - amount), t + 0.015);
+    g.linearRampToValueAtTime(0.55, t + seconds);
   }
 
   setEnabled(on) {
@@ -350,8 +370,9 @@ export class AudioEngine {
         if (p > 0.6) this.noiseHit(t, 'highpass', 4500, 0.7, 0.35 * p, 0.12, this.fx); // glassy crack
         break;
       }
-      case 'power': { // power orb smashed: big boom + shatter
+      case 'power': { // power orb smashed (or slam bar): big boom + shatter, music ducks under it
         const p = opts.power ?? 1;
+        this.duck(0.4, 0.16);
         this.tone(t, 110, 'sine', 0.5, 0.35, 38);
         this.tone(t, 70, 'triangle', 0.3, 0.3, 35);
         this.noiseHit(t, 'highpass', 3500, 0.6, 0.45, 0.25, this.fx);

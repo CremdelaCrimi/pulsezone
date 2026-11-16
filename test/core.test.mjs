@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -348,6 +348,24 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
       'build & peak: start 6 easier, reach +6 by 80% of training');
     const zc = new ZoneController({ targetBpm: 150, safetyCeilingBpm: 160, profile: 'build', warmUpSeconds: 1 });
     check(zc.trainingTarget(720) === 152 && zc.trainingTarget(0) === 144, 'shaped targets stay 8 BPM under the safety ceiling');
+    // Warm-up ends exactly where training starts (Build & peak starts 6 below the target).
+    const wz = new ZoneController({ targetBpm: 120, profile: 'build', warmUpSeconds: 30, trainingSeconds: 600 });
+    const src = { hasReading: true, currentBpm: 90, secondsSinceLastReading: 0 };
+    for (let i = 0; i < 29 * 10; i++) wz.tick(src, 0.1);
+    const endWarm = wz.currentSetpoint;
+    for (let i = 0; i < 3 * 10; i++) wz.tick(src, 0.1);
+    check(wz.phase === 'Training' && Math.abs(endWarm - 114) < 1 && Math.abs(wz.currentSetpoint - 114) < 0.5,
+      `build: warm-up ramps to the training start, no jump (${endWarm.toFixed(1)} -> ${wz.currentSetpoint.toFixed(1)})`);
+  }
+
+  // Music colour by zone, and paced breathing above the zone.
+  {
+    const far = songTone({ status: 'Below', bpm: 90, target: 120 }), near = songTone({ status: 'Below', bpm: 117, target: 120 });
+    check(far.cutoff === 2500 && near.cutoff > 10000 && songTone({ status: 'InZone' }).bassDb === 4 && songTone({ status: 'Above' }).cutoff < 18000,
+      `song opens up as you climb, punchier in the zone (${far.cutoff} -> ${near.cutoff} Hz)`);
+    const b = [0, 2, 4, 7, 10].map((t) => breathAt(t));
+    check(b[0].phase === 'in' && b[0].fill < 0.01 && Math.abs(b[1].fill - 0.5) < 1e-9 && b[2].phase === 'out' && b[2].fill > 0.99 && b[3].phase === 'out' && b[4].phase === 'in',
+      'paced breathing: 4 s in, 6 s out');
   }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
