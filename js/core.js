@@ -827,7 +827,9 @@ export class ChallengeBoost {
     this.stuckSeconds = 0;
   }
 
-  update(dt, { status, intensity, bpmTrend, climbing = false }) {
+  update(dt, { status, intensity, bpmTrend, climbing = false, hold = false }) {
+    // hold: the heart-rate reading can't be trusted right now (e.g. stuck sensor): change nothing.
+    if (hold) { this.stuckSeconds = 0; return this.value; }
     // "Stuck": below the zone and HR rising slower than ~2 BPM per 10 s, or game already maxed out.
     // Not stuck if your effort already points into the zone ('climbing'): your heart just lags,
     // and pushing harder now would overshoot. Then the boost drains instead (~60 s from full).
@@ -1009,6 +1011,19 @@ export function updateBests(prev, w) {
     }
   }
   return { bests: b, records };
+}
+
+// ---------------------------------------------------------------- sensor sanity
+
+/**
+ * Wrist sensors sometimes "lock" and repeat the same BPM for 20-40 s while sweaty, then jump.
+ * If the reading hasn't changed at all for over 18 s while you're below the zone and clearly
+ * working (>12 reps/min in the last ~12 s), treat it as stuck: don't learn from it and don't let
+ * the challenge boost build on it.
+ */
+export const FLAT_SECONDS = 18;
+export function sensorLooksFlat({ flatSeconds, status, effortRpm }) {
+  return flatSeconds > FLAT_SECONDS && status === 'Below' && effortRpm > 12;
 }
 
 // ---------------------------------------------------------------- music colour and breathing

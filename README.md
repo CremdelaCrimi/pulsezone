@@ -60,7 +60,7 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
   - **Speed bag:** a bag hangs in front of your chest for 4–5 seconds. Hit it as many times as you can (5 points a hit, more for a big flurry). No aiming or reaction time needed, just effort.
   - **Battle ropes:** two ropes run from your hands down the lane for 6 seconds. Pump both arms up and down fast; the waves you make travel down the ropes. Staying low (half squat) scores 1.5×.
   - Each can come at most every 20 s (speed bag) or 30 s (ropes). You'll see the odd one in the zone too, for variety, and hardly any above it.
-- **What works for you:** the game **learns what raises YOUR heart rate**. It compares your heart rate with how many of each activity you've recently done (punches, squat punches, hooks and uppercuts, power punches, squat-and-reach pairs, guard and counter, rope tracing, two-hand rope, speed bag, battle ropes, ducks, side steps, side squats), allowing for the heart's 30–40 second lag. When you're below the zone, it sends more of whatever works for you. When you're above it, it sends easier punches. The estimates are saved in the browser and refine over several workouts. New players learn about 3x faster at first, easing to the normal rate over their first ~10 minutes of real data. Only real heart rate teaches it: not the simulator, and not the movement-based estimate while the phone is asleep (that's shown with a "~" and a muted colour, and a two-tone chime plays when the phone comes back). Personal bests likewise only count workouts driven mostly by real heart rate.
+- **What works for you:** the game **learns what raises YOUR heart rate**. It compares your heart rate with how many of each activity you've recently done (punches, squat punches, hooks and uppercuts, power punches, squat-and-reach pairs, guard and counter, rope tracing, two-hand rope, speed bag, battle ropes, ducks, side steps, side squats), allowing for the heart's 30–40 second lag. When you're below the zone, it sends more of whatever works for you. When you're above it, it sends easier punches. The estimates are saved in the browser and refine over several workouts. New players learn about 3x faster at first, easing to the normal rate over their first ~10 minutes of real data. Only real heart rate teaches it: not the simulator, and not the movement-based estimate while the phone is asleep (that's shown with a "~" and a muted colour, and a two-tone chime plays when the phone comes back). Personal bests likewise only count workouts driven mostly by real heart rate. It only counts reps you actually did (orbs hit, walls cleared, guard shots blocked, ropes followed at least 30%), and if the phone's reading hasn't changed for over 18 seconds while you're below the zone and clearly working (a stuck wrist sensor), it stops learning and the challenge boost holds still until the reading moves again ("Heart rate looks stuck - check the band is snug").
 - **Where to see it:** in VR it's on the options board, and the end screen names your best activity.
 
 ### Options (in VR)
@@ -97,7 +97,7 @@ Left click = left punch · right click = right punch · hold **G** guard · hold
 | `js/dev.js` | Developer tuning panel |
 | `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
 | `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
-| `test/core.test.mjs` | 116 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
+| `test/core.test.mjs` | 118 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
 
@@ -130,7 +130,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v31` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v32` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

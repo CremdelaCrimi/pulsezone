@@ -8,15 +8,15 @@ import {
   HeartRateAttribution, PROFILES, profileOffset, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
-  SHIFT, shiftWanted, shiftOffsetAt, breathAt, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
+  SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v31';
+} from './core.js?v32';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v31';
+import { AudioEngine } from './audio.js?v32';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v31';
-import { loadTuning, createDevPanel } from './dev.js?v31';
+import { OptionsPanel } from './options.js?v32';
+import { loadTuning, createDevPanel } from './dev.js?v32';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -240,6 +240,7 @@ const loadGains = () => { try { return JSON.parse(localStorage.getItem(GAINS_KEY
 const LEARN_N_KEY = 'pulsezone.learnUpdates';
 const loadExperience = () => { try { return Number(localStorage.getItem(LEARN_N_KEY)) || 0; } catch { return 0; } };
 let realHrSeconds = 0;   // this workout: seconds of real phone heart rate
+let flatBpm = null, flatFor = 0, flatWarned = false, sensorFlat = false; // stuck-sensor watch (phone only)
 const saveGains = () => {
   if (realHrSeconds < 60) return;
   try {
@@ -304,7 +305,7 @@ function startWorkout() {
   });
   boost = new ChallengeBoost({ riseSeconds: tuning.boostRiseSeconds * ch.rise });
   attribution = newAttribution();
-  realHrSeconds = 0;
+  realHrSeconds = 0; flatBpm = null; flatFor = 0; flatWarned = false; sensorFlat = false;
   signalLostToggle = false;
   phoneFallback = false;
   avgSum = avgN = 0;
@@ -704,6 +705,7 @@ function updateGuards(dt, xr, head) {
       pulseBoth(1, 90);
       shatter(pos.add(new THREE.Vector3(0, 0, -0.35)), new THREE.Vector3(0, 0.4, -1), 0xff7a3d, 0.5); // burst away from your face
       spawnCounter(head, standing);
+      attribution.record('guard', gameTime); // only reps you actually did teach the model
     } else {
       score.guardsMissed++; score.combo = 0;
       say('Guard up! Both fists by your chin', 1);
@@ -711,7 +713,6 @@ function updateGuards(dt, xr, head) {
       pulseBoth(1, 160);
       hitFlash = 1;
     }
-    attribution.record('guard', gameTime);
     scene.remove(g.group);
     guards.splice(i, 1);
   }
@@ -1239,7 +1240,7 @@ function endTrace(t, i) {
   if (frac >= 0.6) { score.hits++; score.combo++; score.best = Math.max(score.best, score.combo); } else score.combo = 0;
   say(`${t.two ? 'Two ropes' : 'Rope'} ${Math.round(frac * 100)}%  +${pts}`);
   audio.sfx(frac >= 0.8 ? 'perfect' : frac >= 0.5 ? 'hit' : 'miss', { hand: t.strands[0].hand });
-  attribution.record(t.two ? 'sweep' : 'trace', gameTime);
+  if (frac >= 0.3) attribution.record(t.two ? 'sweep' : 'trace', gameTime); // you actually followed it
   scene.remove(t.group);
   for (const r of t.strands) {
     scene.remove(r.marker);
@@ -1888,7 +1889,7 @@ function drawHud(xr) {
     const top = attribution.ranking()[0];
     const proj = projSmooth == null ? '--' : Math.round(projSmooth);
     g.fillStyle = '#9fe8ff'; g.font = '22px ui-monospace, Consolas, monospace';
-    g.fillText(`int ${Math.round(c.intensity * 100)}%  boost ${boostPct}%  effort->${proj} vs ${src.hasReading ? src.currentBpm : '--'}  sent: ${lastPick || '-'} (${lastReason || '-'})  learned top: ${top.key}  lr x${(attribution.learningRateNow() / attribution.lr).toFixed(1)}`, W / 2, 595, W - 40);
+    g.fillText(`int ${Math.round(c.intensity * 100)}%  boost ${boostPct}%  effort->${proj} vs ${src.hasReading ? src.currentBpm : '--'}  sent: ${lastPick || '-'} (${lastReason || '-'})  learned top: ${top.key}  lr x${(attribution.learningRateNow() / attribution.lr).toFixed(1)}${sensorFlat ? '  SENSOR FLAT' : ''}`, W / 2, 595, W - 40);
   } else {
   g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
   g.fillText(xr ? `${settings.gameType === 'touch' ? 'TOUCH MODE' : 'blue = left · orange = right'} · white curve = swing path · Y = options · code ${link.code}`
@@ -2417,10 +2418,18 @@ function frame(time) {
   const src = source();
   if (!paused && controller.phase !== Phase.Finished) {
     gameTime += gdt;
-    if (controller.phase !== Phase.CoolDown) boost.update(gdt, { status: controller.status, intensity: controller.intensity, bpmTrend: controller.bpmTrend, climbing: trendShown === 'climbing' });
+    if (controller.phase !== Phase.CoolDown) boost.update(gdt, { status: controller.status, intensity: controller.intensity, bpmTrend: controller.bpmTrend, climbing: trendShown === 'climbing', hold: sensorFlat });
     else boost.value = Math.max(0, boost.value - gdt / 10);
-    // Learn only from heart rate the game didn't make up (not while estimating from movement).
-    const realBpm = src.hasReading && controller.status !== Zone.NoSignal && !phoneFallback ? src.currentBpm : null;
+    // Watch for a stuck sensor: the same BPM for a long time while you're clearly working.
+    if (sourceKind === 'phone' && !phoneFallback && src.hasReading) {
+      if (src.currentBpm !== flatBpm) { flatBpm = src.currentBpm; flatFor = 0; } else flatFor += gdt;
+    } else { flatBpm = null; flatFor = 0; }
+    const effortRpm = Object.values(attribution.fast).reduce((a, b) => a + b, 0);
+    sensorFlat = sensorLooksFlat({ flatSeconds: flatFor, status: controller.status, effortRpm });
+    if (sensorFlat && !flatWarned) { flatWarned = true; say('Heart rate looks stuck - check the band is snug', 2); }
+    if (!sensorFlat && flatFor === 0) flatWarned = false;
+    // Learn only from heart rate the game didn't make up (not while estimating from movement, not while stuck).
+    const realBpm = src.hasReading && controller.status !== Zone.NoSignal && !phoneFallback && !sensorFlat ? src.currentBpm : null;
     attribution.update(gameTime, realBpm);
     if (realBpm != null && sourceKind === 'phone') realHrSeconds += gdt;
     updateStreak(gdt);
@@ -2531,8 +2540,7 @@ function frame(time) {
     }
     if (SMOKE && orbs[i] === o && o.group.position.z > head.z - 1.2) tryHit(o, null, o.hand, 5);
     if (orbs[i] === o && !o.dying && o.group.position.z > o.passZ) {
-      score.miss(); audio.sfx('miss');
-      attribution.record(o.activity, gameTime);
+      score.miss(); audio.sfx('miss'); // a missed orb is not a rep: the model only learns from what you did
       if (o.combo) comboResult(o, false);
       removeOrb(o);
     }
@@ -2555,7 +2563,7 @@ function frame(time) {
     }
     if (far > w.passZ) {
       if (!w.hit) { score.dodge(); audio.sfx('dodge'); }
-      if (w.activity) attribution.record(w.activity, gameTime); // you moved either way (standing up is part of the squat)
+      if (w.activity && !w.hit) attribution.record(w.activity, gameTime); // only when you actually ducked/squatted/stepped
       scene.remove(w.mesh);
       walls.splice(i, 1);
     }
@@ -2655,7 +2663,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, drifting, breath: breathCue, spotlight, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, drifting, breath: breathCue, spotlight, sensorFlat, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };

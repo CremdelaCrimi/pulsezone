@@ -92,3 +92,10 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - **Built:** the end-of-workout board now lists your top 3 learned heart-raising moves with bars (instead of one name), as Gemini suggested in round 5.
 - Reported round 5 to Gemini and asked round 6: what else could silently break the heart-rate loop in a real session.
 - Checked: 116 checks pass; a short full workout to the end board (snapshot), no console errors.
+
+## Cycle 16 (10:49 AM)
+- Gemini's round 6 (what could silently break the heart-rate loop): (1) stuck wrist-sensor readings (same BPM for 20–40 s, then a jump), (2) the model learning from moves that were spawned or missed rather than done, (3) standing height drifting with slouching or strap changes.
+- **Built (2), a real bug:** the learning model counted missed orbs, walls you got hit by (didn't duck), guard shots you didn't block, and ropes you barely touched as reps. Now only real completions count: orbs hit, walls cleared, guard shots blocked, ropes followed ≥ 30%.
+- **Built (1):** if the phone's BPM hasn't changed for > 18 s while you're below the zone and clearly working (> 12 reps/min recently), the reading is treated as stuck: no learning from it, the challenge boost holds still, one call-out ("Heart rate looks stuck - check the band is snug"), and "SENSOR FLAT" on the diagnostics line.
+- Checked (3): standing height already follows you (jumps up when you stand taller, eases down ~1 cm/s), so no change.
+- Checked: 118 checks pass; 2.5-minute auto-play, 0 overlaps, no console errors. The stuck-sensor watch only runs on phone heart rate, so in-game it was only checked to stay off in simulator mode; the rule itself is unit-tested.

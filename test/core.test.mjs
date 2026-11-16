@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sensorLooksFlat, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -397,6 +397,18 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     for (let i = 0; i < 200; i++) picks.add(pickSpotlight({ enabled: en, gains, below: true, rng }));
     check([...picks].sort().join() === 'low,pair,squatSide' && pickSpotlight({ enabled: { swing: true } }) === 'swing' && pickSpotlight({ enabled: {} }) === null,
       `below the zone the spotlight is one of YOUR top 3 moves (${[...picks].join(', ')})`);
+  }
+
+  // Stuck wrist sensor: don't learn from it or push harder because of it.
+  {
+    check(sensorLooksFlat({ flatSeconds: 20, status: 'Below', effortRpm: 20 }) && !sensorLooksFlat({ flatSeconds: 10, status: 'Below', effortRpm: 20 })
+      && !sensorLooksFlat({ flatSeconds: 40, status: 'InZone', effortRpm: 20 }) && !sensorLooksFlat({ flatSeconds: 40, status: 'Below', effortRpm: 5 }),
+      'stuck sensor = same BPM > 18 s while below the zone and clearly working');
+    const b = new ChallengeBoost();
+    for (let i = 0; i < 70 * 10; i++) b.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0, hold: true });
+    const built = new ChallengeBoost(); for (let i = 0; i < 40 * 10; i++) built.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0 });
+    const v = built.value; for (let i = 0; i < 30 * 10; i++) built.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0, hold: true });
+    check(b.value === 0 && built.value === v && v > 0, 'challenge boost holds still while the sensor looks stuck');
   }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
