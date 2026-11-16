@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v32';
+} from './core.js?v33';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v32';
+import { AudioEngine } from './audio.js?v33';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v32';
-import { loadTuning, createDevPanel } from './dev.js?v32';
+import { OptionsPanel } from './options.js?v33';
+import { loadTuning, createDevPanel } from './dev.js?v33';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -316,6 +316,7 @@ function startWorkout() {
   waveState = 0;
   spotlight = null; spotlightStarted = null;
   lastPick = lastReason = ''; forceShiftNext = false; testQueued = false;
+  Object.assign(tstat, { slams: 0, slamHits: 0, aboveSec: 0, flatSec: 0, notes: [] }); pendingNote = '';
   zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
   summaryBoard.visible = false; lastSummary = null;
   clearObstacles();
@@ -365,6 +366,13 @@ function setProfile(p) {
   waveState = 0; // start the call-outs fresh for the new shape
   document.querySelectorAll('input[name=profile]').forEach((r) => { r.checked = r.value === p; });
   saveSettings();
+}
+const NOTE_LABEL = { 'note-slam': 'slam missed', 'note-guard': 'guard picky', 'note-fast': 'too fast', 'note-great': 'felt great' };
+/** Note buttons (VR board): bookmark this second in the workout CSV (column 'note'). */
+function addNote(label) {
+  pendingNote = pendingNote ? `${pendingNote}; ${label}` : label;
+  tstat.notes.push({ t: Math.round(gameTime), label });
+  say(`Noted: ${label}  (${mmss(gameTime)})`, 2);
 }
 /** Test buttons (VR board): queue that exact move for the next free lane slot. */
 function testMove(key) {
@@ -520,6 +528,9 @@ let spawnTimer = 0;
 let lane = [];
 let queuedActivity = null, queuedFor = 0;
 let shiftPlan = null, shiftReadyAt = 0, shiftSaid = '';      // side shift (footwork) window, in arrival time
+// Test-session stats for the end-board report (Diag on) and bookmarks ('Note' buttons) for the CSV.
+const tstat = { slams: 0, slamHits: 0, aboveSec: 0, flatSec: 0, notes: [] };
+let pendingNote = '';
 let lastPick = '', lastReason = '';  // what the spawner sent last, and why (diagnostics / CSV)
 let forceShiftNext = false, testQueued = false;          // a 'Test: Shift' press: plan a shift as soon as the lane allows
 let standNext = false;                                // a squat box was sent: a "Stand tall!" box comes next
@@ -1316,6 +1327,7 @@ function spawnSlam(head, standing, { dist = SPAWN_DISTANCE, speed = difficulty.o
   slams.push({ group, arrows, speed, t: { left: null, right: null }, passZ: head.z + 0.4, announced: false, age: 0, teach: teach('slam') });
 }
 function endSlam(s, i, hit) {
+  tstat.slams++; if (hit) tstat.slamHits++;
   if (hit) {
     const pts = 60 * (score.inZone() ? 2 : 1);
     score.score += pts; score.hits++; score.combo++; score.best = Math.max(score.best, score.combo);
@@ -1724,8 +1736,11 @@ function drawSummary(w, records) {
   g.textAlign = 'center'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
   const short = !w.real ? 'Simulator / estimated heart rate: personal bests not saved'
     : w.trainingSeconds < MIN_RECORD_SECONDS ? 'Workouts under 3 min don\'t set records' : '';
-  const bestLine = bests ? `Bests: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points · ${bests.workouts} workout${bests.workouts === 1 ? '' : 's'}` : '';
-  g.fillText([bestLine, short].filter(Boolean).join('  ·  '), W / 2, 600, W - 60);
+  const report = settings.diag
+    ? `Test: slams ${tstat.slamHits}/${tstat.slams} · guards ${score.blocks}/${score.blocks + score.guardsMissed} · walls hit ${score.wallHits}/${score.wallHits + score.dodges} · above zone ${mmss(tstat.aboveSec)} · stuck sensor ${mmss(tstat.flatSec)} · notes ${tstat.notes.length}`
+    : '';
+  const bestLine = report ? '' : bests ? `Bests: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points · ${bests.workouts} workout${bests.workouts === 1 ? '' : 's'}` : '';
+  g.fillText(report || [bestLine, short].filter(Boolean).join('  ·  '), W / 2, 600, W - 60);
   sumTex.needsUpdate = true;
 }
 
@@ -1965,6 +1980,7 @@ const options = new OptionsPanel({
         break;
       case 'restart': startWorkout(); options.toggle(false); break;
       case 'diag': settings.diag = !settings.diag; saveSettings(); break;
+      case 'note-slam': case 'note-guard': case 'note-fast': case 'note-great': addNote(NOTE_LABEL[id]); options.toggle(false); break;
       case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift': testMove(id.slice(5)); options.toggle(false); break;
       case 'end': controller.beginCoolDown(); options.toggle(false); break;
       case 'close': options.toggle(false); break;
@@ -2070,7 +2086,9 @@ function logRow() {
     hits: score.hits, misses: score.misses, dodges: score.dodges, wallHits: score.wallHits,
     last_sent: lastPick, reason: lastReason, effort_bpm: projSmooth == null ? '' : Math.round(projSmooth), trend: trendShown || '',
     spotlight: spotlight ? spotlight.key : '', shift: shiftPlan ? 1 : 0, learned_top: attribution.ranking()[0].key,
+    note: pendingNote,
   });
+  pendingNote = '';
 }
 function saveSession() {
   if (!sessionLog.length) return;
@@ -2432,6 +2450,8 @@ function frame(time) {
     const realBpm = src.hasReading && controller.status !== Zone.NoSignal && !phoneFallback && !sensorFlat ? src.currentBpm : null;
     attribution.update(gameTime, realBpm);
     if (realBpm != null && sourceKind === 'phone') realHrSeconds += gdt;
+    if (controller.phase === Phase.Training && (controller.status === Zone.Above || controller.status === Zone.SafetyBrake)) tstat.aboveSec += gdt;
+    if (sensorFlat) tstat.flatSec += gdt;
     updateStreak(gdt);
     updateWaves();
     updateSpotlight();
@@ -2663,7 +2683,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, drifting, breath: breathCue, spotlight, sensorFlat, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, tstat, shift: shiftPlan, drifting, breath: breathCue, spotlight, sensorFlat, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };

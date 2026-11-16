@@ -99,3 +99,8 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - **Built (1):** if the phone's BPM hasn't changed for > 18 s while you're below the zone and clearly working (> 12 reps/min recently), the reading is treated as stuck: no learning from it, the challenge boost holds still, one call-out ("Heart rate looks stuck - check the band is snug"), and "SENSOR FLAT" on the diagnostics line.
 - Checked (3): standing height already follows you (jumps up when you stand taller, eases down ~1 cm/s), so no change.
 - Checked: 118 checks pass; 2.5-minute auto-play, 0 overlaps, no console errors. The stuck-sensor watch only runs on phone heart rate, so in-game it was only checked to stay off in simulator mode; the rule itself is unit-tested.
+
+## Cycle 17 (10:54 AM)
+- Asked Gemini (round 7) for a 15–20 minute headset test protocol and its top 2 remaining improvements. Turned the protocol into `docs/HEADSET_TEST_PLAN.md`, corrected to the game's real timings (first WAVE UP ~30 s into training, spotlight at 3:00).
+- **Built (Gemini's two):** a **Note** row on the VR board (Slam missed / Guard picky / Too fast / Felt great) that bookmarks the current second in the workout CSV (new `note` column) with a "Noted" call-out; and a **test report** on the end board when Diag is on: slams landed/attempted, guards blocked, walls hit, time above the zone, stuck-sensor time, number of notes. The learned ranking on the board shows 4 rows instead of 6 so the board doesn't grow.
+- Checked: 116+ checks pass; a short workout with notes and a forced two-hand rope + slam: notes at the right seconds in the CSV, report "slams 2/2 · guards 3/3 …", board snapshot; no console errors.

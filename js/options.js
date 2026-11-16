@@ -117,6 +117,8 @@ export class OptionsPanel {
     // Test tools for headset sessions: a diagnostics line on the scoreboard, and send-me-this-move buttons.
     label('Test'); button('diag', s.diag ? 'Diag on' : 'Diag', 175, 150, s.diag); button('test-guard', 'Guard', 335, 150);
     button('test-sweep', '2 ropes', 495, 150); button('test-shift', 'Shift', 655, 150); button('test-combo', 'Combo', 815, 160); y += R;
+    label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Guard picky', 385, 200, false);
+    button('note-fast', 'Too fast', 595, 180, false); button('note-great', 'Felt great', 785, 190, false); y += R;
     label('Challenge'); button('ch-gentle', 'Gentle', 430, 170, s.challenge === 'gentle'); button('ch-normal', 'Normal', 615, 170, s.challenge === 'normal'); button('ch-hard', 'Hard', 800, 170, s.challenge === 'hard'); y += R + 10;
 
     // What raises your heart rate (learned).
@@ -126,7 +128,7 @@ export class OptionsPanel {
     g.fillText('estimated BPM added per 10 reps/min · reps this workout', 50, y + 62);
     y += 95;
     const max = Math.max(1, ...s.ranking.map((r) => r.bpmPer10));
-    for (const r of s.ranking.slice(0, 6)) {
+    for (const r of s.ranking.slice(0, 4)) {
       g.fillStyle = '#c9ced8'; g.font = '30px system-ui, sans-serif'; g.textAlign = 'left';
       g.fillText(r.label, 50, y + 22);
       g.fillStyle = '#262a38'; g.beginPath(); g.roundRect(400, y + 6, 430, 32, 10); g.fill();
