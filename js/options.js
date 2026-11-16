@@ -2,7 +2,7 @@
 // (trigger = click). Also works on desktop with the mouse. The game pauses while it's open.
 import * as THREE from 'three';
 
-const W = 1024, H = 1450;
+const W = 1024, H = 1540;
 
 export class OptionsPanel {
   /**
@@ -102,6 +102,8 @@ export class OptionsPanel {
     label('Walls'); button('wall-duck', 'Duck', 230, 160, s.walls.duck); button('wall-squatSide', 'Side squat', 400, 215, s.walls.squatSide);
     button('wall-lean', 'Lean', 625, 160, s.walls.lean); button('wall-pillar', 'Pillar', 795, 175, s.walls.pillar); y += R;
     label('Music & sounds'); button('sound', s.sound ? 'On' : 'Off', 520, 140, s.sound); button('vol-', 'Vol −', 680, 140); button('vol+', 'Vol +', 830, 140); y += R;
+    label(s.songAvailable ? 'Music style' : 'Music style (no song file yet)');
+    button('music-song', 'Song', 520, 215, s.musicStyle === 'song' && s.songAvailable); button('music-synth', 'Synth', 755, 215, s.musicStyle === 'synth' || !s.songAvailable); y += R;
     label('Challenge'); button('ch-gentle', 'Gentle', 430, 170, s.challenge === 'gentle'); button('ch-normal', 'Normal', 615, 170, s.challenge === 'normal'); button('ch-hard', 'Hard', 800, 170, s.challenge === 'hard'); y += R + 10;
 
     // What raises your heart rate (learned).

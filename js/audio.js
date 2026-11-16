@@ -22,6 +22,8 @@ export class AudioEngine {
     this.smoothIntensity = 0.15;
     this.smoothTempo = 100;
     this.volume = 0.8;
+    this.musicMode = 'synth';  // 'synth' = generated live; 'song' = a recorded track, time-stretched
+    this.song = null;          // { url, bpm, el, node, gain }
     this.step = 0;            // 16th-note counter
     this.nextStepTime = 0;
     this.nextBeatTime = 0;    // heartbeat
@@ -79,6 +81,50 @@ export class AudioEngine {
     });
     this.nextStepTime = c.currentTime + 0.1;
     this.nextBeatTime = c.currentTime + 0.5;
+    if (this.song) this.attachSong();
+  }
+
+  /**
+   * Use a recorded song (made at `bpm`) instead of the live synth music. The song is sped up or
+   * slowed down to the same pacing tempo, with pitch preserved, so it never sounds chipmunky.
+   */
+  setSong(url, bpm = 120, loopStart = 0, loopEnd = 0) {
+    this.song = { url, bpm, loopStart, loopEnd };
+    if (this.ctx) this.attachSong();
+  }
+
+  attachSong() {
+    const s = this.song;
+    if (!s || s.el) return;
+    const el = new Audio();
+    el.src = s.url;
+    el.loop = !s.loopEnd;          // with loop points we jump back ourselves (bar-aligned, skips intro/outro)
+    el.preload = 'auto';
+    el.addEventListener('ended', () => { el.currentTime = s.loopStart; el.play().catch(() => {}); });
+    el.preservesPitch = true;
+    el.webkitPreservesPitch = true;
+    s.el = el;
+    s.node = this.ctx.createMediaElementSource(el);
+    s.gain = this.ctx.createGain();
+    s.gain.gain.value = 0;
+    s.node.connect(s.gain).connect(this.music);
+  }
+
+  setMusicMode(mode) { this.musicMode = mode; }
+
+  /** Keep the song's speed and volume in step with the game (called from the scheduler). */
+  driveSong(playing) {
+    const s = this.song;
+    if (!s?.el) return;
+    const on = this.musicMode === 'song' && playing;
+    // Playback rate between 0.78x and 1.25x keeps time-stretching clean.
+    const rate = Math.min(1.25, Math.max(0.78, this.smoothTempo / s.bpm));
+    if (Math.abs(s.el.playbackRate - rate) > 0.004) s.el.playbackRate = rate;
+    // Bar-aligned loop: jump back by exactly the loop length so the beat carries straight through.
+    if (s.loopEnd && s.el.currentTime >= s.loopEnd) s.el.currentTime = s.loopStart + (s.el.currentTime - s.loopEnd);
+    s.gain.gain.setTargetAtTime(on ? 1.6 : 0, this.ctx.currentTime, on ? 0.4 : 0.25);
+    if (on && s.el.paused) s.el.play().catch(() => { /* waits for a user gesture */ });
+    if (!on && !s.el.paused && s.gain.gain.value < 0.02) s.el.pause();
   }
 
   setEnabled(on) {
@@ -111,11 +157,13 @@ export class AudioEngine {
     // Pad follows the zone colour.
     const bright = s.status === 'InZone' ? 1500 : s.status === 'Above' || s.status === 'SafetyBrake' ? 2200 : 700;
     this.padFilter.frequency.setTargetAtTime(bright + 600 * this.smoothIntensity, c.currentTime, 0.8);
-    this.padGain.gain.setTargetAtTime(playing ? 0.05 : 0.025, c.currentTime, 1.5);
+    const songMode = this.musicMode === 'song' && this.song?.el;
+    this.padGain.gain.setTargetAtTime(songMode ? 0 : playing ? 0.05 : 0.025, c.currentTime, 1.5);
+    this.driveSong(playing);
 
     const sixteenth = 60 / this.tempo / 4;
     while (this.nextStepTime < c.currentTime + 0.12) {
-      if (playing) this.playStep(this.step, this.nextStepTime, sixteenth);
+      if (playing && !songMode) this.playStep(this.step, this.nextStepTime, sixteenth);
       this.nextStepTime += sixteenth;
       this.step++;
     }

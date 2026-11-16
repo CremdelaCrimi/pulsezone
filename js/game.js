@@ -25,6 +25,7 @@ const settings = {
   targetBpm: 120, age: 30, trainingMinutes: 15, warmUpMinutes: 2, coolDownMinutes: 2, sound: true, volume: 0.8, challenge: 'normal',
   gameType: 'punch',   // 'punch' = hit hard enough; 'touch' = just hold your hand where the orb arrives
   trace: true,         // tracing orbs (follow the orb along its string)
+  musicStyle: 'song',  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
   walls: { duck: true, squatSide: true, lean: true, pillar: true },
 };
 try {
@@ -108,6 +109,15 @@ window.addEventListener('resize', () => {
 const audio = new AudioEngine();
 audio.setEnabled(settings.sound);
 audio.setVolume(settings.volume);
+// Recorded soundtrack: "Hard-Knuckle Focus" (made with Gemini). Measured 121 BPM; loops over 87 whole
+// bars, skipping its intro and silent ending. If the file is missing, the live synth plays instead.
+const SONG = { url: 'assets/music/hard-knuckle-focus.mp3', bpm: 121, loopStart: 4.096, loopEnd: 176.63 };
+let songAvailable = false;
+fetch(SONG.url, { method: 'HEAD' }).then((r) => {
+  songAvailable = r.ok;
+  if (songAvailable) audio.setSong(SONG.url, SONG.bpm, SONG.loopStart, SONG.loopEnd);
+  audio.setMusicMode(songAvailable && settings.musicStyle === 'song' ? 'song' : 'synth');
+}).catch(() => { /* offline: synth only */ });
 const unlockAudio = () => audio.unlock();
 document.addEventListener('pointerdown', unlockAudio, true);
 document.addEventListener('keydown', unlockAudio, true);
@@ -513,7 +523,7 @@ function updateTraces(dt, xr) {
       t.orb.position.z = t.group.position.z;
       if (t.group.position.z >= t.planeZ) { t.state = 'trace'; say('Follow it!'); }
     } else {
-      t.u = Math.min(1, t.u + dt / t.duration);
+      t.u = Math.min(1, Math.max(0, t.u + dt / t.duration));
       const p = t.curve.getPoint(t.u);
       t.orb.position.set(p.x, p.y, t.planeZ);
       const hand = traceHandPos(t, xr);
@@ -711,6 +721,7 @@ const options = new OptionsPanel({
     target: settings.targetBpm, minutes: settings.trainingMinutes, source: sourceKind, sound: settings.sound,
     volume: Math.round(settings.volume * 10), challenge: settings.challenge,
     gameType: settings.gameType, trace: settings.trace, walls: { ...settings.walls },
+    musicStyle: settings.musicStyle, songAvailable,
     ranking: attribution.ranking().map((r) => ({ ...r, bpmPer10: Math.round(r.bpmPer10) })),
   }),
   act: (id) => {
@@ -736,6 +747,11 @@ const options = new OptionsPanel({
       }
       case 'mode-punch': case 'mode-touch': settings.gameType = id.slice(5); saveSettings(); say(settings.gameType === 'touch' ? 'Touch mode: just hold your hand there' : 'Punch mode'); break;
       case 'trace': settings.trace = !settings.trace; saveSettings(); break;
+      case 'music-song': case 'music-synth':
+        settings.musicStyle = id.slice(6);
+        audio.setMusicMode(songAvailable && settings.musicStyle === 'song' ? 'song' : 'synth');
+        saveSettings();
+        break;
       case 'wall-duck': case 'wall-squatSide': case 'wall-lean': case 'wall-pillar': {
         const k = id.slice(5);
         settings.walls[k] = !settings.walls[k];
@@ -972,8 +988,8 @@ let lastTime = 0;
 let finishedPlayed = false;
 
 function frame(time) {
-  const rawDt = lastTime ? Math.min(0.1, (time - lastTime) / 1000) : 0;
-  lastTime = time;
+  const rawDt = lastTime ? Math.max(0, Math.min(0.1, (time - lastTime) / 1000)) : 0;
+  lastTime = Math.max(lastTime, time);
   const dt = rawDt * BASE_SPEED * (fastForward ? 5 : 1);
   const xr = renderer.xr.isPresenting;
 
@@ -1186,10 +1202,10 @@ window.pz = {
       reps: { ...attribution.counts }, ranking: attribution.ranking().map((r) => `${r.key} ${r.bpmPer10.toFixed(1)}`),
       optionsOpen: options.open, logRows: sessionLog.length, traces: traces.length, gameType: settings.gameType,
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
-      audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo),
+      audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };
   },
-  toggleSource, startWorkout, nudgeTarget, options,
+  toggleSource, startWorkout, nudgeTarget, options, audio,
   async snapshot(name = 'snap') {
     frame(lastTime + 33);
     const data = renderer.domElement.toDataURL('image/png');
