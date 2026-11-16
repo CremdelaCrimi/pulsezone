@@ -74,7 +74,7 @@ export class HostLink {
       this.set(this.conns.size ? 'linked' : 'waiting');
     });
     peer.on('connection', (conn) => this.adopt(conn));
-    peer.on('disconnected', () => { if (!peer.destroyed) setTimeout(() => peer.reconnect(), 2000); });
+    peer.on('disconnected', () => { setTimeout(() => { if (!peer.destroyed && peer === this.peer) peer.reconnect(); }, 2000); });
     peer.on('error', (err) => {
       if (err.type === 'unavailable-id') {
         // Someone (or a stale tab of ours) holds this code: pick a new one.
@@ -142,7 +142,7 @@ export class BridgeLink {
     if (!this.peer || this.peer.destroyed) {
       this.peer = new window.Peer({ debug: 1 });
       this.peer.on('open', () => this.dial());
-      this.peer.on('disconnected', () => { if (!this.peer.destroyed) setTimeout(() => this.peer.reconnect(), 2000); });
+      this.peer.on('disconnected', () => { setTimeout(() => { if (this.peer && !this.peer.destroyed && this.peer.disconnected) this.peer.reconnect(); }, 2000); });
       this.peer.on('error', (err) => {
         if (err.type === 'peer-unavailable') this.set('not-found');
         else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') this.set('offline');

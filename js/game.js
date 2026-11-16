@@ -7,7 +7,7 @@ import {
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
   HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints,
 } from './core.js?v7';
-import { HostLink } from './link.js?v7';
+import { HostLink } from './link.js?v8';
 import { AudioEngine } from './audio.js?v7';
 import { HeartThermometer } from './thermo.js?v7';
 import { OptionsPanel } from './options.js?v7';
