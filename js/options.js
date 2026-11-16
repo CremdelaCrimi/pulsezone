@@ -2,7 +2,7 @@
 // (trigger = click). Also works on desktop with the mouse. The game pauses while it's open.
 import * as THREE from 'three';
 
-const W = 1024, H = 1770;
+const W = 1024, H = 1860;
 
 export class OptionsPanel {
   /**
@@ -98,6 +98,8 @@ export class OptionsPanel {
     const warm = s.warmUp === 0 ? 'Off' : s.warmUp < 60 ? `${s.warmUp} s` : `${+(s.warmUp / 60).toFixed(1)} min`;
     label('Warm-up'); button('warmup-', '−', 520, 100); value(warm, 630, 230); button('warmup+', '+', 870, 100); y += R;
     label('Workout length'); button('minutes-', '−', 520, 100); value(`${s.minutes} min`, 630, 230); button('minutes+', '+', 870, 100); y += R;
+    label('Workout shape'); button('shape-steady', 'Steady', 430, 170, s.profile === 'steady'); button('shape-waves', 'Waves', 615, 170, s.profile === 'waves');
+    button('shape-build', 'Build', 800, 170, s.profile === 'build'); y += R;
     label('Heart rate from'); button('src-phone', 'Phone', 520, 215, s.source === 'phone'); button('src-sim', 'Simulator', 755, 215, s.source === 'sim'); y += R;
     label('Game type'); button('mode-punch', 'Punch', 520, 215, s.gameType === 'punch'); button('mode-touch', 'Touch', 755, 215, s.gameType === 'touch'); y += R;
     // Moveset: tap to switch each move on/off (highlighted = on).

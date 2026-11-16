@@ -26,6 +26,7 @@ It is a fitness game where the "difficulty slider" is driven by the body, not by
 ## 3. Workout structure
 
 - Phases: warm-up (30 s by default, adjustable from off to 5 min) → training (length set by the player) → cool-down (2 min) → finished screen.
+- Workout shape (player's choice): Steady; Waves (target ±5 BPM on a 6-minute cycle, smooth ~40 s changes); Build & peak (from −6 to +6 BPM by 80% of training). Always ≥ 8 BPM under the safety ceiling.
 - The target ramps up gradually during warm-up instead of jumping.
 - Safety ceiling: estimated max heart rate = 208 − 0.7 × age. If heart rate gets close to it, a safety brake cuts intensity hard. (Not a medical device.)
 - If the heart signal is lost, intensity holds rather than spiking.

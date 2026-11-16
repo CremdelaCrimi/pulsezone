@@ -66,6 +66,7 @@ Press **Y** (or **B**) to open the options board on your left, point at it with 
 
 - Set the target BPM and workout length.
 - Choose phone or simulator heart rate.
+- Pick a **workout shape**: **Steady** (hold your target), **Waves** (the target rolls between +5 and −5 BPM on a 6-minute cycle, with "WAVE UP" / "RECOVERY WAVE" call-outs) or **Build** (start 6 BPM easier and climb to 6 BPM harder by 80% of the workout). The end-of-workout graph's target band follows the shape. Shaped targets always stay 8 BPM under the safety ceiling.
 - Set the **warm-up**: off, 15 s up to 5 min (30 s by default). It also changes the workout in progress.
 - Turn music on or off and change the volume.
 - Set the challenge level: **Gentle / Normal / Hard** changes how hard the game pushes and how fast the boost builds.
@@ -92,7 +93,7 @@ Left click = left punch · right click = right punch · hold **G** guard · hold
 | `js/dev.js` | Developer tuning panel |
 | `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
 | `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
-| `test/core.test.mjs` | 106 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
+| `test/core.test.mjs` | 109 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, lane spacing, rope catch zone, two-hand rope path, stand-up boxes, punch quality, activity mix and bursts, challenge boost, heart-rate learning, music tempo |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
 
@@ -125,7 +126,7 @@ No build step: these are plain files. three.js and PeerJS load from jsDelivr at 
 
 **Adding another song:** make an instrumental, steady-tempo track with no intro or fade (Gemini's **Create music**, set to Instrumental, works well), drop the MP3 in `assets/music/`, and update `SONG` in `js/game.js`: its `url`, its `bpm`, and the loop points in seconds (start and end on bar lines).
 
-After changing a file's contents, bump the `?v20` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
+After changing a file's contents, bump the `?v21` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

@@ -5,18 +5,18 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, estimatedMaxBpm, EASY, HARD, WALL_TYPES, wallPolygon, wallHitsHead,
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
-  HeartRateAttribution, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
+  HeartRateAttribution, PROFILES, profileOffset, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
   SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v20';
+} from './core.js?v21';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v20';
+import { AudioEngine } from './audio.js?v21';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v20';
-import { loadTuning, createDevPanel } from './dev.js?v20';
+import { OptionsPanel } from './options.js?v21';
+import { loadTuning, createDevPanel } from './dev.js?v21';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -29,7 +29,8 @@ const SETTINGS_KEY = 'pulsezone.settings';
 const settings = {
   targetBpm: 120, age: 30, trainingMinutes: 15, warmUpSeconds: 30, coolDownMinutes: 2, sound: true, volume: 0.8, challenge: 'normal',
   gameType: 'punch',   // 'punch' = hit hard enough; 'touch' = just hold your hand where the orb arrives
-  musicStyle: 'song',  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
+  musicStyle: 'song',
+  profile: 'steady',   // workout shape: 'steady' | 'waves' (target rolls +/-5 BPM) | 'build' (climbs to a peak)  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
   // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
   moves: {
     jab: true, low: true, swing: true, power: true, pair: true, guard: true, trace: true, sweep: true,
@@ -281,6 +282,7 @@ function startWorkout() {
     kp: tuning.controller.kp * ch.kp,
     ki: tuning.controller.ki * ch.ki,
     targetBpm: settings.targetBpm,
+    profile: settings.profile,
     safetyCeilingBpm: Math.min(maxBpm * 0.9, settings.targetBpm + 35),
     warmUpSeconds: settings.warmUpSeconds,
     trainingSeconds: settings.trainingMinutes * 60,
@@ -295,6 +297,7 @@ function startWorkout() {
   sessionLog.length = 0;
   finishedPlayed = false;
   shiftReadyAt = 0;
+  waveState = 0;
   zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
   summaryBoard.visible = false; lastSummary = null;
   clearObstacles();
@@ -334,6 +337,14 @@ function setWarmUp(sec) {
   settings.warmUpSeconds = sec;
   controller.s.warmUpSeconds = sec;
   $('warmup').value = sec;
+  saveSettings();
+}
+/** Workout shape (applies straight away, also to the workout in progress). */
+function setProfile(p) {
+  if (!PROFILES.includes(p)) return;
+  settings.profile = p;
+  controller.s.profile = p;
+  document.querySelectorAll('input[name=profile]').forEach((r) => { r.checked = r.value === p; });
   saveSettings();
 }
 function setSound(on) { settings.sound = on; audio.setEnabled(on); $('sound').checked = on; saveSettings(); }
@@ -1538,11 +1549,13 @@ function drawSummary(w, records) {
     const X = (t) => x0 + ((t - tMin) / Math.max(1, tMax - tMin)) * (x1 - x0);
     const Y = (b) => y1 - ((b - lo) / Math.max(1, hi - lo)) * (y1 - y0);
     for (const r of rows) if (r.phase !== 'Training') { g.fillStyle = 'rgba(255,255,255,0.05)'; g.fillRect(X(r.t), y0, Math.max(2, (x1 - x0) / rows.length), y1 - y0); }
+    // Target band, following the target second by second (warm-up ramp, waves, build).
     g.fillStyle = 'rgba(77,255,115,0.16)';
-    const tgt = rows.find((r) => r.phase === 'Training')?.target ?? rows[0].target;
-    g.fillRect(x0, Y(tgt + half), x1 - x0, Y(tgt - half) - Y(tgt + half));
+    const colW = Math.max(2, (x1 - x0) / rows.length + 1);
+    for (const r of rows) g.fillRect(X(r.t), Y(r.target + half), colW, Y(r.target - half) - Y(r.target + half));
+    const tgt = controller.s.targetBpm;
     g.strokeStyle = 'rgba(77,255,115,0.5)'; g.lineWidth = 2; g.setLineDash([8, 8]);
-    g.beginPath(); g.moveTo(x0, Y(tgt)); g.lineTo(x1, Y(tgt)); g.stroke(); g.setLineDash([]);
+    g.beginPath(); rows.forEach((r, i) => (i ? g.lineTo(X(r.t), Y(r.target)) : g.moveTo(X(r.t), Y(r.target)))); g.stroke(); g.setLineDash([]);
     g.lineWidth = 5; g.lineJoin = 'round';
     for (let i = 1; i < rows.length; i++) {
       const a = rows[i - 1], b = rows[i];
@@ -1605,6 +1618,21 @@ function updateTrend(rawDt, src) {
 }
 
 /** Zone streaks: every 15 s you hold the zone, a chime (higher each time), bonus points and charge. */
+/** Workout shape call-outs: when a wave turns, or the build passes a step. */
+let waveState = 0;
+function updateWaves() {
+  const c = controller;
+  if (c.phase !== Phase.Training || c.s.profile === 'steady') { waveState = 0; return; }
+  const off = profileOffset(c.s.profile, c.phaseElapsedSeconds, c.s.trainingSeconds);
+  if (c.s.profile === 'waves') {
+    const st = off > 2.5 ? 1 : off < -2.5 ? -1 : waveState;
+    if (st !== waveState) { waveState = st; say(st > 0 ? `WAVE UP - target ${Math.round(c.currentSetpoint)}` : `RECOVERY WAVE - target ${Math.round(c.currentSetpoint)}`); audio.sfx('burst'); }
+  } else {
+    const st = Math.floor((off + 6) / 3); // every 3 BPM up the build
+    if (st > waveState) { if (waveState) { say(`BUILDING - target ${Math.round(c.currentSetpoint)}`); audio.sfx('burst'); } waveState = st; }
+  }
+}
+
 function updateStreak(gdt) {
   if (controller.phase !== Phase.Training || controller.status !== Zone.InZone) { zoneStreak = 0; return; }
   const before = zoneStreak;
@@ -1629,6 +1657,7 @@ function statusLabel(c) {
   if (trendShown === 'easing' && c.status === Zone.Above) return 'SETTLING - NICE';
   return { InZone: 'IN THE ZONE', Below: 'PICK IT UP', Above: 'EASE OFF', SafetyBrake: 'SAFETY BRAKE - SLOW DOWN', NoSignal: 'NO HEART-RATE SIGNAL' }[c.status];
 }
+const PROFILE_LABEL = { steady: 'steady', waves: 'waves', build: 'build & peak' };
 const PHASE_LABEL = { WarmUp: 'WARM-UP', Training: 'TRAINING', CoolDown: 'COOL-DOWN', Finished: 'DONE' };
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -1662,9 +1691,10 @@ function drawHud(xr) {
   g.fillText('BPM', W / 2 + (bpmText.length * 42), 128);
   g.textAlign = 'center';
 
+  const shaped = c.phase === Phase.Training && c.s.profile !== 'steady';
   const target = c.phase === Phase.WarmUp
-    ? `target ${Math.round(c.currentSetpoint)} -> ${c.s.targetBpm}`
-    : `target ${c.s.targetBpm} +/-${c.s.zoneHalfWidth}`;
+    ? `target ${Math.round(c.currentSetpoint)} -> ${Math.round(c.trainingTarget(0))}`
+    : shaped ? `target ${Math.round(c.currentSetpoint)} (${PROFILE_LABEL[c.s.profile]})` : `target ${c.s.targetBpm} +/-${c.s.zoneHalfWidth}`;
   g.fillStyle = zc; g.font = '600 40px system-ui, sans-serif';
   g.fillText(c.phase === Phase.Finished ? statusLabel(c) : `${statusLabel(c)}  ·  ${target}`, W / 2, 230);
 
@@ -1736,7 +1766,7 @@ function wrapText(g, text, x, y, maxWidth, lineHeight) {
 
 const options = new OptionsPanel({
   getState: () => ({
-    target: settings.targetBpm, minutes: settings.trainingMinutes, warmUp: settings.warmUpSeconds, source: sourceKind, sound: settings.sound,
+    target: settings.targetBpm, minutes: settings.trainingMinutes, warmUp: settings.warmUpSeconds, profile: settings.profile, source: sourceKind, sound: settings.sound,
     volume: Math.round(settings.volume * 10), challenge: settings.challenge,
     gameType: settings.gameType, moves: { ...settings.moves },
     musicStyle: settings.musicStyle, songAvailable,
@@ -1747,6 +1777,7 @@ const options = new OptionsPanel({
     switch (id) {
       case 'target-': nudgeTarget(-5); break;
       case 'target+': nudgeTarget(5); break;
+      case 'shape-steady': case 'shape-waves': case 'shape-build': setProfile(id.slice(6)); break;
       case 'warmup-': setWarmUp(stepWarmUp(settings.warmUpSeconds, -1)); break;
       case 'warmup+': setWarmUp(stepWarmUp(settings.warmUpSeconds, 1)); break;
       case 'minutes-': settings.trainingMinutes = Math.max(1, settings.trainingMinutes - (settings.trainingMinutes > 5 ? 5 : 1)); controller.s.trainingSeconds = settings.trainingMinutes * 60; saveSettings(); break;
@@ -1807,6 +1838,12 @@ function buildMovesUI() {
       <label><input type="radio" name="gtype" value="punch"> Punch (hit hard)</label>
       <label><input type="radio" name="gtype" value="touch"> Touch (just hold your hand there)</label>
     </div>
+    <div class="mv-title">Workout shape</div>
+    <div class="mv-grid">
+      <label><input type="radio" name="profile" value="steady"> Steady (hold your target)</label>
+      <label><input type="radio" name="profile" value="waves"> Waves (+/-5 BPM every few minutes)</label>
+      <label><input type="radio" name="profile" value="build"> Build &amp; peak (start easy, finish hard)</label>
+    </div>
     ${group('Orbs', ['jab', 'low', 'swing', 'power', 'pair', 'guard', 'trace', 'sweep'])}
     ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes'])}
     ${group('Walls & footwork', ['duck', 'squatSide', 'lean', 'pillar', 'shift'])}
@@ -1814,6 +1851,7 @@ function buildMovesUI() {
   box.addEventListener('change', (e) => {
     const t = e.target;
     if (t.name === 'gtype') setGameType(t.value);
+    else if (t.name === 'profile') setProfile(t.value);
     else if (t.dataset.move) toggleMove(t.dataset.move, t.checked);
   });
   syncMovesUI();
@@ -1823,6 +1861,7 @@ function syncMovesUI() {
   if (!box || !box.firstChild) return;
   box.querySelectorAll('input[data-move]').forEach((el) => { el.checked = !!settings.moves[el.dataset.move]; });
   box.querySelectorAll('input[name=gtype]').forEach((el) => { el.checked = el.value === settings.gameType; });
+  box.querySelectorAll('input[name=profile]').forEach((el) => { el.checked = el.value === settings.profile; });
   const notes = [];
   if (settings.gameType === 'touch' && (settings.moves.swing || settings.moves.power)) notes.push('Hooks, uppercuts and power orbs are skipped in Touch mode (they need a real punch).');
   if (!Object.values(enabledActivities()).some(Boolean)) notes.push('Everything is off, so you\'ll get plain punches.');
@@ -1866,7 +1905,7 @@ function logRow() {
   const s = source();
   sessionLog.push({
     t: Math.round(gameTime), phase: controller.phase, bpm: s.hasReading ? s.currentBpm : '', source: sourceKind + (phoneFallback ? '-estimated' : ''),
-    status: controller.status, target: controller.s.targetBpm, intensity: controller.intensity.toFixed(3), boost: boost.value.toFixed(2),
+    status: controller.status, target: Math.round(controller.currentSetpoint), intensity: controller.intensity.toFixed(3), boost: boost.value.toFixed(2),
     ...Object.fromEntries(ACTIVITIES.map((a) => [`reps_${a.key}`, attribution.counts[a.key]])),
     hits: score.hits, misses: score.misses, dodges: score.dodges, wallHits: score.wallHits,
   });
@@ -2214,6 +2253,7 @@ function frame(time) {
     else boost.value = Math.max(0, boost.value - gdt / 10);
     attribution.update(gameTime, src.hasReading && controller.status !== Zone.NoSignal ? src.currentBpm : null);
     updateStreak(gdt);
+    updateWaves();
     if (gameTime - gainsSavedAt > 30) { gainsSavedAt = gameTime; saveGains(); }
     logTimer += gdt;
     if (logTimer >= 1) { logTimer = 0; logRow(); }

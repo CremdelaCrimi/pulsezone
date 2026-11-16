@@ -178,9 +178,24 @@ export function parseHeartRateMeasurement(input) {
 export const Phase = Object.freeze({ WarmUp: 'WarmUp', Training: 'Training', CoolDown: 'CoolDown', Finished: 'Finished' });
 export const Zone = Object.freeze({ NoSignal: 'NoSignal', Below: 'Below', InZone: 'InZone', Above: 'Above', SafetyBrake: 'SafetyBrake' });
 
+/**
+ * Workout shapes (the target during training, relative to your chosen target):
+ * - steady: flat.
+ * - waves: rolls between +5 and -5 BPM on a 6-minute cycle (about 2.5 min up, 2.5 min down, smooth
+ *   ~40 s changes). Minutes-long, because heart rate lags effort by 30-40 s.
+ * - build: starts 6 BPM easier and climbs steadily to 6 BPM harder by 80% of the training time.
+ */
+export const PROFILES = Object.freeze(['steady', 'waves', 'build']);
+export function profileOffset(profile, t, total = 900) {
+  if (profile === 'waves') return 5 * clamp(Math.sin((2 * Math.PI * t) / 360) * 1.6, -1, 1);
+  if (profile === 'build') return lerp(-6, 6, clamp01(t / Math.max(60, 0.8 * total)));
+  return 0;
+}
+
 export function defaultZoneSettings() {
   return {
     targetBpm: 120,
+    profile: 'steady',   // workout shape during training: 'steady' | 'waves' | 'build'
     zoneHalfWidth: 5,
     safetyCeilingBpm: 160,
     warmUpSeconds: 120,
@@ -278,7 +293,7 @@ export class ZoneController {
     }
 
     const error = this.currentSetpoint - this.smoothedBpm;
-    const setpointRate = this.phase === Phase.WarmUp ? this.setpointRampRate() : 0;
+    const setpointRate = this.phase === Phase.WarmUp || this.phase === Phase.Training ? this.setpointRampRate() : 0;
     const errorTrend = setpointRate - this.bpmTrend;
     const p = s.kp * error;
     const d = s.kd * errorTrend;
@@ -307,13 +322,22 @@ export class ZoneController {
 
   computeSetpoint() {
     const s = this.s;
+    if (this.phase === Phase.Training) return this.trainingTarget(this.phaseElapsedSeconds);
     if (this.phase !== Phase.WarmUp) return s.targetBpm;
     const start = Number.isNaN(this.warmUpStartBpm) ? s.targetBpm : Math.min(this.warmUpStartBpm, s.targetBpm);
     return lerp(start, s.targetBpm, clamp01(this.phaseElapsedSeconds / Math.max(1, s.warmUpSeconds)));
   }
 
+  /** Training target at time t (s into training): your target plus the workout shape, kept under the ceiling. */
+  trainingTarget(t) {
+    const s = this.s;
+    return Math.min(s.targetBpm + profileOffset(s.profile, t, s.trainingSeconds), s.safetyCeilingBpm - 8);
+  }
+
   setpointRampRate() {
     const s = this.s;
+    // Training with a shaped workout: how fast the target is moving (feeds the controller's D term).
+    if (this.phase === Phase.Training) return this.trainingTarget(this.phaseElapsedSeconds + 1) - this.trainingTarget(this.phaseElapsedSeconds);
     if (Number.isNaN(this.warmUpStartBpm) || this.phaseElapsedSeconds >= s.warmUpSeconds) return 0;
     return Math.max(0, s.targetBpm - this.warmUpStartBpm) / Math.max(1, s.warmUpSeconds);
   }

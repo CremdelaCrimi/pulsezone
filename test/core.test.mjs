@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -338,6 +338,16 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     check(comboChance(0.1) === 0 && comboChance(0.9) > comboChance(0.4), 'no combos when easy; more as intensity rises');
     const cp = comboPlan(10, 4, 0.5);
     check(cp.kind === 'solo' && cp.start === 9.5 && cp.end === 12, 'a combo gets the lane to itself');
+  }
+
+  // Workout shapes.
+  {
+    const w = [0, 45, 90, 135, 180, 225, 270, 315].map((t) => profileOffset('waves', t));
+    check(w[0] === 0 && w[2] === 5 && w[6] === -5 && Math.max(...w) <= 5 && Math.min(...w) >= -5, `waves roll between +5 and -5 BPM over 6 minutes (${w.map((v) => v.toFixed(1)).join(', ')})`);
+    check(profileOffset('build', 0, 900) === -6 && profileOffset('build', 720, 900) === 6 && profileOffset('build', 900, 900) === 6 && profileOffset('steady', 300) === 0,
+      'build & peak: start 6 easier, reach +6 by 80% of training');
+    const zc = new ZoneController({ targetBpm: 150, safetyCeilingBpm: 160, profile: 'build', warmUpSeconds: 1 });
+    check(zc.trainingTarget(720) === 152 && zc.trainingTarget(0) === 144, 'shaped targets stay 8 BPM under the safety ceiling');
   }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
