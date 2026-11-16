@@ -39,3 +39,9 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - **Built (1):** the challenge boost's "stuck" timer resets while you're climbing, and the boost drains (full to empty in ~60 s) instead of building. Didn't touch the PID integral; the boost is where the overshoot risk came from.
 - **Built (5):** drift guard (VR only): more than 55 cm from where you should be (lane centre or the side-shift spot) shows an amber arrow on the floor 2 m ahead and a call-out pointing back; clears under 30 cm.
 - Checked: 102 checks pass; drift on/off/hysteresis via a test hook (`pz.drift(x)`), correctly silent during a side shift; 2.5-minute auto-play with 0 overlaps; no console errors.
+
+## Cycle 7 (9:46 AM)
+- **Built:** part of Gemini's (3), Quest performance. Hit shards used to be 6–16 new meshes plus a new material on every hit, each its own draw call. They're now one instanced mesh with a fixed pool of 192 shards (one draw call, nothing created per hit, oldest recycled when full); shards shrink away instead of fading. The sky colour, the hit-flash red and the fist-velocity vector no longer allocate new objects every frame.
+- Measured on this PC (not the Quest): speed-bag scene 4.1 → 2.6 ms per frame. Draw calls peak at 64 during play (now visible as `pz.state.draws`).
+- Caught and fixed during testing: the shard colour buffer has to exist before the first render (white shards otherwise). Power/bonus hits are white on purpose; normal hits are the hand's colour.
+- Checked: 102 checks pass; 2-minute auto-play, 0 overlaps, no console errors; snapshots of normal and power-orb shards.

@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v18';
+} from './core.js?v19';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v18';
+import { AudioEngine } from './audio.js?v19';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v18';
-import { loadTuning, createDevPanel } from './dev.js?v18';
+import { OptionsPanel } from './options.js?v19';
+import { loadTuning, createDevPanel } from './dev.js?v19';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -473,7 +473,8 @@ let centerX = 0;
 let recenterSoon = true;
 
 function clearObstacles() {
-  for (const o of [...orbs, ...walls, ...bursts, ...shards]) scene.remove(o.group || o.mesh);
+  for (const o of [...orbs, ...walls, ...bursts]) scene.remove(o.group || o.mesh);
+  for (const p of shardPool) p.alive = false;
   for (const t of traces) scene.remove(t.group, ...t.strands.map((r) => r.marker));
   orbs.length = walls.length = bursts.length = traces.length = shards.length = 0;
   if (bag) { scene.remove(bag.group); bag = null; }
@@ -855,35 +856,64 @@ function updateZoneWorld(rawDt, inZone, paused, head) {
 // ------------------------------------------------------------------ hit feel: flash, shatter along your punch
 
 /** Shards fly off along the punch direction; more and faster for harder punches. */
+// All shards share one instanced mesh (one draw call, nothing created per hit): a fixed pool that
+// recycles the oldest shard when full. Shards shrink away instead of fading.
+const SHARD_MAX = 192;
+const shardMesh = new THREE.InstancedMesh(shardGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }), SHARD_MAX);
+shardMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+shardMesh.frustumCulled = false;
+shardMesh.count = 0;
+// Create the per-shard colour buffer now, before the first render compiles the shader without it.
+for (let i = 0; i < SHARD_MAX; i++) shardMesh.setColorAt(i, new THREE.Color(0xffffff));
+scene.add(shardMesh);
+const shardPool = Array.from({ length: SHARD_MAX }, () => ({
+  pos: new THREE.Vector3(), v: new THREE.Vector3(), rot: new THREE.Euler(), spin: new THREE.Vector3(), size: 0, age: 0, life: 0, alive: false,
+}));
+let shardNext = 0;
+const shardDummy = new THREE.Object3D(), shardColor = new THREE.Color();
 function shatter(pos, dir, color, power) {
-  const group = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
   const n = 6 + Math.round(10 * power);
-  const parts = [];
+  shardColor.set(color);
   for (let i = 0; i < n; i++) {
-    const m = new THREE.Mesh(shardGeo, mat);
-    m.scale.setScalar(0.02 + Math.random() * 0.025);
-    m.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.08, (Math.random() - 0.5) * 0.08, (Math.random() - 0.5) * 0.08));
-    const v = dir.clone().multiplyScalar(1.2 + 3.2 * power * (0.6 + Math.random() * 0.6))
-      .add(new THREE.Vector3((Math.random() - 0.5) * 1.6, Math.random() * 1.2, (Math.random() - 0.5) * 1.6));
-    group.add(m);
-    parts.push({ m, v, spin: new THREE.Vector3(Math.random() * 12, Math.random() * 12, Math.random() * 12) });
+    const p = shardPool[shardNext];
+    const idx = shardNext;
+    shardNext = (shardNext + 1) % SHARD_MAX;
+    p.alive = true; p.age = 0; p.life = 0.45 + 0.25 * power;
+    p.size = 0.02 + Math.random() * 0.025;
+    p.pos.set(pos.x + (Math.random() - 0.5) * 0.08, pos.y + (Math.random() - 0.5) * 0.08, pos.z + (Math.random() - 0.5) * 0.08);
+    p.v.copy(dir).multiplyScalar(1.2 + 3.2 * power * (0.6 + Math.random() * 0.6));
+    p.v.x += (Math.random() - 0.5) * 1.6; p.v.y += Math.random() * 1.2; p.v.z += (Math.random() - 0.5) * 1.6;
+    p.rot.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    p.spin.set(Math.random() * 12, Math.random() * 12, Math.random() * 12);
+    shardMesh.setColorAt(idx, shardColor);
   }
-  scene.add(group);
-  shards.push({ group, mat, parts, age: 0, life: 0.45 + 0.25 * power });
+  if (shardMesh.instanceColor) shardMesh.instanceColor.needsUpdate = true;
 }
 function updateShards(dt) {
-  for (let i = shards.length - 1; i >= 0; i--) {
-    const s = shards[i];
-    s.age += dt;
-    for (const p of s.parts) {
-      p.v.y -= 6 * dt;
-      p.m.position.addScaledVector(p.v, dt);
-      p.m.rotation.x += p.spin.x * dt; p.m.rotation.y += p.spin.y * dt; p.m.rotation.z += p.spin.z * dt;
+  let live = 0;
+  for (let i = 0; i < SHARD_MAX; i++) {
+    const p = shardPool[i];
+    if (p.alive) {
+      p.age += dt;
+      if (p.age >= p.life) p.alive = false;
     }
-    s.mat.opacity = Math.max(0, 1 - s.age / s.life);
-    if (s.age >= s.life) { scene.remove(s.group); s.mat.dispose(); shards.splice(i, 1); }
+    if (p.alive) {
+      p.v.y -= 6 * dt;
+      p.pos.addScaledVector(p.v, dt);
+      p.rot.x += p.spin.x * dt; p.rot.y += p.spin.y * dt; p.rot.z += p.spin.z * dt;
+      shardDummy.position.copy(p.pos);
+      shardDummy.rotation.copy(p.rot);
+      shardDummy.scale.setScalar(p.size * (1 - p.age / p.life));
+      live++;
+    } else {
+      shardDummy.scale.setScalar(0);   // hidden
+    }
+    shardDummy.updateMatrix();
+    shardMesh.setMatrixAt(i, shardDummy.matrix);
   }
+  shardMesh.count = live ? SHARD_MAX : 0;
+  shardMesh.instanceMatrix.needsUpdate = true;
+  shards.length = live; // kept as a live count for the test hooks
 }
 
 // ------------------------------------------------------------------ speed bag (a burst: hit it as fast as you can)
@@ -2084,6 +2114,7 @@ let standing = 1.6;
 let lastTime = 0;
 let finishedPlayed = false;
 
+const skyTmp = new THREE.Color(), instTmp = new THREE.Vector3(), HIT_RED = new THREE.Color(0x5a0a0a); // reused every frame
 function frame(time) {
   const rawDt = lastTime ? Math.max(0, Math.min(0.1, (time - lastTime) / 1000)) : 0;
   lastTime = Math.max(lastTime, time);
@@ -2106,7 +2137,7 @@ function frame(time) {
   for (const f of fists) {
     f.mesh.getWorldPosition(f.world);
     if (f.hasLast && rawDt > 0) {
-      const inst = f.world.clone().sub(f.last).divideScalar(rawDt);
+      const inst = instTmp.copy(f.world).sub(f.last).divideScalar(rawDt);
       f.vel.lerp(inst, 1 - Math.exp(-rawDt / 0.04));
       f.speed = Math.max(inst.length(), f.speed - 8 * rawDt);
     }
@@ -2275,9 +2306,9 @@ function frame(time) {
   const inZoneNow = controller.status === Zone.InZone && controller.phase !== Phase.Finished;
   updateZoneWorld(rawDt, inZoneNow, paused, head);
   updateReactor(gdt, rawDt, controller.phase === Phase.Finished ? 'NoSignal' : controller.status, !paused && controller.phase !== Phase.Finished && controller.phase !== Phase.WarmUp);
-  const zc = new THREE.Color(ZONE_COLOR[controller.phase === Phase.Finished ? 'NoSignal' : controller.status]).multiplyScalar(0.03 * (1 - 0.5 * zoneAmt)).add(skyBase).lerp(zoneSky, 0.5 * zoneAmt);
+  const zc = skyTmp.set(ZONE_COLOR[controller.phase === Phase.Finished ? 'NoSignal' : controller.status]).multiplyScalar(0.03 * (1 - 0.5 * zoneAmt)).add(skyBase).lerp(zoneSky, 0.5 * zoneAmt);
   scene.background.lerp(zc, 1 - Math.exp(-rawDt * 2));
-  if (hitFlash > 0) { scene.background.lerp(new THREE.Color(0x5a0a0a), hitFlash * 0.6); hitFlash = Math.max(0, hitFlash - rawDt * 3); }
+  if (hitFlash > 0) { scene.background.lerp(HIT_RED, hitFlash * 0.6); hitFlash = Math.max(0, hitFlash - rawDt * 3); }
   scene.fog.color.copy(scene.background);
 
   // Layout: scoreboard ahead, heat gauge and options tab to its left, options board on the left.
@@ -2347,7 +2378,7 @@ window.pz = {
       orbs: orbs.length, walls: walls.length, swingOrbs: orbs.filter((o) => o.swing).length, secondsInZone: Math.round(c.secondsInZone),
       reps: { ...attribution.counts }, ranking: attribution.ranking().map((r) => `${r.key} ${r.bpmPer10.toFixed(1)}`),
       optionsOpen: options.open, logRows: sessionLog.length, traces: traces.length, gameType: settings.gameType,
-      powerOrbs: orbs.filter((o) => o.power).length, pairOrbs: orbs.filter((o) => o.activity === 'pair').length, shards: shards.length,
+      powerOrbs: orbs.filter((o) => o.power).length, pairOrbs: orbs.filter((o) => o.activity === 'pair').length, shards: shards.length, draws: renderer.info.render.calls,
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
