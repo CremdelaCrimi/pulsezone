@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v23';
+} from './core.js?v25';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v23';
+import { AudioEngine } from './audio.js?v25';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v23';
-import { loadTuning, createDevPanel } from './dev.js?v23';
+import { OptionsPanel } from './options.js?v25';
+import { loadTuning, createDevPanel } from './dev.js?v25';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -233,8 +233,20 @@ let gameTime = 0;              // seconds of (unpaused) workout
 // Learned "what raises your heart rate", kept across workouts in this browser.
 const GAINS_KEY = 'pulsezone.gains';
 const loadGains = () => { try { return JSON.parse(localStorage.getItem(GAINS_KEY) || 'null'); } catch { return null; } };
-const saveGains = () => { try { localStorage.setItem(GAINS_KEY, JSON.stringify(attribution.w)); } catch { /* ignore */ } };
-let attribution = new HeartRateAttribution({ weights: loadGains() });
+// Learned gains are only saved from real heart rate (the phone, not estimates or the simulator),
+// so testing with the simulator never overwrites what the game has learned about your body.
+const LEARN_N_KEY = 'pulsezone.learnUpdates';
+const loadExperience = () => { try { return Number(localStorage.getItem(LEARN_N_KEY)) || 0; } catch { return 0; } };
+let realHrSeconds = 0;   // this workout: seconds of real phone heart rate
+const saveGains = () => {
+  if (realHrSeconds < 60) return;
+  try {
+    localStorage.setItem(GAINS_KEY, JSON.stringify(attribution.w));
+    localStorage.setItem(LEARN_N_KEY, String(attribution.experience + attribution.updates));
+  } catch { /* ignore */ }
+};
+const newAttribution = () => new HeartRateAttribution({ weights: loadGains(), experience: loadExperience() });
+let attribution = newAttribution();
 let gainsSavedAt = 0;
 
 /** The heart-rate source actually driving the game right now. */
@@ -289,7 +301,8 @@ function startWorkout() {
     coolDownSeconds: settings.coolDownMinutes * 60,
   });
   boost = new ChallengeBoost({ riseSeconds: tuning.boostRiseSeconds * ch.rise });
-  attribution = new HeartRateAttribution({ weights: loadGains() });
+  attribution = newAttribution();
+  realHrSeconds = 0;
   signalLostToggle = false;
   phoneFallback = false;
   avgSum = avgN = 0;
@@ -368,7 +381,7 @@ function updatePhoneFallback(xr, dt) {
   } else if (phoneFallback && remote.secondsSinceLastReading < 2) {
     phoneFallback = false;
     say('Phone heart rate is back');
-    audio.sfx('zone');
+    audio.sfx('reconnect');
   }
   if (phoneFallback) sim.workload = xr ? motion.workload : autoPlayer.tick(controller.intensity, dt);
 }
@@ -1528,9 +1541,14 @@ let lastSummary = null;
 function finishWorkout() {
   const w = summarizeWorkout(sessionLog);
   Object.assign(w, { score: score.score, streak: Math.floor(longestStreak), reactor: reactor.level, combo: score.best });
-  const { bests: b, records } = updateBests(bests, w);
-  bests = b;
-  try { localStorage.setItem(BESTS_KEY, JSON.stringify(bests)); } catch { /* ignore */ }
+  // Personal bests only count workouts driven mostly by your real heart rate (not the simulator).
+  w.real = realHrSeconds >= 0.5 * w.trainingSeconds;
+  let records = [];
+  if (w.real) {
+    const r = updateBests(bests, w);
+    bests = r.bests; records = r.records;
+    try { localStorage.setItem(BESTS_KEY, JSON.stringify(bests)); } catch { /* ignore */ }
+  }
   lastSummary = { w, records };
   clearObstacles(); // nothing left hanging in front of the board
   drawSummary(w, records);
@@ -1594,8 +1612,10 @@ function drawSummary(w, records) {
   const top = attribution.ranking()[0];
   stat('Raises YOUR heart most', top.label, 640, 490, false);
   g.textAlign = 'center'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif';
-  const short = w.trainingSeconds < MIN_RECORD_SECONDS ? '  ·  workouts under 3 min don\'t set records' : '';
-  g.fillText(bests ? `Bests: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points · ${bests.workouts} workout${bests.workouts === 1 ? '' : 's'}${short}` : '', W / 2, 600, W - 60);
+  const short = !w.real ? 'Simulator / estimated heart rate: personal bests not saved'
+    : w.trainingSeconds < MIN_RECORD_SECONDS ? 'Workouts under 3 min don\'t set records' : '';
+  const bestLine = bests ? `Bests: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points · ${bests.workouts} workout${bests.workouts === 1 ? '' : 's'}` : '';
+  g.fillText([bestLine, short].filter(Boolean).join('  ·  '), W / 2, 600, W - 60);
   sumTex.needsUpdate = true;
 }
 
@@ -1672,7 +1692,8 @@ const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart
 function drawHud(xr) {
   const c = controller, src = source();
   const fresh = now() - lastEventAt < 0.9;
-  const bpmText = src.hasReading && c.status !== Zone.NoSignal ? String(src.currentBpm) : '--';
+  // "~" and a muted colour while the heart rate is only estimated (phone asleep).
+  const bpmText = src.hasReading && c.status !== Zone.NoSignal ? `${phoneFallback ? '~' : ''}${src.currentBpm}` : '--';
   const remaining = Math.max(0, c.phaseDuration - c.phaseElapsedSeconds);
   const statusLine = sourceKind === 'phone' ? remote.statusText : '';
   const boostPct = Math.round(boost.value * 100);
@@ -1689,7 +1710,7 @@ function drawHud(xr) {
   g.textAlign = 'center'; g.textBaseline = 'middle';
   const zc = c.phase === Phase.Finished ? '#dfe3ea' : ZONE_COLOR[c.status];
 
-  g.fillStyle = zc; g.font = '700 150px system-ui, sans-serif';
+  g.fillStyle = phoneFallback ? '#9aa3b5' : zc; g.font = '700 150px system-ui, sans-serif';
   g.fillText(bpmText, W / 2 - 50, 110);
   if (trendShown && c.phase !== Phase.Finished) { // arrow: where your heart rate is heading
     g.fillStyle = trendShown === 'climbing' ? '#4dff73' : '#7fd8ff'; g.font = '700 70px system-ui, sans-serif';
@@ -1968,7 +1989,7 @@ function openDev() {
     tuning,
     onApply: (t) => { tuning = t; startWorkout(); },
     onDownloadLog: downloadLog,
-    onResetLearning: () => { try { localStorage.removeItem(GAINS_KEY); } catch { /* ignore */ } attribution = new HeartRateAttribution(); },
+    onResetLearning: () => { try { localStorage.removeItem(GAINS_KEY); localStorage.removeItem(LEARN_N_KEY); } catch { /* ignore */ } attribution = new HeartRateAttribution(); },
     getRanking: () => attribution.ranking(),
   });
 }
@@ -2265,7 +2286,10 @@ function frame(time) {
     gameTime += gdt;
     if (controller.phase !== Phase.CoolDown) boost.update(gdt, { status: controller.status, intensity: controller.intensity, bpmTrend: controller.bpmTrend, climbing: trendShown === 'climbing' });
     else boost.value = Math.max(0, boost.value - gdt / 10);
-    attribution.update(gameTime, src.hasReading && controller.status !== Zone.NoSignal ? src.currentBpm : null);
+    // Learn only from heart rate the game didn't make up (not while estimating from movement).
+    const realBpm = src.hasReading && controller.status !== Zone.NoSignal && !phoneFallback ? src.currentBpm : null;
+    attribution.update(gameTime, realBpm);
+    if (realBpm != null && sourceKind === 'phone') realHrSeconds += gdt;
     updateStreak(gdt);
     updateWaves();
     if (gameTime - gainsSavedAt > 30) { gainsSavedAt = gameTime; saveGains(); }

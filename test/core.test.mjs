@@ -368,6 +368,20 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
       'paced breathing: 4 s in, 6 s out');
   }
 
+  // New players' heart-rate learning moves faster, then settles.
+  {
+    const run = (experience) => {
+      const m = new HeartRateAttribution({ experience });
+      for (let t = 0; t < 40; t += 1) m.update(t, 95, 1);
+      for (let t = 40; t < 160; t += 0.5) { if (Math.round(t * 2) % 4 === 0) m.record('squatSide', t); m.update(t, 95 + Math.min(30, (t - 40) * 0.6), 2); }
+      return m.w.squatSide;
+    };
+    const fresh = run(0), veteran = run(100000);
+    const m = new HeartRateAttribution();
+    check(Math.abs(m.learningRateNow() - 0.24) < 1e-9 && new HeartRateAttribution({ experience: 3000 }).learningRateNow() < 0.081 && Math.abs(fresh - 1.6) > Math.abs(veteran - 1.6),
+      `new players learn ~3x faster at first (squat gain moved ${(fresh - 1.6).toFixed(2)} vs ${(veteran - 1.6).toFixed(2)})`);
+  }
+
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
   {
     const sp = 3;

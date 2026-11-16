@@ -64,3 +64,10 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
   2. With Build & peak, the warm-up ramped to the full target and then training started 6 BPM lower, so you'd suddenly see "EASE OFF". The warm-up now ramps to where training starts (new test).
 - Also closed from the "plausible" list: no side shifts if all plain punches are switched off; wave call-outs reset when you change shape; a broken `pulsezone.seen` value can't stop the game; the end board's bests line can't overflow. Left as is: shaped targets can be flattened near the safety ceiling (intended), hints stay visible but frozen while the options board is open.
 - Checked: 112 checks pass; auto-play with 0 overlaps, no console errors.
+
+## Cycle 11 (10:23 AM)
+- **Found while building Gemini's calibration idea:** the learning model was also learning from made-up heart rate (the movement estimate while the phone is asleep, and the simulator) and saving it into your real "what raises YOUR heart rate" data. Now it only learns from real phone heart rate; learned values are saved only after 60+ s of real heart rate in a workout; and personal bests only count when at least half the training had real heart rate (otherwise the end board says "Simulator / estimated heart rate: personal bests not saved").
+- **Built (calibration, simplest version):** new players learn ~3x faster, easing to the normal rate over their first ~10 minutes of real heart-rate data (experience saved as `pulsezone.learnUpdates`; "Reset learned data" clears it too). Skipped for now: Gemini's 45-second move blocks in the first workout.
+- **Built (Gemini round-4 #4):** while the heart rate is estimated, the scoreboard shows "~118" in a muted colour; when the phone comes back a distinct two-tone chime plays (it used to reuse the "entered the zone" sound).
+- Note for the player: data saved before today may already include some simulator/estimate learning; "Reset learned data" in Developer tools starts clean if the ranking looks odd.
+- Checked: 113 checks pass; full 4-minute simulator workout: no gains or bests saved, end-board note shown, 0 overlaps, no console errors.

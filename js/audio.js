@@ -4,7 +4,7 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
-import { musicTempo, songTone } from './core.js?v23';
+import { musicTempo, songTone } from './core.js?v25';
 
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
@@ -423,6 +423,9 @@ export class AudioEngine {
       }
       case 'zone': // entered the zone: rising chime
         [523.25, 659.25, 783.99].forEach((f, i) => this.tone(t + i * 0.07, f, 'triangle', 0.15, 0.4));
+        break;
+      case 'reconnect': // phone heart rate is back: two rising tones
+        this.tone(t, 660, 'sine', 0.15, 0.15); this.tone(t + 0.16, 990, 'sine', 0.15, 0.25);
         break;
       case 'alert': // phone lost
         this.tone(t, 880, 'sine', 0.18, 0.15); this.tone(t + 0.2, 660, 'sine', 0.18, 0.25);

@@ -835,9 +835,12 @@ export function boostDifficulty(d, boost) {
  * "BPM added per 1 rep/minute sustained". Noisy by nature: a trend that firms up over workouts.
  */
 export class HeartRateAttribution {
-  constructor({ tauSeconds = 35, learningRate = 0.08, weights = null } = {}) {
+  constructor({ tauSeconds = 35, learningRate = 0.08, weights = null, experience = 0 } = {}) {
     this.tau = tauSeconds;
     this.lr = learningRate;
+    // How many real-heart-rate updates this player already has (saved across workouts). New players
+    // learn ~3x faster, easing to the normal rate over their first ~10 minutes of real data.
+    this.experience = experience;
     // Saved estimates are blended 70/30 with the starting guesses so one odd workout can't dominate.
     this.prior = Object.fromEntries(ACTIVITIES.map((a) => [a.key, a.prior]));
     this.w = Object.fromEntries(ACTIVITIES.map((a) => [a.key, weights?.[a.key] != null ? 0.7 * weights[a.key] + 0.3 * a.prior : a.prior]));
@@ -882,13 +885,18 @@ export class HeartRateAttribution {
       if (this.rate[k] < 0.05) continue;
       // Floor at a quarter of the starting guess: every activity does *something*, and it keeps
       // the ranking meaningful when heart rate is flat for reasons the game can't see.
-      this.w[k] = clamp(this.w[k] + (this.lr * err * this.rate[k]) / norm, 0.25 * this.prior[k], 6);
+      this.w[k] = clamp(this.w[k] + (this.learningRateNow() * err * this.rate[k]) / norm, 0.25 * this.prior[k], 6);
     }
     // The baseline (resting-ish level) absorbs part of every error, more when you're barely moving.
     const active = ACTIVITY_KEYS.reduce((s, k) => s + this.rate[k], 0);
     this.base = clamp(this.base + err * (active < 3 ? 0.05 : 0.015), 40, 160);
     this.updates++;
     return true;
+  }
+
+  /** Learning rate right now: boosted for new players (few real updates so far), then normal. */
+  learningRateNow() {
+    return this.lr * (1 + 2 * Math.exp(-(this.experience + this.updates) / 300));
   }
 
   /**
