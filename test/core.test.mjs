@@ -3,6 +3,7 @@
 import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
+  ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -147,6 +148,77 @@ check(swingMatches(null, [0, 0, -1]), 'plain orbs take any punch');
 const hz = heatLook('InZone', 120, 120), hc = heatLook('Below', 95, 120), hh = heatLook('Above', 140, 120);
 check(hz.flame === 1 && hc.cold === 1 && hh.hyper === 1 && heatLook('Below', 112, 120).cold < 1, 'thermometer looks: frost / flame / hyper');
 
+
+
+console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music tempo');
+{
+  const count = (opts, n = 4000) => {
+    const c = {}; for (let i = 0; i < n; i++) { const k = chooseActivity(opts); c[k] = (c[k] || 0) + 1; } return c;
+  };
+  const easy = count({ intensity: 0.05, status: 'Below' });
+  check(Object.keys(easy).length === 1 && easy.jab, 'very low intensity: only plain punches');
+  const mid = count({ intensity: 0.5, status: 'InZone' });
+  check(ACTIVITY_KEYS.every((k) => mid[k] > 0), `mid intensity: every activity appears (${JSON.stringify(mid)})`);
+  const gains = { jab: 0.05, low: 0.3, swing: 0.1, duck: 0.3, lateral: 0.2, squatSide: 0.9 };
+  const stuck = count({ intensity: 0.9, status: 'Below', boost: 1, gains });
+  const normal = count({ intensity: 0.9, status: 'InZone', gains });
+  check(stuck.squatSide > normal.squatSide * 1.8 && stuck.jab < normal.jab * 0.6,
+    `stuck below zone: far more of what works (side squats ${normal.squatSide}->${stuck.squatSide}, punches ${normal.jab}->${stuck.jab})`);
+  const above = count({ intensity: 0.9, status: 'Above', gains });
+  check(above.jab > normal.jab * 1.3, `above zone: mostly easy punches (${normal.jab}->${above.jab})`);
+  check(wallTypeFor('duck') === 'duck' && ['squatLeft', 'squatRight'].includes(wallTypeFor('squatSide')) && wallTypeFor('jab') === null, 'activities map to wall shapes');
+
+  const b = new ChallengeBoost();
+  for (let i = 0; i < 20 * 10; i++) b.update(0.1, { status: 'Below', intensity: 0.5, bpmTrend: 0.5 });
+  check(b.value === 0, 'boost stays off while heart rate is climbing');
+  for (let i = 0; i < 70 * 10; i++) b.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0.0 });
+  check(b.value > 0.9, `boost builds when stuck below with game maxed (${b.value.toFixed(2)})`);
+  for (let i = 0; i < 20 * 10; i++) b.update(0.1, { status: 'Above', intensity: 0.5, bpmTrend: 0 });
+  check(b.value < 0.1, 'boost drops quickly once you are above the zone');
+  const bd = boostDifficulty(evaluateDifficulty(1), 1);
+  check(bd.spawnInterval < evaluateDifficulty(1).spawnInterval * 0.7, 'boost makes spawns faster');
+
+  // Learning: a synthetic player whose heart responds strongly to side squats and barely to punches.
+  // Generated with a slightly different lag than the learner assumes, plus noise.
+  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0 };
+  const att = new HeartRateAttribution({ weights: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 1.0])) });
+  const rng = mulberry32(7);
+  const tr = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
+  let hr = 75, t = 0;
+  for (let i = 0; i < 30 * 60 * 10; i++) { // 30 minutes at 10 Hz
+    t += 0.1;
+    for (const k of ACTIVITY_KEYS) tr[k] *= Math.exp(-0.1 / 45);
+    if (rng() < 0.05) { // ~30 reps/min, mix changes every minute
+      const m = Math.floor(t / 60) % 4;
+      const pool = m === 0 ? ['jab', 'jab', 'jab', 'swing'] : m === 1 ? ['squatSide', 'duck', 'jab'] : m === 2 ? ['lateral', 'low', 'swing'] : ['jab', 'low', 'squatSide', 'lateral'];
+      const k = pool[Math.floor(rng() * pool.length)];
+      att.record(k, t);
+      tr[k] += 60 / 45;
+    }
+    const goal = 72 + ACTIVITY_KEYS.reduce((s, k) => s + truth[k] * tr[k], 0);
+    hr += (goal - hr) * (1 - Math.exp(-0.1 / 15));
+    att.update(t, Math.round(hr + (rng() - 0.5) * 4));
+  }
+  const ranked = att.ranking();
+  const rank = ranked.map((r) => r.key);
+  check(rank[0] === 'squatSide' && rank.indexOf('jab') >= 4,
+    `learns that side squats drive heart rate most and punches least (${ranked.map((r) => `${r.key} ${r.bpmPer10.toFixed(0)}`).join(', ')})`);
+
+  // Flat heart rate despite lots of activity (e.g. a stale reading): estimates must not collapse to zero.
+  const flat = new HeartRateAttribution();
+  const r2 = mulberry32(3);
+  for (let i = 0; i < 10 * 60 * 10; i++) {
+    const tt = i / 10;
+    if (r2() < 0.1) flat.record(ACTIVITY_KEYS[Math.floor(r2() * 6)], tt);
+    flat.update(tt, 100);
+  }
+  check(flat.ranking().every((r) => r.bpmPer10 > 0.5), `flat heart rate: no activity collapses to zero (${flat.ranking().map((r) => `${r.key} ${r.bpmPer10.toFixed(1)}`).join(', ')})`);
+
+  check(musicTempo({ intensity: 0.5, status: 'Below', bpm: 100, target: 120 }) > musicTempo({ intensity: 0.5, status: 'InZone', bpm: 120, target: 120 }),
+    'music speeds up when you need to pick it up');
+  check(musicTempo({ intensity: 0.5, status: 'Above', bpm: 135, target: 120 }) < musicTempo({ intensity: 0.5, status: 'InZone', bpm: 120, target: 120 }) - 15,
+    'music slows down when you need to ease off');
+}
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

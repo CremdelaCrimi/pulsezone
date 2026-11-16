@@ -346,7 +346,7 @@ export const EASY = Object.freeze({
 });
 export const HARD = Object.freeze({
   spawnInterval: 0.45, orbSpeed: 4.5, horizontalSpread: 0.75, verticalSpread: 0.55,
-  obstacleChance: 0.32, heavyOrbChance: 0.3, minPunchSpeed: 1.6, directionalChance: 0.4, crossBodyChance: 0.25,
+  obstacleChance: 0.32, heavyOrbChance: 0, minPunchSpeed: 1.6, directionalChance: 0.4, crossBodyChance: 0.25,
 });
 
 const ramp = (t, start) => (t <= start ? 0 : (t - start) / (1 - start));
@@ -486,4 +486,184 @@ export function heatLook(status, bpm, target) {
     case 'SafetyBrake': return { cold: 0, flame: 0.3, hyper: 1 };
     default: return { cold: 0, flame: 0, hyper: 0 };
   }
+}
+
+// ---------------------------------------------------------------- activity mix (what the game sends)
+
+/**
+ * Everything the game can send at you. `from` = intensity at which it unlocks;
+ * `base` = how often it appears relative to the others; `prior` = starting guess of how much it
+ * raises heart rate (BPM per 1 rep/minute sustained), refined by HeartRateAttribution as you play.
+ */
+export const ACTIVITIES = Object.freeze([
+  { key: 'jab', label: 'Punches', kind: 'orb', from: 0, base: 1.0, prior: 0.5 },
+  { key: 'low', label: 'Squat punches', kind: 'orb', from: 0.2, base: 0.45, prior: 1.2 },
+  { key: 'swing', label: 'Hooks & uppercuts', kind: 'orb', from: 0.25, base: 0.5, prior: 0.7 },
+  { key: 'duck', label: 'Ducks', kind: 'wall', from: 0.15, base: 0.3, prior: 1.2 },
+  { key: 'lateral', label: 'Side steps', kind: 'wall', from: 0.25, base: 0.35, prior: 1.0 },
+  { key: 'squatSide', label: 'Side squats', kind: 'wall', from: 0.4, base: 0.3, prior: 1.6 },
+]);
+export const ACTIVITY_KEYS = ACTIVITIES.map((a) => a.key);
+
+/**
+ * Pick the next thing to send.
+ * - Below your zone: favour what has raised YOUR heart rate the most (learned gains), more so
+ *   the longer you've been stuck (boost). Walls and squat punches get extra weight under boost.
+ * - Above your zone: favour plain punches (easy on the legs) so you can come down.
+ * `baseWeights` lets the developer panel override the mix.
+ */
+export function chooseActivity({ intensity, status, boost = 0, gains = null, baseWeights = null, rng = Math.random }) {
+  const weights = ACTIVITIES.map((a) => {
+    const unlock = clamp01((intensity - a.from) / 0.1 + (a.from === 0 ? 1 : 0));
+    let w = (baseWeights?.[a.key] ?? a.base) * unlock;
+    if (w <= 0) return 0;
+    if (status === 'Below') {
+      if (gains) {
+        const g = gains[a.key] ?? a.prior;
+        const mean = ACTIVITY_KEYS.reduce((s, k) => s + (gains[k] ?? 0), 0) / ACTIVITY_KEYS.length || 1e-6;
+        w *= Math.exp((0.5 + 0.7 * boost) * clamp((g - mean) / Math.max(mean, 0.05), -1, 1));
+      }
+      if (a.key !== 'jab') w *= 1 + 1.2 * boost;
+      w = Math.max(w, 0.12 * (baseWeights?.[a.key] ?? a.base) * unlock); // always keep some variety
+    } else if (status === 'Above' || status === 'SafetyBrake') {
+      if (a.key !== 'jab') w *= 0.35;
+    }
+    return w;
+  });
+  const total = weights.reduce((s, w) => s + w, 0);
+  if (total <= 0) return 'jab';
+  let r = rng() * total;
+  for (let i = 0; i < weights.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return ACTIVITIES[i].key;
+  }
+  return 'jab';
+}
+
+/** Which concrete wall shape an activity uses. */
+export function wallTypeFor(activity, rng = Math.random) {
+  if (activity === 'duck') return 'duck';
+  if (activity === 'lateral') return ['pillar', 'dodgeLeft', 'dodgeRight'][Math.floor(rng() * 3) % 3];
+  if (activity === 'squatSide') return rng() < 0.5 ? 'squatLeft' : 'squatRight';
+  return null;
+}
+
+// ---------------------------------------------------------------- challenge boost (when you're stuck)
+
+/**
+ * Grows while you're below your zone and your heart rate isn't climbing (or the game is already
+ * at full intensity), shrinks once you're in the zone. 0 = normal, 1 = maximum extra challenge:
+ * faster spawns, more walls and squat punches.
+ */
+export class ChallengeBoost {
+  constructor({ riseSeconds = 45, inZoneFallSeconds = 90, aboveFallSeconds = 15 } = {}) {
+    this.value = 0;
+    this.riseSeconds = riseSeconds;
+    this.inZoneFallSeconds = inZoneFallSeconds;
+    this.aboveFallSeconds = aboveFallSeconds;
+    this.stuckSeconds = 0;
+  }
+
+  update(dt, { status, intensity, bpmTrend }) {
+    // "Stuck": below the zone and HR rising slower than ~2 BPM per 10 s, or game already maxed out.
+    const stuck = status === 'Below' && (bpmTrend < 0.2 || intensity > 0.9);
+    this.stuckSeconds = stuck ? this.stuckSeconds + dt : 0;
+    if (stuck && this.stuckSeconds > 15) this.value += dt / this.riseSeconds;
+    else if (status === 'InZone') this.value -= dt / this.inZoneFallSeconds;
+    else if (status === 'Above' || status === 'SafetyBrake' || status === 'NoSignal') this.value -= dt / this.aboveFallSeconds;
+    this.value = clamp01(this.value);
+    return this.value;
+  }
+}
+
+/** Apply boost on top of the normal difficulty. */
+export function boostDifficulty(d, boost) {
+  return {
+    ...d,
+    spawnInterval: d.spawnInterval * (1 - 0.35 * boost),
+    orbSpeed: d.orbSpeed * (1 + 0.12 * boost),
+    horizontalSpread: Math.min(0.9, d.horizontalSpread + 0.15 * boost),
+  };
+}
+
+// ---------------------------------------------------------------- learning what raises YOUR heart rate
+
+/**
+ * Online estimate of how much each activity raises YOUR heart rate.
+ * Model: heart rate ~= resting level + sum over activities of gain x recent rate of that activity
+ * (reps per minute, smoothed over ~35 s because the heart lags effort). Every couple of seconds
+ * the gains are nudged to explain the current BPM (normalised least-mean-squares). Gains read as
+ * "BPM added per 1 rep/minute sustained". Noisy by nature: a trend that firms up over workouts.
+ */
+export class HeartRateAttribution {
+  constructor({ tauSeconds = 35, learningRate = 0.08, weights = null } = {}) {
+    this.tau = tauSeconds;
+    this.lr = learningRate;
+    // Saved estimates are blended 70/30 with the starting guesses so one odd workout can't dominate.
+    this.prior = Object.fromEntries(ACTIVITIES.map((a) => [a.key, a.prior]));
+    this.w = Object.fromEntries(ACTIVITIES.map((a) => [a.key, weights?.[a.key] != null ? 0.7 * weights[a.key] + 0.3 * a.prior : a.prior]));
+    this.rate = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0])); // smoothed reps/min
+    this.counts = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
+    this.base = null;          // learned resting-ish level
+    this.lastT = null;
+    this.lastUpdate = -Infinity;
+    this.updates = 0;
+  }
+
+  decayTo(t) {
+    if (this.lastT != null && t > this.lastT) {
+      const f = Math.exp(-(t - this.lastT) / this.tau);
+      for (const k of ACTIVITY_KEYS) this.rate[k] *= f;
+    }
+    this.lastT = t;
+  }
+
+  record(key, t) {
+    if (!(key in this.w)) return;
+    this.decayTo(t);
+    this.rate[key] += 60 / this.tau; // a steady r reps/min settles at rate = r
+    this.counts[key]++;
+  }
+
+  /** Call every frame (or second) with the current time (s) and BPM (null if no signal). */
+  update(t, bpm, intervalSeconds = 2) {
+    this.decayTo(t);
+    if (bpm == null || t - this.lastUpdate < intervalSeconds) return false;
+    this.lastUpdate = t;
+    if (this.base == null) this.base = bpm;
+    let pred = this.base, norm = 1;
+    for (const k of ACTIVITY_KEYS) { pred += this.w[k] * this.rate[k]; norm += this.rate[k] ** 2; }
+    const err = bpm - pred;
+    for (const k of ACTIVITY_KEYS) {
+      if (this.rate[k] < 0.05) continue;
+      // Floor at a quarter of the starting guess: every activity does *something*, and it keeps
+      // the ranking meaningful when heart rate is flat for reasons the game can't see.
+      this.w[k] = clamp(this.w[k] + (this.lr * err * this.rate[k]) / norm, 0.25 * this.prior[k], 6);
+    }
+    // The baseline (resting-ish level) absorbs part of every error, more when you're barely moving.
+    const active = ACTIVITY_KEYS.reduce((s, k) => s + this.rate[k], 0);
+    this.base = clamp(this.base + err * (active < 3 ? 0.05 : 0.015), 40, 160);
+    this.updates++;
+    return true;
+  }
+
+  /** Activities sorted by estimated effect: BPM added per 10 reps/minute, plus this session's reps. */
+  ranking() {
+    return ACTIVITIES.map((a) => ({ key: a.key, label: a.label, bpmPer10: this.w[a.key] * 10, reps: this.counts[a.key] }))
+      .sort((p, q) => q.bpmPer10 - p.bpmPer10);
+  }
+}
+
+// ---------------------------------------------------------------- music tempo as a pacing cue
+
+/**
+ * Song tempo (beats per minute): rises with game intensity, and leads you — faster when you
+ * need to pick it up, slower when you need to ease off.
+ */
+export function musicTempo({ intensity, status, bpm, target }) {
+  let tempo = 96 + 44 * clamp01(intensity);
+  if (status === 'Below' && bpm) tempo += clamp((target - bpm) * 0.8, 4, 22);
+  else if (status === 'Above' && bpm) tempo -= clamp((bpm - target) * 1.5, 8, 30);
+  else if (status === 'SafetyBrake') tempo = 78;
+  return clamp(tempo, 70, 165);
 }

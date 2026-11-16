@@ -23,16 +23,35 @@ The Quest Browser can't talk to Bluetooth devices from a web page, so the phone 
 
 ## The game
 
-- **Orbs:** punch **blue** with your left hand and **orange** with your right. A **white ring** means hit it twice. A **white arrow** means swing that way: an uppercut, or a hook from the outside in. Arrow orbs score ×1.5. At high intensity, some orbs cross over to the other side for twisting cross-body punches.
-- **Walls (purple):** get your head into the open gap as the wall passes: **duck**, **step aside** from a centre pillar, **lean left or right**, or **squat left or right** (the open gap is low on one side). Duck walls start at 30% intensity, and side squats at 55%.
-- **Heat gauge (left):** frosty and icy when you're below your zone, a lively flame in it, and a hyper flame with embers above it. The green mark shows your target zone.
-- **Music & sound:** synthesized live, with no audio files. The tempo (about 95–145 BPM) and the layers rise with intensity. You get icy bells below your zone, a bright arpeggio in it, and driving hats above it. A soft heartbeat plays at your real BPM, and every hit, miss, dodge and wall has its own sound. **M** toggles it, or use the checkbox on the panel.
+- **Orbs:** punch **blue** with your left hand and **orange** with your right. **Low orbs** (knee to hip height) mean squat and punch.
+- **Swing orbs** have a glowing **white curve** through them, with a "ghost fist" sliding along it. Swing along the curve (an uppercut, or a hook from the outside in) for **double points**. Any solid punch still counts, so you're never punished for an imperfect angle.
+- **Walls (purple):** get your head into the open gap: **duck**, **step aside** from a centre pillar, **lean left or right**, or **squat left or right**.
+- **Heat gauge (left):** frosty when you're below your zone, a lively flame in it, and a hyper flame above it.
+- **Music & sound:** synthesized live. The **tempo leads you**: it speeds up when you need to pick it up and slows when you need to ease off. You also get icy bells below your zone, a bright arpeggio in it, a soft heartbeat at your real BPM, and a sound for every hit, dodge and wall.
 
-**No tracker yet?** The game runs on a simulated heart. In the headset it responds to how hard you actually move. The bridge also has a **Test without a tracker** switch that sends a fake heart rate, which is handy for checking the phone link.
+### When your heart rate won't climb
+
+- **Intensity:** the zone controller raises intensity whenever you're below target.
+- **Challenge boost:** if you stay below for about 15 seconds without heart rate rising (or the game is already at full intensity), a **challenge boost** builds up over about 45 seconds. It brings faster spawns, faster orbs and more walls and squat punches, and the scoreboard shows `CHALLENGE +NN%`. It fades once you reach the zone.
+- **What works for you:** the game **learns what raises YOUR heart rate**. It compares your heart rate with how many of each activity you've recently done (punches, squat punches, hooks and uppercuts, ducks, side steps, side squats), allowing for the heart's 30–40 second lag. When you're below the zone, it sends more of whatever works for you. When you're above it, it sends easier punches. The estimates are saved in the browser and refine over several workouts.
+- **Where to see it:** in VR it's on the options board, and the end screen names your best activity.
+
+### Options (in VR)
+
+Press **Y** (or **B**) to open the options board on your left, point at it with the controller laser, and pull the trigger. The workout pauses while it's open. From the board you can:
+
+- Set the target BPM and workout length.
+- Choose phone or simulator heart rate.
+- Turn music on or off and change the volume.
+- Set the challenge level: **Gentle / Normal / Hard** changes how hard the game pushes and how fast the boost builds.
+- See the "what raises your heart rate" chart.
+- Restart, end the workout, or close the board.
+
+On desktop, press **O**.
 
 ## Desktop testing
 
-Left click = left punch · right click = right punch · hold **C** duck · **A/D** lean · **[ ]** target · **B** switch source · **Tab** simulator mode · **↑↓** effort (Manual) · **L** drop signal · **M** sound · **T** 5× speed · **E** end · **R** restart
+Left click = left punch · right click = right punch · hold **C** duck · **A/D** lean · **O** options · **[ ]** target · **B** switch source · **Tab** simulator mode · **↑↓** effort (Manual) · **L** drop signal · **M** sound · **T** 5× speed · **E** end · **R** restart
 
 ## Files
 
@@ -41,12 +60,42 @@ Left click = left punch · right click = right punch · hold **C** duck · **A/D
 | `index.html`, `js/game.js` | The game: three.js + WebXR, fists, orbs, ducking bars, in-world scoreboard |
 | `bridge.html`, `js/bridge.js` | iPhone bridge: Web Bluetooth Heart Rate client, reconnects automatically |
 | `js/link.js` | Pairing code + WebRTC link (PeerJS), with heartbeat and auto-reconnect |
-| `js/core.js` | Engine-free logic: heart simulator, PID zone controller, difficulty curve, wall shapes, hand/swing rules, Bluetooth packet parser |
+| `js/core.js` | Engine-free logic: heart simulator, PID zone controller, difficulty, activity mix, challenge boost, heart-rate learning, music tempo, wall shapes, hand/swing rules, Bluetooth packet parser |
+| `js/options.js` | In-VR options board |
+| `js/dev.js` | Developer tuning panel |
 | `js/thermo.js` | Heat gauge shader (frost / flame / hyper flame) |
 | `js/audio.js` | Adaptive soundtrack + sound effects (Web Audio) |
-| `test/core.test.mjs` | 49 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings |
+| `test/core.test.mjs` | 61 checks: simulated workouts (time in zone, overshoot, safety brake, dropouts), packet parsing, wall shapes, hands and swings, activity mix, challenge boost, heart-rate learning, music tempo |
 
 No build step: these are plain files. three.js and PeerJS load from jsDelivr at pinned versions.
+
+## Editing the game yourself
+
+**No code: the Developer tools panel.** On desktop, click **Developer tools** on the game page, or open the game with `?dev` at the end of the address. From there you can:
+
+- Change the difficulty (the easy and hard ends of spawn rate, orb speed, spread and punch speed), the activity mix, the heart-rate controller, and how fast the challenge boost builds. **Apply & restart** saves the settings in that browser.
+- **Download last workout (CSV)**, which has one row per second: heart rate, intensity, boost, and reps of each activity. Open it in Excel or Google Sheets to see what moved your heart rate.
+- **Copy settings JSON** to share a setup, or **Reset** to defaults.
+
+**Code: the GitHub web editor, with nothing to install.**
+
+1. Open https://github.dev/CremdelaCrimi/pulsezone (or press `.` on the repository page). It's VS Code in your browser.
+2. Edit files, then use **Source Control** (left bar) → write a message → **Commit & Push**.
+3. GitHub Pages republishes in about a minute. Reload the game, and on the Quest close and reopen the tab.
+
+**Where things live:**
+
+| To change… | Edit |
+|---|---|
+| Difficulty defaults, activity mix, unlock levels, heart-rate learning | `js/core.js` (`EASY`, `HARD`, `ACTIVITIES`, `ChallengeBoost`, `HeartRateAttribution`) |
+| Controller gains, zone width, warm-up behaviour | `js/core.js` (`defaultZoneSettings`, `ZoneController`) |
+| Music tempo rules | `js/core.js` (`musicTempo`), with instruments in `js/audio.js` |
+| Orbs, walls, swing curves, HUD, scoring | `js/game.js` |
+| Options board layout | `js/options.js` |
+| Heat gauge look | `js/thermo.js` |
+| Phone bridge | `bridge.html`, `js/bridge.js` |
+
+After changing a file's contents, bump the `?v5` version tags (in `index.html`, `bridge.html` and the `import` lines) so browsers don't use a cached copy.
 
 ## Developing
 

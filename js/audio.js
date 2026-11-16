@@ -4,6 +4,8 @@
 // (icy bells below it, a bright arpeggio in it, driving hats above it), and a soft heartbeat
 // thump plays at your real BPM.
 
+import { musicTempo } from './core.js?v5';
+
 const CHORDS = [
   // A minor - F - C - G, as [root Hz, chord tones Hz]
   [110.0, [220.0, 261.63, 329.63]],
@@ -16,8 +18,10 @@ export class AudioEngine {
   constructor() {
     this.ctx = null;
     this.enabled = true;
-    this.state = { intensity: 0.15, status: 'NoSignal', bpm: 0, phase: 'WarmUp' };
+    this.state = { intensity: 0.15, status: 'NoSignal', bpm: 0, phase: 'WarmUp', target: 120 };
     this.smoothIntensity = 0.15;
+    this.smoothTempo = 100;
+    this.volume = 0.8;
     this.step = 0;            // 16th-note counter
     this.nextStepTime = 0;
     this.nextBeatTime = 0;    // heartbeat
@@ -39,7 +43,7 @@ export class AudioEngine {
   build() {
     const c = this.ctx;
     this.master = c.createGain();
-    this.master.gain.value = this.enabled ? 0.8 : 0;
+    this.master.gain.value = this.enabled ? this.volume : 0;
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -14; comp.ratio.value = 4;
     this.master.connect(comp).connect(c.destination);
@@ -79,13 +83,19 @@ export class AudioEngine {
 
   setEnabled(on) {
     this.enabled = on;
-    if (this.master) this.master.gain.setTargetAtTime(on ? 0.8 : 0, this.ctx.currentTime, 0.1);
+    if (this.master) this.master.gain.setTargetAtTime(on ? this.volume : 0, this.ctx.currentTime, 0.1);
+  }
+
+  setVolume(v) {
+    this.volume = Math.min(1, Math.max(0, v));
+    if (this.master && this.enabled) this.master.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.1);
   }
 
   /** Feed the current game state every frame. */
   update(state) { Object.assign(this.state, state); }
 
-  get tempo() { return 92 + 56 * this.smoothIntensity; }
+  /** Song tempo leads you: faster when you need to pick it up, slower when you need to ease off. */
+  get tempo() { return this.smoothTempo; }
 
   // ------------------------------------------------------------ scheduler
 
@@ -94,6 +104,8 @@ export class AudioEngine {
     if (!c || c.state !== 'running') return;
     const s = this.state;
     this.smoothIntensity += (s.intensity - this.smoothIntensity) * 0.02;
+    // Glide to the new tempo over a few seconds so the beat never lurches.
+    this.smoothTempo += (musicTempo({ ...s, intensity: this.smoothIntensity }) - this.smoothTempo) * 0.012;
     const playing = s.phase !== 'Finished';
 
     // Pad follows the zone colour.
@@ -242,12 +254,9 @@ export class AudioEngine {
         this.tone(t, base, 'square', 0.12, 0.09, base * 1.5);
         break;
       }
-      case 'heavy':
-        this.noiseHit(t, 'lowpass', 900, 0.7, 0.7, 0.18, this.fx);
-        this.tone(t, 180, 'sine', 0.5, 0.2, 60);
-        break;
-      case 'crack': // first hit on a two-hit orb
-        this.noiseHit(t, 'bandpass', 1200, 2, 0.45, 0.08, this.fx);
+      case 'perfect': // followed the swing curve: punchy hit plus a bright rising sparkle
+        this.noiseHit(t, 'bandpass', 2500, 1.2, 0.5, 0.06, this.fx);
+        [784, 1046.5, 1318.5].forEach((f, i) => this.tone(t + i * 0.045, f, 'triangle', 0.13, 0.22));
         break;
       case 'weak': this.tone(t, 160, 'triangle', 0.2, 0.12, 110); break;
       case 'wrong': this.tone(t, 140, 'sawtooth', 0.12, 0.18); this.tone(t + 0.09, 120, 'sawtooth', 0.12, 0.18); break;

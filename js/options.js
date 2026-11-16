@@ -1,0 +1,124 @@
+// In-VR options panel on the left: a canvas-textured board you point at with a controller laser
+// (trigger = click). Also works on desktop with the mouse. The game pauses while it's open.
+import * as THREE from 'three';
+
+const W = 1024, H = 1180;
+
+export class OptionsPanel {
+  /**
+   * @param {object} hooks
+   *   getState(): { target, minutes, source, sound, volume, challenge, ranking, paused }
+   *   act(id): perform a button action (see ids below)
+   */
+  constructor(hooks) {
+    this.hooks = hooks;
+    this.open = false;
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = W; this.canvas.height = H;
+    this.g = this.canvas.getContext('2d');
+    this.tex = new THREE.CanvasTexture(this.canvas);
+    this.tex.colorSpace = THREE.SRGBColorSpace;
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.0, (1.0 * H) / W), new THREE.MeshBasicMaterial({ map: this.tex, transparent: true }));
+    this.mesh.visible = false;
+    this.buttons = [];
+    this.hover = null;
+    this.key = '';
+
+    // Small "Y = options" tab, always visible under the heat gauge.
+    const tc = document.createElement('canvas');
+    tc.width = 512; tc.height = 128;
+    const tg = tc.getContext('2d');
+    tg.fillStyle = 'rgba(8,10,18,0.7)'; tg.beginPath(); tg.roundRect(4, 4, 504, 120, 28); tg.fill();
+    tg.strokeStyle = '#4fd1c5'; tg.lineWidth = 4; tg.stroke();
+    tg.fillStyle = '#e6e9ef'; tg.font = '600 52px system-ui, sans-serif'; tg.textAlign = 'center'; tg.textBaseline = 'middle';
+    tg.fillText('Y  ·  Options', 256, 66);
+    const tt = new THREE.CanvasTexture(tc); tt.colorSpace = THREE.SRGBColorSpace;
+    this.tab = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.125), new THREE.MeshBasicMaterial({ map: tt, transparent: true }));
+  }
+
+  toggle(force) {
+    this.open = force ?? !this.open;
+    this.mesh.visible = this.open;
+    this.key = '';
+    if (this.open) this.draw();
+  }
+
+  /** Map a raycast hit (uv) to a button id and run it. Returns true if a button was hit. */
+  clickUv(uv) {
+    const id = this.buttonAt(uv);
+    if (id) { this.hooks.act(id); this.key = ''; this.draw(); return true; }
+    return false;
+  }
+
+  setHoverUv(uv) {
+    const id = uv ? this.buttonAt(uv) : null;
+    if (id !== this.hover) { this.hover = id; this.key = ''; }
+  }
+
+  buttonAt(uv) {
+    const x = uv.x * W, y = (1 - uv.y) * H;
+    const b = this.buttons.find((b) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+    return b ? b.id : null;
+  }
+
+  draw() {
+    if (!this.open) return;
+    const s = this.hooks.getState();
+    const key = JSON.stringify([s, this.hover]);
+    if (key === this.key) return;
+    this.key = key;
+    const g = this.g;
+    this.buttons = [];
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = 'rgba(10,12,20,0.92)';
+    g.beginPath(); g.roundRect(6, 6, W - 12, H - 12, 36); g.fill();
+    g.strokeStyle = '#2b3242'; g.lineWidth = 4; g.stroke();
+    g.textBaseline = 'middle';
+
+    g.fillStyle = '#e6e9ef'; g.font = '700 58px system-ui, sans-serif'; g.textAlign = 'left';
+    g.fillText('Options', 50, 70);
+    g.fillStyle = '#ffd34d'; g.font = '32px system-ui, sans-serif'; g.textAlign = 'right';
+    g.fillText('workout paused', W - 50, 72);
+
+    let y = 150;
+    const label = (text) => { g.fillStyle = '#8d95a5'; g.font = '32px system-ui, sans-serif'; g.textAlign = 'left'; g.fillText(text, 50, y + 36); };
+    const button = (id, text, x, w, active = false) => {
+      const hovered = this.hover === id;
+      g.fillStyle = active ? '#4fd1c5' : hovered ? '#34405a' : '#222837';
+      g.beginPath(); g.roundRect(x, y, w, 72, 16); g.fill();
+      if (hovered) { g.strokeStyle = '#4fd1c5'; g.lineWidth = 3; g.stroke(); }
+      g.fillStyle = active ? '#062421' : '#e6e9ef'; g.font = '600 34px system-ui, sans-serif'; g.textAlign = 'center';
+      g.fillText(text, x + w / 2, y + 37);
+      this.buttons.push({ id, x, y, w, h: 72 });
+    };
+    const value = (text, x, w) => { g.fillStyle = '#ffffff'; g.font = '700 40px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText(text, x + w / 2, y + 37); };
+
+    label('Target heart rate'); button('target-', '−', 520, 100); value(`${s.target} BPM`, 630, 230); button('target+', '+', 870, 100); y += 100;
+    label('Workout length'); button('minutes-', '−', 520, 100); value(`${s.minutes} min`, 630, 230); button('minutes+', '+', 870, 100); y += 100;
+    label('Heart rate from'); button('src-phone', 'Phone', 520, 215, s.source === 'phone'); button('src-sim', 'Simulator', 755, 215, s.source === 'sim'); y += 100;
+    label('Music & sounds'); button('sound', s.sound ? 'On' : 'Off', 520, 140, s.sound); button('vol-', 'Vol −', 680, 140); button('vol+', 'Vol +', 830, 140); y += 100;
+    label('Challenge'); button('ch-gentle', 'Gentle', 430, 170, s.challenge === 'gentle'); button('ch-normal', 'Normal', 615, 170, s.challenge === 'normal'); button('ch-hard', 'Hard', 800, 170, s.challenge === 'hard'); y += 110;
+
+    // What raises your heart rate (learned).
+    g.fillStyle = '#e6e9ef'; g.font = '600 36px system-ui, sans-serif'; g.textAlign = 'left';
+    g.fillText('What raises YOUR heart rate', 50, y + 20);
+    g.fillStyle = '#8d95a5'; g.font = '26px system-ui, sans-serif';
+    g.fillText('estimated BPM added per 10 reps/min · reps this workout', 50, y + 62);
+    y += 95;
+    const max = Math.max(1, ...s.ranking.map((r) => r.bpmPer10));
+    for (const r of s.ranking) {
+      g.fillStyle = '#c9ced8'; g.font = '30px system-ui, sans-serif'; g.textAlign = 'left';
+      g.fillText(r.label, 50, y + 22);
+      g.fillStyle = '#262a38'; g.beginPath(); g.roundRect(400, y + 6, 430, 32, 10); g.fill();
+      g.fillStyle = `hsl(${20 + 160 * (1 - r.bpmPer10 / max)} 85% 55%)`;
+      g.beginPath(); g.roundRect(400, y + 6, Math.max(14, 430 * (r.bpmPer10 / max)), 32, 10); g.fill();
+      g.fillStyle = '#ffffff'; g.font = '28px system-ui, sans-serif'; g.textAlign = 'right';
+      g.fillText(`${r.bpmPer10.toFixed(0)} · ${r.reps}`, W - 50, y + 22);
+      y += 50;
+    }
+    y += 25;
+    button('restart', 'Restart', 50, 290); button('end', 'End workout', 367, 290); button('close', 'Close', 684, 290, true);
+
+    this.tex.needsUpdate = true;
+  }
+}
