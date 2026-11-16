@@ -367,11 +367,11 @@ export class ZoneController {
 // ---------------------------------------------------------------- difficulty
 
 export const EASY = Object.freeze({
-  spawnInterval: 2.2, orbSpeed: 1.6, horizontalSpread: 0.25, verticalSpread: 0.1,
+  spawnInterval: 2.2, orbSpeed: 1.6, horizontalSpread: 0.2, verticalSpread: 0.1,
   obstacleChance: 0, heavyOrbChance: 0, minPunchSpeed: 0.6, directionalChance: 0, crossBodyChance: 0,
 });
 export const HARD = Object.freeze({
-  spawnInterval: 0.45, orbSpeed: 4.5, horizontalSpread: 0.75, verticalSpread: 0.55,
+  spawnInterval: 0.45, orbSpeed: 4.5, horizontalSpread: 0.45, verticalSpread: 0.55, // narrower after play-testing: less reaching
   obstacleChance: 0.32, heavyOrbChance: 0, minPunchSpeed: 1.6, directionalChance: 0.4, crossBodyChance: 0.25,
 });
 
@@ -545,6 +545,10 @@ export const ACTIVITIES = Object.freeze([
   { key: 'guard', label: 'Guard & counter', kind: 'orb', from: 0.3, base: 0.25, prior: 0.9 },
   { key: 'bag', label: 'Speed bag', kind: 'burst', from: 0.35, base: 0.1, prior: 0.3 },     // per punch on the bag
   { key: 'ropes', label: 'Battle ropes', kind: 'burst', from: 0.45, base: 0.1, prior: 1.6 }, // per second of pumping
+  { key: 'heavy', label: 'Heavy bag', kind: 'burst', from: 0.4, base: 0.1, prior: 0.9 },    // per strong punch (hooks, uppercuts)
+  { key: 'sled', label: 'Sled run', kind: 'burst', from: 0.45, base: 0.1, prior: 1.5 },     // per double-pole stroke in a tuck
+  // Core work: bombs aimed at your head; lean, duck and shift out of the way.
+  { key: 'barrage', label: 'Dodge barrage', kind: 'dodge', from: 0.3, base: 0.25, prior: 1.3 },
 ]);
 export const ACTIVITY_KEYS = ACTIVITIES.map((a) => a.key);
 
@@ -787,6 +791,32 @@ export function pickSpotlight({ enabled, gains = null, below = false, rng = Math
   return pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))];
 }
 
+/**
+ * Dodge barrage (core work): 4-6 bombs aimed near your head, one every ~0.7-0.9 s. Move your head
+ * out of the way (lean, duck, shift). A bomb hits if it passes within BOMB_RADIUS of your head.
+ */
+export const BOMB_RADIUS = 0.2;
+export function barrageShape(intensity) {
+  const t = clamp01(intensity);
+  return { n: 4 + Math.round(2 * t), gap: lerp(0.9, 0.7, t) };
+}
+export const bombHits = (dx, dy) => Math.hypot(dx, dy) < BOMB_RADIUS;
+/** Lane slot for a barrage: like a combo, it gets the lane to itself. */
+export const barragePlan = (first, n, gap) => ({ kind: 'solo', start: first - 0.6, end: first + gap * (n - 1) + 0.6 });
+
+/** Heavy bag targets: a glowing patch shows where (and with which hand) to hit next. */
+export const HEAVY_TARGETS = Object.freeze([
+  { key: 'hookL', hand: 'left', label: 'LEFT HOOK' },
+  { key: 'hookR', hand: 'right', label: 'RIGHT HOOK' },
+  { key: 'upper', hand: null, label: 'UPPERCUT' },
+  { key: 'straight', hand: null, label: 'POWER' },
+]);
+/** Points for a heavy-bag punch: harder is better, the lit target doubles it. */
+export const heavyPoints = (power, onTarget) => Math.round((4 + 8 * clamp01(power)) * (onTarget ? 2 : 1));
+
+/** Sled run: you're "tucked" when your head is at least 15 cm below your standing height. */
+export const sledTucked = (headY, standing) => headY < standing - 0.15;
+
 /** Can `plan` be added to the booked `lane` slots without crowding anything? */
 export function laneFree(lane, plan) {
   if (!plan) return true;
@@ -852,7 +882,7 @@ export function boostDifficulty(d, boost) {
     ...d,
     spawnInterval: d.spawnInterval * (1 - 0.35 * boost),
     orbSpeed: d.orbSpeed * (1 + 0.12 * boost),
-    horizontalSpread: Math.min(0.9, d.horizontalSpread + 0.15 * boost),
+    horizontalSpread: Math.min(0.5, d.horizontalSpread + 0.05 * boost),
   };
 }
 

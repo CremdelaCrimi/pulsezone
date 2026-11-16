@@ -172,3 +172,13 @@ Longest quiet stretch in training: 11 s (during a two-hand rope); longest a move
   - Breakdowns needed you in the zone during one exact ~2 s bar, and the 15 s zone-streak chime cut them short. Now any of the first 4 bars of each 24-bar stretch will do (once per stretch), and only big hits (power orb, slam, combo clear, bursts) end one.
   - The bass returned slowly (1.5 s) after a breakdown; it now slams back with the high-pass.
 - Checked: all checks pass; in the browser a breakdown started inside the window, survived a streak chime, dropped on a big hit, and the counter reset when the song looped; no console errors.
+
+## Player feedback round (1:19 PM), built without Gemini as asked
+The player asked for: narrower orbs, a second bag for hooks/uppercuts, a "sledding" move (ski-like downward arm motion plus squatting), and core-focused dodging of things aimed at the head (like a shooting game).
+- **Narrower orbs:** orbs now spawn at most ±45 cm from centre at the hardest (was ±75 cm), ±50 cm with the challenge boost (was ±90 cm), ±20 cm when easy.
+- **Heavy bag (new burst, 6 s):** a big hanging bag with a glowing, hand-coloured target patch that moves between left hook (front-left), right hook (front-right), uppercut (low front) and power straight (front). Any hard punch scores (more for harder); the lit patch with the right hand doubles it and moves the target. Toggle "Heavy" in the Bursts row; 25 s cooldown; learned like the other moves.
+- **Sled run (new burst, 8 s):** the lane turns to snow and ski poles run from your fists to the ground. Squat into a tuck (head 15+ cm below standing) and push both fists down together (double-pole); tucked strokes count 1.5× and time in the tuck scores. Toggle "Sled"; 30 s cooldown.
+- **Dodge barrage (new, core work):** 4–6 red spiked bombs fly at your head ~0.8 s apart, each aimed near where your head is; lean, duck or shift so they miss by 20 cm+. Gets its own lane slot like combos. Toggle "Bombs".
+- Test buttons for all three (and the speed bag / battle ropes) in a "Test 2" row when Diag is on.
+- Fixed after snapshots: hook patches moved to the bag's front corners (they were edge-on), the heavy-bag and sled counters moved so they don't cover the scoreboard, and floating text shrinks when it pops right in front of you.
+- Checked: all checks pass (new tests for barrage, heavy-bag points, tuck); each move forced with its Test button (5/5 bombs dodged by the auto-player, 26 heavy-bag punches, 13 sled strokes); a 3-minute normal run had 4 barrages, 0 overlaps, no console errors.

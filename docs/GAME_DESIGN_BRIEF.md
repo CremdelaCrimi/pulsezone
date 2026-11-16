@@ -37,7 +37,7 @@ It is a fitness game where the "difficulty slider" is driven by the body, not by
 A PID controller turns "how far am I from the target heart rate" into a single **intensity** value from 0 to 1. Intensity changes by at most about 2% per second (heart rate lags effort by 30–40 seconds, so the controller is deliberately slow).
 
 ### 4.2 What intensity changes
-Spawn interval, orb speed, how widely orbs are spread, how likely walls are, minimum punch speed and travel, how often orbs need a directional swing or a cross-body punch, which moves are unlocked.
+Spawn interval, orb speed, how widely orbs are spread (narrowed after play-testing: at most ±45 cm, ±50 cm with the boost), how likely walls are, minimum punch speed and travel, how often orbs need a directional swing or a cross-body punch, which moves are unlocked.
 
 ### 4.3 Challenge boost (when heart rate stalls)
 If the player sits below the zone for about 15 seconds without heart rate rising (or intensity is already maxed), a **challenge boost** builds over about 45 seconds: faster spawns, faster orbs, more of the moves that work for this player, and **bursts** (speed bag, battle ropes) become the main tool. It fades once the player reaches the zone. It never builds while the effort estimate says the player is already climbing into the zone (it drains instead), to avoid overshooting above the zone, and it holds still while the heart rate is only estimated (phone asleep) or the sensor looks stuck.
@@ -75,6 +75,9 @@ Everything flies down one lane. Each thing books a time slot for when it reaches
 | Side squat | Squat and shift left or right through a gap | 0.4 | 1.6 |
 | Stand tall (auto) | After every duck/squat box: a low box you must stand fully up over | follows squats | — |
 | Speed bag (burst) | 4–5 s of rapid alternating punches on a bag | 0.35, or early when stuck | 0.3 per punch |
+| Heavy bag (burst) | 6 s on a big bag; a lit patch (hand-coloured) shows left hook / right hook / uppercut / power; hard punches score more, the lit patch doubles it | 0.4, or early when stuck | 0.9 per strong punch |
+| Sled run (burst) | 8 s: squat into a tuck and double-pole (both fists down together); tucked strokes 1.5x, tuck time scores | 0.45, or early when stuck | 1.5 per stroke |
+| Dodge barrage | 4–6 bombs aimed near your head ~0.8 s apart; lean/duck/shift 20 cm+ to dodge (core work) | 0.3 | 1.3 per dodge |
 | Battle ropes (burst) | 6 s of pumping both arms; staying low scores 1.5× | 0.45, or early when stuck | 1.6 per second |
 | Boxing combo | 2–4 orbs one beat apart (1-2, 1-1-2, 1-2-hook, 1-2-1-upper, squat-squat-hook-hook); bonus + floating COMBO CLEAR for clearing it | replaces a plain punch, 25–60% chance from intensity 0.25, at most ~every 9 s | (counts as its punches) |
 | Side shift (footwork) | Below the zone: for 8 s plain orbs come 35 cm to one side; a floor pad shows where to step; walls/ropes/bursts wait | below zone, intensity ≥ 0.35 or boost | — (part of the orbs) |

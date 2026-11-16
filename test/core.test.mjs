@@ -4,7 +4,7 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, parseHeartRateMeasurement, wallPolygon, wallHitsHead, pickWallType, planOrb, swingMatches, heatLook,
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
-  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sensorLooksFlat, breakdownDue, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
+  wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sensorLooksFlat, breakdownDue, barrageShape, barragePlan, bombHits, heavyPoints, sledTucked, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -160,8 +160,8 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(Object.keys(easy).length === 1 && easy.jab, 'very low intensity: only plain punches');
   const mid = count({ intensity: 0.5, status: 'InZone' });
   check(ACTIVITY_KEYS.every((k) => mid[k] > 0), `mid intensity: every activity appears (${JSON.stringify(mid)})`);
-  const gains = { jab: 0.05, low: 0.3, swing: 0.1, duck: 0.3, lateral: 0.2, squatSide: 0.9, trace: 0.15, sweep: 0.3, power: 0.2, pair: 0.35, guard: 0.15 };
-  const noBursts = { bag: false, ropes: false };
+  const gains = { jab: 0.05, low: 0.3, swing: 0.1, duck: 0.3, lateral: 0.2, squatSide: 0.9, trace: 0.15, sweep: 0.3, power: 0.2, pair: 0.35, guard: 0.15, barrage: 0.3 };
+  const noBursts = { bag: false, ropes: false, heavy: false, sled: false };
   const stuck = count({ intensity: 0.9, status: 'Below', boost: 1, gains, enabled: noBursts });
   const normal = count({ intensity: 0.9, status: 'InZone', gains, enabled: noBursts });
   check(stuck.squatSide > normal.squatSide * 1.6 && stuck.jab < normal.jab * 0.6,
@@ -188,7 +188,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
   // Learning: a synthetic player whose heart responds strongly to side squats and barely to punches.
   // Generated with a slightly different lag than the learner assumes, plus noise.
-  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9 };
+  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9, heavy: 0.8, sled: 1.6, barrage: 1.2 };
   const att = new HeartRateAttribution({ weights: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 1.0])) });
   const rng = mulberry32(7);
   const tr = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
@@ -417,6 +417,15 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(breakdownDue(24, -1, 'InZone') && breakdownDue(26, 0, 'InZone') && breakdownDue(48, 1, 'InZone') && !breakdownDue(48, 2, 'InZone')
     && !breakdownDue(29, -1, 'InZone') && !breakdownDue(24, -1, 'Below') && !breakdownDue(24, -1, 'Above') && !breakdownDue(3, -1, 'InZone'),
     'song breakdowns: any of the first 4 bars of each 24-bar stretch, once per stretch, only in the zone');
+
+  // New moves: dodge barrage, heavy bag, sled run.
+  {
+    const easyB = barrageShape(0), hardB = barrageShape(1);
+    check(easyB.n === 4 && hardB.n === 6 && hardB.gap < easyB.gap && bombHits(0.1, 0.1) && !bombHits(0.25, 0) && barragePlan(10, 5, 0.8).kind === 'solo',
+      'dodge barrage: 4-6 bombs, quicker when hard; dodge by moving your head 20 cm; gets the lane to itself');
+    check(heavyPoints(1, true) === 24 && heavyPoints(0, false) === 4 && heavyPoints(0.5, true) > heavyPoints(0.5, false), 'heavy bag: harder punches score more, the lit target doubles it');
+    check(sledTucked(1.5, 1.7) && !sledTucked(1.6, 1.7), 'sled run: tucked when your head is 15+ cm below standing');
+  }
 
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
   {

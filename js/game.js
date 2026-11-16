@@ -5,18 +5,18 @@ import {
   SimulatedHeart, SimulatedPlayer, RemoteHeartSource, ZoneController, Phase, Zone,
   evaluateDifficulty, estimatedMaxBpm, EASY, HARD, WALL_TYPES, wallPolygon, wallHitsHead,
   planOrb, swingMatches, heatLook, ACTIVITIES, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty,
-  HeartRateAttribution, PROFILES, profileOffset, wallDepth, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
+  HeartRateAttribution, PROFILES, profileOffset, wallDepth, barrageShape, barragePlan, bombHits, HEAVY_TARGETS, heavyPoints, sledTucked, tracePath, traceSeconds, tracePoints, sweepPath, sweepSeconds, SWEEP_HALF_GAP,
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v39';
+} from './core.js?v41';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v39';
+import { AudioEngine } from './audio.js?v41';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v39';
-import { loadTuning, createDevPanel } from './dev.js?v39';
+import { OptionsPanel } from './options.js?v41';
+import { loadTuning, createDevPanel } from './dev.js?v41';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -35,7 +35,7 @@ const settings = {
   // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
   moves: {
     jab: true, low: true, swing: true, power: true, pair: true, guard: true, trace: true, sweep: true,
-    bag: true, ropes: true, duck: true, squatSide: true, lean: true, pillar: true, shift: true,
+    bag: true, ropes: true, heavy: true, sled: true, barrage: true, duck: true, squatSide: true, lean: true, pillar: true, shift: true,
   },
 };
 try {
@@ -48,7 +48,7 @@ try {
 } catch { /* ignore */ }
 const MOVE_LABELS = {
   jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then reach up', guard: 'Guard & counter',
-  trace: 'Rope tracing', sweep: 'Two-hand rope', bag: 'Speed bag', ropes: 'Battle ropes',
+  trace: 'Rope tracing', sweep: 'Two-hand rope', bag: 'Speed bag', ropes: 'Battle ropes', heavy: 'Heavy bag', sled: 'Sled run', barrage: 'Dodge barrage (bombs)',
   duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar', shift: 'Side shifts (step left/right)',
 };
 /** Which activities the moveset allows right now (forSpawn: also respect burst cooldowns). */
@@ -63,6 +63,9 @@ const enabledActivities = (forSpawn = false) => ({
   sweep: settings.moves.sweep,
   bag: settings.moves.bag && (!forSpawn || gameTime >= bagReadyAt),
   ropes: settings.moves.ropes && (!forSpawn || gameTime >= ropesReadyAt),
+  heavy: settings.moves.heavy && (!forSpawn || gameTime >= heavyReadyAt),
+  sled: settings.moves.sled && (!forSpawn || gameTime >= sledReadyAt),
+  barrage: settings.moves.barrage,
   duck: settings.moves.duck,
   squatSide: settings.moves.squatSide,
   lateral: settings.moves.lean || settings.moves.pillar,
@@ -380,6 +383,7 @@ function addNote(label) {
 function testMove(key) {
   if (controller.phase === Phase.Finished) startWorkout();
   if (key === 'shift') { forceShiftNext = true; say('Test: side shift coming', 2); return; }
+  if (BURSTS.includes(key)) { pendingBurst = key; say(`Test: ${MOVE_LABELS[key].toLowerCase()} coming`, 2); return; }
   if (key === 'combo') {
     const en = enabledActivities();
     const list = availableCombos({ swing: en.swing, low: en.low });
@@ -550,12 +554,16 @@ function clearObstacles() {
   orbs.length = walls.length = bursts.length = traces.length = shards.length = 0;
   if (bag) { scene.remove(bag.group); bag = null; }
   if (ropes) { endRopes(false); }
+  if (heavy) endHeavy(false);
+  if (sled) endSled(false);
+  for (const b of bombs) scene.remove(b.group);
+  bombs.length = 0;
   for (const g of guards) scene.remove(g.group);
   guards.length = 0;
   for (const s of slams) scene.remove(s.group);
   slams.length = 0;
   pendingBurst = null;
-  bagReadyAt = ropesReadyAt = 0;
+  bagReadyAt = ropesReadyAt = heavyReadyAt = sledReadyAt = 0;
   spawnTimer = 0;
   lane = [];
   queuedActivity = null; queuedFor = 0;
@@ -1093,6 +1101,315 @@ function endBag() {
   bagReadyAt = gameTime + 20;
 }
 
+// ------------------------------------------------------------------ heavy bag (a burst: hooks, uppercuts, power)
+
+/**
+ * A big hanging bag for 6 s. A glowing patch shows where to hit next (left hook on its left side,
+ * right hook on its right, uppercut low at the front, power straight at the front) in the colour of
+ * the hand to use. Any hard punch scores; hitting the lit patch with the right hand doubles it.
+ */
+let heavy = null, heavyReadyAt = 0;
+const heavyGeo = new THREE.CapsuleGeometry(0.2, 0.55, 6, 18);
+const heavyPatchGeo = new THREE.CircleGeometry(0.1, 24);
+const HEAVY_ARRIVE = 1.0;
+const HEAVY_PATCH = {
+  hookL: { pos: [-0.145, 0.05, 0.145], rot: [0, -Math.PI / 4, 0] },  // front-left corner, so you can see it
+  hookR: { pos: [0.145, 0.05, 0.145], rot: [0, Math.PI / 4, 0] },
+  upper: { pos: [0, -0.22, 0.17], rot: [0.5, 0, 0] },
+  straight: { pos: [0, 0.08, 0.205], rot: [0, 0, 0] },
+};
+function burstLabel() {
+  const lc = document.createElement('canvas'); lc.width = 256; lc.height = 128;
+  const tex = new THREE.CanvasTexture(lc); tex.colorSpace = THREE.SRGBColorSpace;
+  const label = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.18), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  return { lc, tex, label };
+}
+function drawBurstLabel(b, big, small, frac, color) {
+  const key = `${big}|${small}|${Math.ceil(frac * 20)}`;
+  if (key === b.labelKey) return;
+  b.labelKey = key;
+  const g = b.lc.getContext('2d');
+  g.clearRect(0, 0, 256, 128);
+  g.fillStyle = 'rgba(8,10,18,0.7)'; g.beginPath(); g.roundRect(4, 4, 248, 120, 22); g.fill();
+  g.fillStyle = '#ffffff'; g.font = '700 56px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(String(big), 128, 46);
+  g.font = '600 22px system-ui, sans-serif'; g.fillStyle = color; g.fillText(small, 128, 84, 230);
+  g.fillStyle = '#262a38'; g.fillRect(28, 104, 200, 10);
+  g.fillStyle = color; g.fillRect(28, 104, 200 * Math.max(0, frac), 10);
+  b.tex.needsUpdate = true;
+}
+function spawnHeavy(head, standing) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8a2b2b, emissive: 0x5a1a1a, emissiveIntensity: 0.3, roughness: 0.7 });
+  const body = new THREE.Mesh(heavyGeo, mat);
+  const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.8, 6), MAT.guide);
+  chain.position.y = 0.88;
+  const patchMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
+  const patch = new THREE.Mesh(heavyPatchGeo, patchMat);
+  body.add(patch);
+  const { lc, tex, label } = burstLabel();
+  label.position.set(0.62, 0.3, -0.3); label.scale.setScalar(1.3); // beside the bag, clear of the scoreboard
+  group.add(body, chain, label);
+  const station = new THREE.Vector3(centerX, standing - 0.45, head.z - 0.62);
+  group.position.set(station.x, station.y, head.z - 10);
+  scene.add(group);
+  heavy = {
+    group, body, mat, patch, patchMat, lc, tex, label, station, startZ: head.z - 10, age: 0, duration: 6,
+    hits: 0, onTarget: 0, points: 0, armed: { left: true, right: true }, off: new THREE.Vector3(), offV: new THREE.Vector3(),
+    target: null, targetHand: 'left', targetAge: 0, smokeT: 0, labelKey: '',
+  };
+  nextHeavyTarget();
+  say('HEAVY BAG! Hooks and uppercuts - hit the lit spot hard', 1);
+  audio.sfx('burst');
+  pulseBoth(0.4, 60);
+}
+let heavyAlt = 'right';
+function nextHeavyTarget() {
+  const prev = heavy.target?.key;
+  const pool = HEAVY_TARGETS.filter((t) => t.key !== prev);
+  const t = pool[Math.floor(Math.random() * pool.length)];
+  heavyAlt = heavyAlt === 'left' ? 'right' : 'left';
+  heavy.target = t;
+  heavy.targetHand = t.hand || heavyAlt;
+  heavy.targetAge = 0;
+  const p = HEAVY_PATCH[t.key];
+  heavy.patch.position.set(...p.pos);
+  heavy.patch.rotation.set(...p.rot);
+  heavy.patchMat.color.set(HAND_COLOR[heavy.targetHand]);
+}
+const heavyTmp = new THREE.Vector3(), heavyPatchW = new THREE.Vector3();
+function heavyHit(hand, fist, power, onTarget) {
+  heavy.hits++;
+  const pts = heavyPoints(power, onTarget) * (score.inZone() ? 2 : 1);
+  heavy.points += pts;
+  const push = fist && fist.vel.lengthSq() > 0.01 ? fist.vel.clone().normalize() : new THREE.Vector3(0, 0, -1);
+  heavy.offV.addScaledVector(push, 0.6 + 1.2 * power);
+  heavy.mat.emissiveIntensity = 0.9;
+  pulse(fist, 0.4 + 0.6 * power, 40);
+  audio.sfx('hit', { hand, power: Math.max(power, onTarget ? 0.7 : power) });
+  if (power >= 0.3 || settings.gameType === 'touch') attribution.record('heavy', gameTime);
+  if (onTarget) {
+    heavy.onTarget++;
+    heavy.patch.getWorldPosition(heavyPatchW);
+    popText(`${heavy.target.label}! +${pts}`, heavyPatchW, '#ffffff');
+    nextHeavyTarget();
+  }
+}
+function updateHeavy(dt, xr) {
+  const h = heavy;
+  h.age += dt;
+  const k = Math.min(1, h.age / HEAVY_ARRIVE);
+  h.group.position.z = h.startZ + (h.station.z - h.startZ) * (1 - (1 - k) ** 3);
+  h.offV.addScaledVector(h.off, -90 * dt).multiplyScalar(Math.exp(-5 * dt)); // heavier, slower swing than the speed bag
+  h.off.addScaledVector(h.offV, dt);
+  h.body.position.copy(h.off);
+  h.body.rotation.set(h.off.z * 1.2, 0, -h.off.x * 1.2);
+  h.mat.emissiveIntensity += (0.3 - h.mat.emissiveIntensity) * Math.min(1, dt * 6);
+  h.patchMat.opacity = 0.55 + 0.4 * Math.abs(Math.sin(h.age * 6));
+  h.label.lookAt(camera.getWorldPosition(heavyTmp));
+  if (h.age >= HEAVY_ARRIVE) {
+    h.targetAge += dt;
+    if (h.targetAge > 1.8) nextHeavyTarget();          // missed it: move on so it never gets stale
+    h.body.getWorldPosition(bagCenter);
+    h.patch.getWorldPosition(heavyPatchW);
+    if (xr) {
+      for (const f of fists) {
+        const dx = f.world.x - bagCenter.x, dz = f.world.z - bagCenter.z;
+        const dy = Math.max(0, Math.abs(f.world.y - bagCenter.y) - 0.275);
+        const dist = Math.hypot(dx, dy, dz);
+        const reach = 0.2 + FIST_R + 0.04;
+        const hard = settings.gameType === 'touch' || f.speed > 1.5;
+        if (h.armed[f.hand] && dist < reach && hard) {
+          h.armed[f.hand] = false;
+          const travel = fistDisplacement(f, 0.15).length();
+          const power = settings.gameType === 'touch' ? 0.5 : punchPower(f.speed, travel);
+          const onTarget = f.hand === h.targetHand && f.world.distanceTo(heavyPatchW) < 0.18;
+          heavyHit(f.hand, f, power, onTarget);
+        } else if (dist > reach + 0.08) h.armed[f.hand] = true;
+      }
+    }
+    if (SMOKE) { h.smokeT += dt; while (h.smokeT > 0.45) { h.smokeT -= 0.45; heavyHit(h.targetHand, null, 0.7, true); } }
+  }
+  const left = Math.max(0, h.duration - Math.max(0, h.age - HEAVY_ARRIVE));
+  drawBurstLabel(h, h.hits, h.target ? h.target.label : '', left / h.duration, h.target ? `#${HAND_COLOR[h.targetHand].toString(16).padStart(6, '0')}` : '#ffffff');
+  if (h.age >= HEAVY_ARRIVE + h.duration) endHeavy(true);
+}
+function endHeavy(award) {
+  const h = heavy;
+  if (award) {
+    score.score += h.points;
+    if (h.hits >= 6) { score.hits++; score.combo++; score.best = Math.max(score.best, score.combo); }
+    say(`Heavy bag: ${h.hits} hits, ${h.onTarget} on target  +${h.points}`);
+    audio.sfx(h.onTarget >= 5 ? 'perfect' : 'hit', { hand: 'right', power: 1 });
+    h.body.getWorldPosition(bagCenter);
+    shatter(bagCenter, new THREE.Vector3(0, 0.3, -1), 0xc24a4a, 1);
+  }
+  scene.remove(h.group);
+  h.mat.dispose(); h.patchMat.dispose(); h.tex.dispose();
+  heavy = null;
+  heavyReadyAt = gameTime + 25;
+}
+
+// ------------------------------------------------------------------ sled run (a burst: tuck low, double-pole)
+
+/**
+ * 8 s of a downhill sled/ski run: squat into a tuck (head 15+ cm below standing) and push both
+ * "poles" down together (both fists moving down fast within 0.35 s). Strokes in a tuck count 1.5x,
+ * and every second tucked scores too. Ski poles run from your fists to the snow.
+ */
+let sled = null, sledReadyAt = 0;
+const SLED_ARRIVE = 1.0;
+function spawnSled(head, standing) {
+  const poleMat = new THREE.LineBasicMaterial({ color: 0xdfe8ff });
+  const poles = [0, 1].map(() => {
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), poleMat);
+    line.frustumCulled = false;
+    scene.add(line);
+    return line;
+  });
+  const snowMat = new THREE.MeshBasicMaterial({ color: 0xeaf2ff, transparent: true, opacity: 0, depthWrite: false });
+  const snow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 30), snowMat);
+  snow.rotation.x = -Math.PI / 2;
+  snow.position.set(centerX, 0.015, head.z - 14);
+  scene.add(snow);
+  const { lc, tex, label } = burstLabel();
+  label.position.set(centerX, standing - 0.55, head.z - 2.2); label.scale.setScalar(1.8); // below the scoreboard
+  scene.add(label);
+  sled = {
+    poles, poleMat, snow, snowMat, lc, tex, label, age: 0, duration: 8, strokes: 0, tuckTime: 0, points: 0,
+    down: { left: null, right: null }, armed: { left: true, right: true }, smokeT: 0, labelKey: '', tucked: false,
+  };
+  say('SLED RUN! Tuck low and push both poles down together', 1);
+  audio.sfx('burst');
+  pulseBoth(0.4, 60);
+}
+const sledTmp = new THREE.Vector3();
+function sledStroke(fist) {
+  const mult = sled.tucked ? 1.5 : 1;
+  const pts = Math.round(6 * mult) * (score.inZone() ? 2 : 1);
+  sled.strokes++;
+  sled.points += pts;
+  sled.down.left = sled.down.right = null;
+  attribution.record('sled', gameTime);
+  audio.sfx('dodge');
+  pulseBoth(0.5, 50);
+  if (fist) popText(sled.tucked ? `TUCK x1.5 +${pts}` : `+${pts}`, fist.world, '#dfe8ff');
+}
+function updateSled(dt, xr, head, standing) {
+  const s = sled;
+  s.age += dt;
+  s.snowMat.opacity = 0.35 * Math.min(1, s.age / SLED_ARRIVE);
+  s.snow.position.z = head.z - 14;
+  s.tucked = SMOKE ? true : sledTucked(head.y, standing);
+  for (const [i, f] of fists.entries()) { // poles: from each fist down and a little back to the snow
+    const pos = s.poles[i].geometry.attributes.position;
+    pos.setXYZ(0, f.world.x, f.world.y, f.world.z);
+    pos.setXYZ(1, f.world.x + (f.hand === 'left' ? -0.05 : 0.05), 0.02, f.world.z + 0.25);
+    pos.needsUpdate = true;
+  }
+  if (s.age >= SLED_ARRIVE) {
+    if (s.tucked) { s.tuckTime += dt; s.points += 3 * dt * (score.inZone() ? 2 : 1); }
+    if (xr) {
+      const need = settings.gameType === 'touch' ? 0.6 : 1.0;
+      for (const f of fists) {
+        if (f.world.y > head.y - 0.35) s.armed[f.hand] = true;                  // raised: ready for the next push
+        if (s.armed[f.hand] && f.vel.y < -need && f.world.y < head.y - 0.45) {  // pushed down past the waist
+          s.armed[f.hand] = false;
+          s.down[f.hand] = gameTime;
+        }
+      }
+      if (s.down.left != null && s.down.right != null && Math.abs(s.down.left - s.down.right) <= 0.35) sledStroke(fists[1]);
+      for (const hnd of ['left', 'right']) if (s.down[hnd] != null && gameTime - s.down[hnd] > 0.35) s.down[hnd] = null;
+    }
+    if (SMOKE) { s.smokeT += dt; while (s.smokeT > 0.6) { s.smokeT -= 0.6; sledStroke(null); } }
+  }
+  s.label.lookAt(camera.getWorldPosition(sledTmp));
+  const left = Math.max(0, s.duration - Math.max(0, s.age - SLED_ARRIVE));
+  drawBurstLabel(s, s.strokes, s.tucked ? 'TUCKED x1.5' : 'SQUAT INTO A TUCK', left / s.duration, s.tucked ? '#7cffb0' : '#dfe8ff');
+  if (s.age >= SLED_ARRIVE + s.duration) endSled(true);
+}
+function endSled(award) {
+  const s = sled;
+  if (award) {
+    const pts = Math.round(s.points);
+    score.score += pts;
+    if (s.strokes >= 6) { score.hits++; score.combo++; score.best = Math.max(score.best, score.combo); }
+    say(`Sled run: ${s.strokes} strokes, ${Math.round(s.tuckTime)} s tucked  +${pts}`);
+    audio.sfx(s.strokes >= 10 ? 'perfect' : 'hit', { hand: 'left', power: 0.9 });
+  }
+  for (const p of s.poles) { scene.remove(p); p.geometry.dispose(); }
+  scene.remove(s.snow, s.label);
+  s.poleMat.dispose(); s.snowMat.dispose(); s.tex.dispose();
+  sled = null;
+  sledReadyAt = gameTime + 30;
+}
+
+// ------------------------------------------------------------------ dodge barrage (core: bombs aimed at your head)
+
+const bombs = [];
+let barrageSeq = 0;
+const bombGeo = new THREE.IcosahedronGeometry(0.11, 0);
+const bombSpikeGeo = new THREE.ConeGeometry(0.025, 0.09, 5);
+const bombMat = new THREE.MeshStandardMaterial({ color: 0x2a0d12, emissive: 0xff2a3a, emissiveIntensity: 0.7, roughness: 0.5, flatShading: true });
+const bombHaloMat = new THREE.MeshBasicMaterial({ color: 0xff2a3a, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false });
+const bombHaloGeo = new THREE.SphereGeometry(0.19, 14, 10);
+function makeBomb() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(bombGeo, bombMat), new THREE.Mesh(bombHaloGeo, bombHaloMat));
+  for (const v of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+    const sp = new THREE.Mesh(bombSpikeGeo, bombMat);
+    const dir = new THREE.Vector3(...v);
+    sp.position.copy(dir).multiplyScalar(0.12);
+    sp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    g.add(sp);
+  }
+  return g;
+}
+/** Send a barrage (one lane slot): bombs aimed close to where your head is. False if the lane is busy. */
+function spawnBarrage(head, standing) {
+  const { n, gap } = barrageShape(difficulty.intensity);
+  const speed = difficulty.orbSpeed * 0.9;
+  const first = gameTime + SPAWN_DISTANCE / speed;
+  const plan = barragePlan(first, n, gap);
+  if (!laneFree(lane, plan)) return false;
+  lane.push(plan);
+  const id = ++barrageSeq;
+  const offsets = [-0.12, -0.06, 0, 0.06, 0.12];
+  for (let i = 0; i < n; i++) {
+    const g = makeBomb();
+    const x = Math.max(centerX - 0.4, Math.min(centerX + 0.4, head.x + offsets[Math.floor(Math.random() * offsets.length)]));
+    const y = standing - 0.04 + (Math.random() * 0.12 - 0.08);
+    g.position.set(x, y, head.z - SPAWN_DISTANCE - gap * i * speed);
+    scene.add(g);
+    bombs.push({ group: g, speed, passed: false, id });
+  }
+  say('BOMBS! Move your head - lean, duck, shift', 1);
+  return true;
+}
+function updateBombs(dt, head) {
+  for (let i = bombs.length - 1; i >= 0; i--) {
+    const b = bombs[i];
+    b.group.position.z += b.speed * dt;
+    b.group.rotation.x += dt * 4; b.group.rotation.y += dt * 3;
+    if (!b.passed && b.group.position.z >= head.z) {
+      b.passed = true;
+      const p = b.group.position;
+      if (bombHits(head.x - p.x, head.y - p.y)) {
+        score.wallHit();
+        say('Hit! Keep your head moving', 1);
+        audio.sfx('wall');
+        pulseBoth(1, 120);
+        hitFlash = 1;
+      } else {
+        score.dodge();
+        audio.sfx('dodge');
+        attribution.record('barrage', gameTime);
+      }
+    }
+    if (b.group.position.z > head.z + 1.5) { scene.remove(b.group); bombs.splice(i, 1); }
+  }
+}
+
 // ------------------------------------------------------------------ battle ropes (a burst: pump both arms, stay low)
 
 const ROPE_BEADS = 56;
@@ -1532,6 +1849,8 @@ function popText(text, pos, color = '#ffc04d', lift = 0.12) {
   g.fillStyle = color; g.fillText(text, 256, 64, 490);
   p.tex.needsUpdate = true;
   p.mesh.position.set(pos.x, pos.y + lift, pos.z);
+  // Up close (e.g. the heavy bag at arm's length) the text shrinks so it doesn't fill your view.
+  p.mesh.scale.setScalar(Math.max(0.35, Math.min(1, p.mesh.position.distanceTo(camera.getWorldPosition(camTmp)) / 2.5)));
   p.mesh.visible = true; p.age = 0;
 }
 function updatePop(rawDt) {
@@ -1994,7 +2313,8 @@ const options = new OptionsPanel({
       case 'restart': startWorkout(); options.toggle(false); break;
       case 'diag': settings.diag = !settings.diag; saveSettings(); break;
       case 'note-slam': case 'note-guard': case 'note-fast': case 'note-great': addNote(NOTE_LABEL[id]); options.toggle(false); break;
-      case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift': testMove(id.slice(5)); options.toggle(false); break;
+      case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift':
+      case 'test-heavy': case 'test-sled': case 'test-barrage': case 'test-bag': case 'test-ropes': testMove(id.slice(5)); options.toggle(false); break;
       case 'end': controller.beginCoolDown(); options.toggle(false); break;
       case 'close': options.toggle(false); break;
     }
@@ -2034,7 +2354,7 @@ function buildMovesUI() {
       <label><input type="radio" name="profile" value="build"> Build &amp; peak (start easy, finish hard)</label>
     </div>
     ${group('Orbs', ['jab', 'low', 'swing', 'power', 'pair', 'guard', 'trace', 'sweep'])}
-    ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes'])}
+    ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes', 'heavy', 'sled', 'barrage'])}
     ${group('Walls & footwork', ['duck', 'squatSide', 'lean', 'pillar', 'shift'])}
     <div class="muted" id="movesNote" style="font-size:12px"></div>`;
   box.addEventListener('change', (e) => {
@@ -2215,6 +2535,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 });
 
 function desktopPunch(hand) {
+  if (heavy && heavy.age >= HEAVY_ARRIVE) { punchTimer = 0.12; punchHand = hand; heavyHit(hand, null, 0.7, hand === heavy.targetHand); return; }
+  if (sled && sled.age >= SLED_ARRIVE) { punchTimer = 0.12; punchHand = hand; sledStroke(null); return; }
   if (desktopSlam(head)) { punchTimer = 0.15; punchHand = hand; return; }
   raycaster.setFromCamera(pointer, camera);
   if (bag && bag.age >= BAG_ARRIVE && raycaster.intersectObject(bag.body, false).length) {
@@ -2247,6 +2569,8 @@ function updateDesktop(dt, head) {
       const ok = opts.find(([lx, dy]) => !wallHitsHead(w.poly, lx, 1.6 - dy));
       if (ok) { wantLean = ok[0] / 0.35; wantDuck = ok[1] > 0; }
     }
+    const b = bombs.find((x) => !x.passed && x.group.position.z > head.z - 2.5);
+    if (b) wantLean = b.group.position.x - centerX > 0 ? -1 : 1; // lean away from the incoming bomb
   }
   duckY += ((wantDuck ? 0.5 : 0) - duckY) * Math.min(1, dt * 12);
   leanX += (wantLean * 0.35 - leanX) * Math.min(1, dt * 12);
@@ -2289,11 +2613,14 @@ function xrButtons() {
 
 /** Send `activity` if its arrival slot is free. Returns false to try again a moment later. */
 const SLAM_DIST = 7; // after battle ropes the slam comes from 7 m, so it arrives in ~2 s
+const BURSTS = ['bag', 'ropes', 'heavy', 'sled'];
+const burstActive = () => !!(bag || ropes || heavy || sled);
 function trySpawn(activity, extra = {}) {
   if (activity === 'combo') return queuedCombo ? spawnCombo(head, standing, queuedCombo) : true;
-  if (activity === 'bag' || activity === 'ropes') {
+  if (activity === 'barrage') return spawnBarrage(head, standing);
+  if (BURSTS.includes(activity)) {
     pendingBurst = activity;
-    say(activity === 'bag' ? 'Speed bag coming...' : 'Battle ropes coming...');
+    say({ bag: 'Speed bag coming...', ropes: 'Battle ropes coming...', heavy: 'Heavy bag coming...', sled: 'Sled run coming...' }[activity]);
     return true;
   }
   const wallType = wallTypeFor(activity, Math.random, settings.moves);
@@ -2358,7 +2685,7 @@ function updateDrift(head, xr, paused) {
 }
 /** Plan a shift when you're stuck below the zone, if no wall/rope/etc. would arrive during it. */
 function maybePlanShift() {
-  if (shiftPlan || bag || ropes || pendingBurst) return;
+  if (shiftPlan || burstActive() || pendingBurst) return;
   if (!forceShiftNext) {
     if (!settings.moves.shift) return;
     if (!PLAIN_ORBS.some((k) => enabledActivities(true)[k])) return; // shifts are plain punches only
@@ -2494,12 +2821,12 @@ function frame(time) {
     const shiftBusy = shiftPlan && gameTime < shiftPlan.end + SHIFT.margin;
     if (pendingBurst && !standNext && !shiftBusy) {
       // A burst waits until the lane is clear, then takes over for a few seconds.
-      if (!orbs.length && !walls.length && !traces.length && !guards.length && !slams.length) {
-        if (pendingBurst === 'bag') spawnBag(head, standing); else spawnRopes(head, standing);
+      if (!orbs.length && !walls.length && !traces.length && !guards.length && !slams.length && !bombs.length) {
+        ({ bag: spawnBag, ropes: spawnRopes, heavy: spawnHeavy, sled: spawnSled })[pendingBurst](head, standing);
         pendingBurst = null;
         spawnTimer = 0;
       }
-    } else if (!bag && !ropes && spawnTimer >= difficulty.spawnInterval) {
+    } else if (!burstActive() && spawnTimer >= difficulty.spawnInterval) {
       // Pick what's next (or keep waiting for the move already picked), then only send it once its
       // arrival slot is free, so nothing crowds a rope, a wall box, a pair or a guard shot.
       // During a side shift only plain orbs come (offset to the side); anything queued waits.
@@ -2545,6 +2872,9 @@ function frame(time) {
     updateDrift(head, xr, paused);
     if (bag) updateBag(gdt, xr);
     if (ropes) updateRopes(gdt, xr, head);
+    if (heavy) updateHeavy(gdt, xr);
+    if (sled) updateSled(gdt, xr, head, standing);
+    updateBombs(gdt, head);
   }
   updateShards(rawDt);
   updatePop(rawDt);
@@ -2696,7 +3026,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, tstat, shift: shiftPlan, drifting, breath: breathCue, spotlight, sensorFlat, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, heavy: !!heavy, sled: !!sled, bombs: bombs.length, tstat, shift: shiftPlan, drifting, breath: breathCue, spotlight, sensorFlat, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };
@@ -2736,6 +3066,7 @@ window.pz = {
     const items = [
       ...orbs.filter((o) => !o.dying).map((o) => ({ what: o.counter ? 'counter' : o.combo ? `combo${o.combo}` : o.activity, a: (head.z - 0.5 - o.group.position.z) / o.speed, b: (head.z - 0.5 - o.group.position.z) / o.speed })),
       ...walls.map((w) => ({ what: 'wall', a: (head.z - w.mesh.position.z - w.depth) / w.speed, b: (head.z - w.mesh.position.z) / w.speed })),
+      ...bombs.filter((b) => !b.passed).map((b) => ({ what: `bomb${b.id}`, a: (head.z - b.group.position.z) / b.speed, b: (head.z - b.group.position.z) / b.speed })),
       ...slams.map((s) => ({ what: 'slam', a: (head.z - 0.8 - s.group.position.z) / s.speed, b: (head.z - 0.2 - s.group.position.z) / s.speed })),
       ...traces.map((t) => ({ what: 'rope', a: (t.planeZ - t.group.position.z) / t.speed, b: (t.planeZ - t.group.position.z + t.length) / t.speed })),
       ...guards.map((g) => ({ what: 'guard', a: (g.hitZ - g.group.position.z) / g.speed, b: (g.hitZ - g.group.position.z) / g.speed })),
@@ -2746,7 +3077,7 @@ window.pz = {
       const p = items[i], q = items[j];
       if (plain.has(p.what) && plain.has(q.what)) continue;
       if (p.what === 'pair' && q.what === 'pair') continue;
-      if (p.what === q.what && p.what.startsWith('combo')) continue; // punches of the same combo
+      if (p.what === q.what && (p.what.startsWith('combo') || p.what.startsWith('bomb'))) continue; // the same combo / barrage
       if ((p.what === 'counter' && q.what === 'guard') || (q.what === 'counter' && p.what === 'guard')) continue;
       if (p.a < q.b + 0.25 && q.a < p.b + 0.25) out.push(`${p.what}~${q.what}`);
     }

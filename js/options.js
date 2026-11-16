@@ -107,7 +107,8 @@ export class OptionsPanel {
     button('move-swing', 'Hook/upper', 590, 215, s.moves.swing && s.gameType === 'punch'); button('move-trace', 'Rope', 815, 160, s.moves.trace); y += R;
     label('More'); button('move-power', 'Power', 175, 165, s.moves.power && s.gameType === 'punch'); button('move-pair', 'Squat+reach', 350, 230, s.moves.pair);
     button('move-guard', 'Guard', 590, 215, s.moves.guard); button('move-sweep', '2 ropes', 815, 160, s.moves.sweep); y += R;
-    label('Bursts'); button('move-bag', 'Speed bag', 175, 390, s.moves.bag); button('move-ropes', 'Battle ropes', 580, 395, s.moves.ropes); y += R;
+    label('Bursts'); button('move-bag', 'Speed', 175, 150, s.moves.bag); button('move-ropes', 'Ropes', 335, 150, s.moves.ropes);
+    button('move-heavy', 'Heavy', 495, 150, s.moves.heavy); button('move-sled', 'Sled', 655, 150, s.moves.sled); button('move-barrage', 'Bombs', 815, 160, s.moves.barrage); y += R;
     label('Walls'); button('move-duck', 'Duck', 175, 140, s.moves.duck); button('move-squatSide', 'Side squat', 325, 200, s.moves.squatSide);
     button('move-lean', 'Lean', 535, 130, s.moves.lean); button('move-pillar', 'Pillar', 675, 140, s.moves.pillar);
     button('move-shift', 'Shift', 825, 150, s.moves.shift); y += R;
@@ -119,6 +120,8 @@ export class OptionsPanel {
     label('Test'); button('diag', s.diag ? 'Diag on' : 'Diag (test tools)', 175, s.diag ? 150 : 300, s.diag);
     if (s.diag) {
       button('test-guard', 'Guard', 335, 150); button('test-sweep', '2 ropes', 495, 150); button('test-shift', 'Shift', 655, 150); button('test-combo', 'Combo', 815, 160); y += R;
+      label('Test 2'); button('test-heavy', 'Heavy', 175, 150); button('test-sled', 'Sled', 335, 150); button('test-barrage', 'Bombs', 495, 150);
+      button('test-bag', 'Speed', 655, 150); button('test-ropes', 'Ropes', 815, 160); y += R;
       label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Guard picky', 385, 200, false);
       button('note-fast', 'Too fast', 595, 180, false); button('note-great', 'Felt great', 785, 190, false);
     }
