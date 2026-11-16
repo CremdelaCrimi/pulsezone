@@ -319,6 +319,17 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
       'during a shift plain orbs still come, walls and ropes wait');
   }
 
+  // Challenge boost doesn't push while your effort already points into the zone (avoids overshoot).
+  {
+    const b = new ChallengeBoost();
+    for (let i = 0; i < 70 * 10; i++) b.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0 });
+    const built = b.value;
+    for (let i = 0; i < 20 * 10; i++) b.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0, climbing: true });
+    const c = new ChallengeBoost();
+    for (let i = 0; i < 70 * 10; i++) c.update(0.1, { status: 'Below', intensity: 0.95, bpmTrend: 0, climbing: true });
+    check(built > 0.9 && b.value < built - 0.3 && c.value === 0, `boost drains while climbing and never builds (${built.toFixed(2)} -> ${b.value.toFixed(2)}, climbing only: ${c.value})`);
+  }
+
   // Lane timeline: nothing crowds a rope, wall box, pair or guard shot.
   {
     const sp = 3;

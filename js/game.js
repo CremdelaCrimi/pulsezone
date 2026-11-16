@@ -11,12 +11,12 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v17';
+} from './core.js?v18';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v17';
+import { AudioEngine } from './audio.js?v18';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v17';
-import { loadTuning, createDevPanel } from './dev.js?v17';
+import { OptionsPanel } from './options.js?v18';
+import { loadTuning, createDevPanel } from './dev.js?v18';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -2022,6 +2022,31 @@ const shiftPad = new THREE.Group();
   scene.add(shiftPad);
 }
 const PLAIN_ORBS = ['jab', 'low', 'swing'];
+
+// Drift guard: if your head wanders more than 55 cm from where you should be (the lane centre,
+// or the side-shift spot), an amber arrow on the floor points you back. Keeps you clear of wall
+// boxes and of real-world furniture after a lot of side steps.
+const DRIFT_OUT = 0.55, DRIFT_BACK = 0.3;
+const driftMat = new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
+const driftArrow = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.34, 3), driftMat);
+driftArrow.rotation.set(-Math.PI / 2, 0, -Math.PI / 2); // flat on the floor, pointing +x
+driftArrow.visible = false;
+scene.add(driftArrow);
+let drifting = false;
+function updateDrift(head, xr, paused) {
+  const active = xr && !paused && (controller.phase === Phase.Training || controller.phase === Phase.WarmUp);
+  const home = centerX + shiftOffsetAt(shiftPlan, gameTime);
+  const dx = head.x - home;
+  if (!active) drifting = false;
+  else if (!drifting && Math.abs(dx) > DRIFT_OUT) { drifting = true; say(dx > 0 ? '<<  Step back to the centre' : 'Step back to the centre  >>'); }
+  else if (drifting && Math.abs(dx) < DRIFT_BACK) drifting = false;
+  driftArrow.visible = drifting;
+  if (drifting) {
+    driftArrow.position.set(head.x - Math.sign(dx) * 0.25, 0.03, head.z - 2.2);
+    driftArrow.scale.set(1, dx > 0 ? -1 : 1, 1); // flip so it points back toward home
+    driftMat.opacity = 0.5 + 0.4 * Math.abs(Math.sin(gameTime * 6));
+  }
+}
 /** Plan a shift when you're stuck below the zone, if no wall/rope/etc. would arrive during it. */
 function maybePlanShift() {
   if (!settings.moves.shift || shiftPlan || bag || ropes || pendingBurst) return;
@@ -2107,7 +2132,7 @@ function frame(time) {
   const src = source();
   if (!paused && controller.phase !== Phase.Finished) {
     gameTime += gdt;
-    if (controller.phase !== Phase.CoolDown) boost.update(gdt, { status: controller.status, intensity: controller.intensity, bpmTrend: controller.bpmTrend });
+    if (controller.phase !== Phase.CoolDown) boost.update(gdt, { status: controller.status, intensity: controller.intensity, bpmTrend: controller.bpmTrend, climbing: trendShown === 'climbing' });
     else boost.value = Math.max(0, boost.value - gdt / 10);
     attribution.update(gameTime, src.hasReading && controller.status !== Zone.NoSignal ? src.currentBpm : null);
     updateStreak(gdt);
@@ -2173,6 +2198,7 @@ function frame(time) {
     updateSlams(gdt, xr, head);
     updateShift(head, standing);
     updateTeach(head);
+    updateDrift(head, xr, paused);
     if (bag) updateBag(gdt, xr);
     if (ropes) updateRopes(gdt, xr, head);
   }
@@ -2325,7 +2351,7 @@ window.pz = {
       bag: bag ? { hits: bag.hits, age: +bag.age.toFixed(1) } : null, ropes: ropes ? { on: +ropes.onTime.toFixed(1), pts: Math.round(ropes.points) } : null,
       pendingBurst, guards: guards.length, blocks: score.blocks, guardsMissed: score.guardsMissed, counters: orbs.filter((o) => o.counter).length,
       lane: lane.map((r) => `${r.kind} ${(r.start - gameTime).toFixed(1)}..${(r.end - gameTime).toFixed(1)}`), queued: queuedActivity,
-      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
+      reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, shift: shiftPlan, drifting, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
     };
@@ -2380,6 +2406,8 @@ window.pz = {
     }
     return out;
   },
+  /** Test hook: run the drift guard as if your head were at x (VR only otherwise). */
+  drift(x) { updateDrift({ x, z: head.z }, true, false); return drifting; },
   act: (id) => options.hooks.act(id),
   logRows: () => sessionLog,
 };

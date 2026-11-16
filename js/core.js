@@ -749,11 +749,14 @@ export class ChallengeBoost {
     this.stuckSeconds = 0;
   }
 
-  update(dt, { status, intensity, bpmTrend }) {
+  update(dt, { status, intensity, bpmTrend, climbing = false }) {
     // "Stuck": below the zone and HR rising slower than ~2 BPM per 10 s, or game already maxed out.
-    const stuck = status === 'Below' && (bpmTrend < 0.2 || intensity > 0.9);
+    // Not stuck if your effort already points into the zone ('climbing'): your heart just lags,
+    // and pushing harder now would overshoot. Then the boost drains instead (~60 s from full).
+    const stuck = !climbing && status === 'Below' && (bpmTrend < 0.2 || intensity > 0.9);
     this.stuckSeconds = stuck ? this.stuckSeconds + dt : 0;
-    if (stuck && this.stuckSeconds > 15) this.value += dt / this.riseSeconds;
+    if (climbing && status === 'Below') this.value -= dt / 60;
+    else if (stuck && this.stuckSeconds > 15) this.value += dt / this.riseSeconds;
     else if (status === 'InZone') this.value -= dt / this.inZoneFallSeconds;
     else if (status === 'Above' || status === 'SafetyBrake' || status === 'NoSignal') this.value -= dt / this.aboveFallSeconds;
     this.value = clamp01(this.value);

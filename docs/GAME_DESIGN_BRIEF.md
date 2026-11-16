@@ -39,7 +39,7 @@ A PID controller turns "how far am I from the target heart rate" into a single *
 Spawn interval, orb speed, how widely orbs are spread, how likely walls are, minimum punch speed and travel, how often orbs need a directional swing or a cross-body punch, which moves are unlocked.
 
 ### 4.3 Challenge boost (when heart rate stalls)
-If the player sits below the zone for about 15 seconds without heart rate rising (or intensity is already maxed), a **challenge boost** builds over about 45 seconds: faster spawns, faster orbs, more of the moves that work for this player, and **bursts** (speed bag, battle ropes) become the main tool. It fades once the player reaches the zone.
+If the player sits below the zone for about 15 seconds without heart rate rising (or intensity is already maxed), a **challenge boost** builds over about 45 seconds: faster spawns, faster orbs, more of the moves that work for this player, and **bursts** (speed bag, battle ropes) become the main tool. It fades once the player reaches the zone. It never builds while the effort estimate says the player is already climbing into the zone (it drains instead), to avoid overshooting above the zone.
 
 ### 4.4 Learning what raises THIS player's heart rate
 - Model: heart rate ≈ baseline + Σ (gain × recent reps per minute of each activity), rep rates smoothed over ~35 s for heart lag, updated online (NLMS).

@@ -33,3 +33,9 @@ Every change below was tested before pushing: `node test/core.test.mjs`, a local
 - **Built:** Gemini's onboarding ideas (1) and part of (3). Ghost-fist hints: the first two times you ever meet a guard shot, rope, two-hand rope or slam bar, see-through fists show the move: up by your chin (a bit lower and further than real guard fists so they don't hide the shot), riding each ring, or smashing down onto the bar between its arrows. Each comes with a short call-out. Counts are saved in the browser under `pulsezone.seen`. A wrong-hand hit now double-buzzes the controller you should have used.
 - Skipped for now: Gemini's scripted warm-up sampler (the warm-up is only 30 s and the moves unlock by intensity; the hints above cover the confusing moves).
 - Checked: 101 checks pass; forced guard, two-hand rope and slam with fresh hint counts, all showed ghosts; snapshots checked; no console errors.
+
+## Cycle 6 (9:41 AM)
+- Asked Gemini for round 3. Its ranked list: (1) stop the challenge boost from building while the HUD says CLIMBING (avoid overshoot), (2) workout "waves" (target rolls ±5–8 BPM every few minutes), (3) Quest performance: pool shards and particles, cap effects, (4) orb groups as boxing combos snapped to the music beat, (5) a drift guard that points you back to centre.
+- **Built (1):** the challenge boost's "stuck" timer resets while you're climbing, and the boost drains (full to empty in ~60 s) instead of building. Didn't touch the PID integral; the boost is where the overshoot risk came from.
+- **Built (5):** drift guard (VR only): more than 55 cm from where you should be (lane centre or the side-shift spot) shows an amber arrow on the floor 2 m ahead and a call-out pointing back; clears under 30 cm.
+- Checked: 102 checks pass; drift on/off/hysteresis via a test hook (`pz.drift(x)`), correctly silent during a side shift; 2.5-minute auto-play with 0 overlaps; no console errors.
