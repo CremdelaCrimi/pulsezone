@@ -254,3 +254,12 @@ Checks: core tests pass (new checks for guard zones, swing spacing, the heart-ra
 - **Walls test button** (Test 2 row): sends a duck, lean/pillar or side-squat wall, whichever are switched on. Board buttons shrink their text to fit; "Bombs" → "Missiles", "Squat+reach" → "Squat+punch".
 
 Checks: core tests pass (new rope-tier checks); test buttons for sled, ropes, missiles and walls each arrived; a full auto-play run reached the end board with 0 overlaps and no console errors.
+
+## Night — desktop VR emulator tests
+
+- `?emulate` loads Meta's IWER (a pretend Quest 3 with controllers) in place of the browser's WebXR, so the game runs its real VR code on a computer. It is never loaded without the flag. `&emutimer` keeps frames running in a hidden window.
+- `test/xr-bot.js` is a VR auto-player that stays on the centre line. `runChecks()` sends each test move and reports. New read-only `pz.peek()` hook; `pz.xr` and `pz.enterVR()`. How-to and results: docs/VR_EMULATOR_TESTS.md.
+- Result: 41 hits, 0 misses, 0 weak or wrong-hand, 13 of 15 swings perfect, 0 wall / missile / guard misses, sled 6 of 6 reps, rope meter reached every level, no errors.
+- Open question for the headset: the pillar needs about a 31 cm lean, and side-squat walls need about a 41 cm drop.
+- Also set up Meta's Quest connection tool (`@meta-quest/metavr` 1.10.0) as a local MCP server for this project; it needs Developer Mode and USB before it can see the headset.
+

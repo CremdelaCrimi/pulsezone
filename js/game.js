@@ -12,17 +12,33 @@ import {
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v50';
+} from './core.js?v51';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v50';
+import { AudioEngine } from './audio.js?v51';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v50';
-import { loadTuning, createDevPanel } from './dev.js?v50';
+import { OptionsPanel } from './options.js?v51';
+import { loadTuning, createDevPanel } from './dev.js?v51';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
 const BASE_SPEED = Number(params.get('speed')) || 1;
 const PHONE_TIMEOUT = 6;                       // seconds without phone readings before estimating (controller gives up at 8)
+
+// Desktop VR emulator, for testing on a computer: ?emulate loads Meta's Immersive Web Emulation
+// Runtime (IWER), a pretend Quest 3 with two controllers, in place of the browser's own WebXR. Tests
+// then move the headset and controllers (pz.xr.position, pz.xr.controllers.left.position, ...) and the
+// game runs its real VR code: fists, guard zones, sled reps, rope pumping. Never loads without ?emulate.
+let xrDevice = null;
+if (params.has('emulate')) {
+  // A covered or hidden test window stops animation frames; &emutimer runs frames off a ~60 Hz timer instead.
+  if (params.has('emutimer')) {
+    window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 16);
+    window.cancelAnimationFrame = (id) => clearTimeout(id);
+  }
+  const { XRDevice, metaQuest3 } = await import('https://cdn.jsdelivr.net/npm/iwer@2.8.0/build/iwer.module.min.js');
+  xrDevice = new XRDevice(metaQuest3);
+  xrDevice.installRuntime({ forceInstall: true });
+}
 
 // ------------------------------------------------------------------ settings & tuning
 
@@ -164,7 +180,7 @@ document.addEventListener('keydown', unlockAudio, true);
 // ------------------------------------------------------------------ fists (colour = hand)
 
 const HAND_COLOR = { left: 0x3fa9ff, right: 0xff7a3d };
-const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v50
+const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v51
 { const el = document.getElementById('version'); if (el) el.textContent = VERSION; }
 const HAND_CSS = { left: '#7cc4ff', right: '#ffa070' };
 const FIST_R = 0.055;
@@ -3389,6 +3405,25 @@ window.pz = {
     };
   },
   toggleSource, startWorkout, nudgeTarget, options, audio,
+  xr: xrDevice, // the emulated headset (only with ?emulate)
+  /** Test helper (read-only): where everything is right now, for the scripted VR checks (test/xr-bot.js). */
+  peek() {
+    const v = (p) => [+p.x.toFixed(3), +p.y.toFixed(3), +p.z.toFixed(3)];
+    return {
+      t: gameTime, head: v(head), standing, centerX, paused: options.open, phase: controller.phase, presenting: renderer.xr.isPresenting,
+      fists: fists.map((f) => ({ hand: f.hand, at: v(f.world), speed: +f.speed.toFixed(2) })),
+      orbs: orbs.filter((o) => !o.dying).map((o) => ({ at: v(o.group.position), r: o.r, hand: o.hand, swing: o.swing || null, activity: o.activity, power: !!o.power, speed: o.speed })),
+      walls: walls.map((w) => ({ type: w.type, z: w.mesh.position.z, depth: w.depth, speed: w.speed, hit: w.hit, poly: w.poly })),
+      guards: guards.map((g) => ({ zone: g.zone, z: g.group.position.z, speed: g.speed, hitZ: g.hitZ })),
+      bombs: bombs.filter((b) => !b.passed).map((b) => ({ at: v(b.group.position), speed: b.speed, locked: !!b.locked })),
+      slams: slams.map((s) => ({ at: v(s.group.position), speed: s.speed })),
+      sled: sled && { age: sled.age, ready: sled.ready, tucked: sled.tucked, strokes: sled.strokes },
+      ropes: ropes && { age: ropes.age, tier: ropes.tier, pumps: ropes.sides.map((s) => +s.pump.toFixed(2)), hard: +ropes.hardTime.toFixed(1), on: +ropes.onTime.toFixed(1) },
+      heavy: !!heavy, bag: !!bag, traces: traces.length,
+    };
+  },
+  /** Emulator only: start the VR session, as if you pressed ENTER VR. */
+  enterVR() { vrButton.click(); },
   async snapshot(name = 'snap') {
     frame(lastTime + 33);
     const data = renderer.domElement.toDataURL('image/png');
