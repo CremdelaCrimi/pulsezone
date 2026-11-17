@@ -6,6 +6,7 @@ import {
   ACTIVITY_KEYS, chooseActivity, wallTypeFor, ChallengeBoost, boostDifficulty, HeartRateAttribution, musicTempo, mulberry32,
   wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sensorLooksFlat, breakdownDue, barrageShape, barragePlan, bombHits, heavyPoints, sledTucked, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
   GUARD_ZONES, GUARD_SEQ_GAP, guardZonesFor, guardCovers, kcalPerMinute,
+  ropeTier, ROPE_TIER_MULT, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -498,6 +499,13 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(f > 7 && f < 11, `female 65 kg at 140 BPM burns ~9 kcal/min (got ${f.toFixed(1)})`);
   check(kcalPerMinute(150, {}) > kcalPerMinute(110, {}), 'higher heart rate, more calories');
   check(kcalPerMinute(50, { weightKg: 75 }) >= 75 / 60 - 1e-9 && kcalPerMinute(0, {}) === 0, 'never below resting; zero without a reading');
+}
+
+{
+  console.log('Battle-rope intensity');
+  check(ropeTier(0.3) === 0 && ropeTier(ROPE_PUMP_SPEED) === 1 && ropeTier(ROPE_HARD) === 2 && ropeTier(ROPE_MAX + 0.5) === 3, 'tiers: none / on / hard / max');
+  check(ROPE_PUMP_SPEED < ROPE_HARD && ROPE_HARD < ROPE_MAX, 'thresholds rise');
+  check(ROPE_TIER_MULT[0] === 0 && ROPE_TIER_MULT[2] === 1.5 && ROPE_TIER_MULT[3] === 2, 'harder pumping is worth more points');
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

@@ -10,14 +10,14 @@ import {
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
-  minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED,
+  minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v49';
+} from './core.js?v50';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v49';
+import { AudioEngine } from './audio.js?v50';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v49';
-import { loadTuning, createDevPanel } from './dev.js?v49';
+import { OptionsPanel } from './options.js?v50';
+import { loadTuning, createDevPanel } from './dev.js?v50';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -51,7 +51,7 @@ try {
 } catch { /* ignore */ }
 const MOVE_LABELS = {
   jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then punch up', guard: 'Guard & counter', hammer: 'Hammer fists',
-  trace: 'Rope tracing', sweep: 'Two-hand rope', bag: 'Speed bag', ropes: 'Battle ropes', heavy: 'Heavy bag', sled: 'Sled run', barrage: 'Dodge barrage (bombs)',
+  trace: 'Rope tracing', sweep: 'Two-hand rope', bag: 'Speed bag', ropes: 'Battle ropes', heavy: 'Heavy bag', sled: 'Sled run', barrage: 'Dodge barrage (missiles)',
   duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar', shift: 'Side shifts (step left/right)',
 };
 /** Which activities the moveset allows right now (forSpawn: also respect burst cooldowns). */
@@ -164,7 +164,7 @@ document.addEventListener('keydown', unlockAudio, true);
 // ------------------------------------------------------------------ fists (colour = hand)
 
 const HAND_COLOR = { left: 0x3fa9ff, right: 0xff7a3d };
-const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v49
+const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v50
 { const el = document.getElementById('version'); if (el) el.textContent = VERSION; }
 const HAND_CSS = { left: '#7cc4ff', right: '#ffa070' };
 const FIST_R = 0.055;
@@ -393,6 +393,11 @@ function addNote(label) {
 function testMove(key) {
   if (controller.phase === Phase.Finished) startWorkout();
   if (key === 'shift') { forceShiftNext = true; say('Test: side shift coming', 2); return; }
+  if (key === 'wall') { // one of the wall shapes you have switched on
+    const on = [settings.moves.duck && 'duck', (settings.moves.lean || settings.moves.pillar) && 'lateral', settings.moves.squatSide && 'squatSide'].filter(Boolean);
+    if (!on.length) { say('No walls switched on', 2); return; }
+    key = on[Math.floor(Math.random() * on.length)];
+  }
   const after = burstActive() ? ' after this burst' : shiftPlan ? ' after the side shift' : '';
   // A test press jumps the queue: whatever the game had lined up itself (a burst, a queued move, a
   // side shift that hasn't started) is dropped. Test call-outs are top priority so you always see them.
@@ -407,7 +412,8 @@ function testMove(key) {
     queuedCombo = list[Math.floor(Math.random() * list.length)];
   }
   queuedActivity = key; queuedFor = 0; testQueued = true;
-  say(`Test: ${key === 'sweep' ? 'two-hand rope + slam' : key} coming${after}`, 1);
+  const names = { sweep: 'two-hand rope + slam', duck: 'duck wall', lateral: 'lean wall', squatSide: 'side-squat wall' };
+  say(`Test: ${names[key] || key} coming${after}`, 1);
 }
 function setSound(on) { settings.sound = on; audio.setEnabled(on); $('sound').checked = on; saveSettings(); }
 
@@ -1354,11 +1360,85 @@ function endHeavy(award) {
 let sled = null, sledReadyAt = 0;
 const SLED_ARRIVE = 1.0;
 const sledGripGeo = new THREE.CylinderGeometry(0.022, 0.026, 0.13, 10);
-const sledShaftGeo = new THREE.CylinderGeometry(0.008, 0.008, 1, 6);
+const sledShaftGeo = new THREE.CylinderGeometry(0.011, 0.011, 1, 8);
 const sledBasketGeo = new THREE.TorusGeometry(0.05, 0.008, 6, 16);
 const sledGripMat = new THREE.MeshStandardMaterial({ color: 0x23262f, roughness: 0.6 });
-const sledShaftMat = new THREE.MeshStandardMaterial({ color: 0xdfe8ff, roughness: 0.3, metalness: 0.6 });
+const sledShaftMat = new THREE.MeshStandardMaterial({ color: 0xdfe8ff, emissive: 0x8fa3c8, emissiveIntensity: 0.5, roughness: 0.3, metalness: 0.6 });
 const sledUp = new THREE.Vector3(0, 1, 0), sledDir = new THREE.Vector3(), sledEnd = new THREE.Vector3();
+// Your skis, on the snow under your feet, so you can see where you're standing.
+const skiGeo = new THREE.BoxGeometry(0.085, 0.02, 1.5);
+const skiTipGeo = new THREE.BoxGeometry(0.085, 0.02, 0.16);
+const skiBindGeo = new THREE.BoxGeometry(0.1, 0.05, 0.16);
+const skiMat = new THREE.MeshStandardMaterial({ color: 0xff5a36, emissive: 0xff5a36, emissiveIntensity: 0.45, roughness: 0.4 });
+const skiBindMat = new THREE.MeshStandardMaterial({ color: 0x23262f, roughness: 0.6 });
+function makeSkis(mat = skiMat, bindMat = skiBindMat) {
+  const g = new THREE.Group();
+  for (const sx of [-1, 1]) {
+    const ski = new THREE.Mesh(skiGeo, mat); ski.position.set(sx * 0.11, 0.02, -0.25);
+    const tip = new THREE.Mesh(skiTipGeo, mat); tip.position.set(sx * 0.11, 0.058, -1.07); tip.rotation.x = 0.5; // turned-up tip
+    const bind = new THREE.Mesh(skiBindGeo, bindMat); bind.position.set(sx * 0.11, 0.045, 0);
+    g.add(ski, tip, bind);
+  }
+  return g;
+}
+// A ghost coach on the snow ahead, looping the rep so you can copy it: stand tall with arms up,
+// then squat and drive both poles down and back past your hips, then rise again.
+const coachMat = new THREE.MeshBasicMaterial({ color: 0x9fe6ff, transparent: true, opacity: 0.6, depthWrite: false });
+const coachLimbGeo = new THREE.CylinderGeometry(1, 1, 1, 8);
+const coachHeadGeo = new THREE.SphereGeometry(0.11, 14, 10);
+const COACH_CYCLE = 2.0; // seconds per rep
+const COACH_POSE = { // metres; y up, z = the way the coach faces, x for its right side (left is mirrored)
+  tall: { head: [0, 1.62, 0.02], neck: [0, 1.45, 0], hip: [0, 0.95, 0], knee: [0.1, 0.5, 0.03], ankle: [0.1, 0.06, 0], shoulder: [0.19, 1.42, 0], elbow: [0.22, 1.36, 0.24], hand: [0.22, 1.5, 0.4] },
+  squat: { head: [0, 1.3, 0.26], neck: [0, 1.15, 0.16], hip: [0, 0.7, -0.2], knee: [0.1, 0.45, 0.2], ankle: [0.1, 0.06, 0], shoulder: [0.19, 1.12, 0.14], elbow: [0.22, 0.86, -0.02], hand: [0.22, 0.66, -0.32] },
+};
+const COACH_BONES = [['neck', 'hip', 0.06, false], ['hip', 'knee', 0.05, true], ['knee', 'ankle', 0.045, true],
+  ['shoulder', 'elbow', 0.04, true], ['elbow', 'hand', 0.035, true], ['hand', 'pole', 0.012, true], ['shoulder', 'neck', 0.04, true]];
+const coachA = new THREE.Vector3(), coachB = new THREE.Vector3();
+function coachJoint(name, side, s, out) {
+  if (name === 'pole') return out.set(0.25 * side, 0.02, 0.12); // pole tips stay planted by your feet
+  const a = COACH_POSE.tall[name], b = COACH_POSE.squat[name];
+  return out.set((a[0] + (b[0] - a[0]) * s) * side, a[1] + (b[1] - a[1]) * s, a[2] + (b[2] - a[2]) * s);
+}
+function makeCoach() {
+  const group = new THREE.Group();
+  const bones = [];
+  for (const [a, b, r, both] of COACH_BONES) for (const side of both ? [-1, 1] : [1]) {
+    const m = new THREE.Mesh(coachLimbGeo, coachMat);
+    group.add(m);
+    bones.push({ m, a, b, r, side });
+  }
+  const headMesh = new THREE.Mesh(coachHeadGeo, coachMat);
+  group.add(headMesh, makeSkis(coachMat, coachMat));
+  const { lc, tex, label } = burstLabel();
+  label.position.set(0, 2.05, 0); label.scale.setScalar(2.2);
+  group.add(label);
+  return { group, bones, headMesh, lc, tex, label, text: '' };
+}
+const coachEase = (x) => x * x * (3 - 2 * x);
+function poseCoach(c, t) {
+  const p = (t % COACH_CYCLE) / COACH_CYCLE;
+  const s = p < 0.3 ? 0 : p < 0.55 ? coachEase((p - 0.3) / 0.25) : p < 0.7 ? 1 : 1 - coachEase((p - 0.7) / 0.3); // 0 tall .. 1 squat
+  for (const bn of c.bones) {
+    coachJoint(bn.a, bn.side, s, coachA); coachJoint(bn.b, bn.side, s, coachB);
+    const len = Math.max(1e-4, coachA.distanceTo(coachB));
+    bn.m.position.addVectors(coachA, coachB).multiplyScalar(0.5);
+    coachB.sub(coachA).divideScalar(len);
+    bn.m.quaternion.setFromUnitVectors(sledUp, coachB);
+    bn.m.scale.set(bn.r, len, bn.r);
+  }
+  coachJoint('head', 1, s, c.headMesh.position);
+  const text = p < 0.3 ? 'STAND TALL' : p < 0.7 ? 'SQUAT + PUSH BACK' : 'RISE, ARMS UP';
+  if (text !== c.text) {
+    c.text = text;
+    const g = c.lc.getContext('2d');
+    g.clearRect(0, 0, 256, 128);
+    g.fillStyle = 'rgba(8,10,18,0.6)'; g.beginPath(); g.roundRect(4, 34, 248, 60, 18); g.fill();
+    g.fillStyle = '#9fe6ff'; g.font = '700 30px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(text, 128, 64, 236);
+    c.tex.needsUpdate = true;
+  }
+  c.label.lookAt(camera.getWorldPosition(sledTmp));
+}
 function spawnSled(head, standing) {
   const poleMat = new THREE.LineBasicMaterial({ color: 0xdfe8ff }); // kept for disposal symmetry
   const poles = [0, 1].map(() => { // grip in your hand, a shaft down to a basket in the snow
@@ -1376,14 +1456,19 @@ function spawnSled(head, standing) {
   snow.rotation.x = -Math.PI / 2;
   snow.position.set(centerX, 0.015, head.z - 14);
   scene.add(snow);
+  const skis = makeSkis();
+  skis.position.set(head.x, 0, head.z);
+  const coach = makeCoach(); // off to your right, turned so you see its arms drive back
+  coach.group.position.set(centerX + 0.95, 0, head.z - 3.0); coach.group.rotation.y = -0.9; coach.group.scale.setScalar(0.85);
+  scene.add(skis, coach.group);
   const { lc, tex, label } = burstLabel();
   label.position.set(centerX, standing - 0.55, head.z - 2.2); label.scale.setScalar(1.8); // below the scoreboard
   scene.add(label);
   sled = {
-    poles, poleMat, snow, snowMat, lc, tex, label, age: 0, duration: 8, strokes: 0, tuckTime: 0, points: 0,
+    poles, poleMat, snow, snowMat, skis, coach, lc, tex, label, age: 0, duration: 8, strokes: 0, tuckTime: 0, points: 0,
     down: { left: null, right: null }, armed: { left: true, right: true }, smokeT: 0, labelKey: '', tucked: false, ready: false,
   };
-  say('SLED RUN! Stand tall, arms up... then squat and push both poles down', 1);
+  say('SLED RUN! Copy the coach: stand tall, arms up... then squat and push both poles down and back', 1);
   audio.sfx('burst');
   pulseBoth(0.4, 60);
 }
@@ -1404,6 +1489,8 @@ function updateSled(dt, xr, head, standing) {
   s.age += dt;
   s.snowMat.opacity = 0.35 * Math.min(1, s.age / SLED_ARRIVE);
   s.snow.position.z = head.z - 14;
+  s.skis.position.set(head.x, 0, head.z); // under your feet
+  poseCoach(s.coach, s.age);
   s.tucked = SMOKE ? true : sledTucked(head.y, standing);
   for (const [i, f] of fists.entries()) { // grip at your fist, shaft down and a little back to the basket in the snow
     const p = s.poles[i];
@@ -1440,7 +1527,7 @@ function updateSled(dt, xr, head, standing) {
   }
   s.label.lookAt(camera.getWorldPosition(sledTmp));
   const left = Math.max(0, s.duration - Math.max(0, s.age - SLED_ARRIVE));
-  drawBurstLabel(s, s.strokes, s.ready ? 'SQUAT + PUSH!' : 'STAND TALL, ARMS UP', left / s.duration, s.ready ? '#7cffb0' : '#dfe8ff');
+  drawBurstLabel(s, s.strokes, s.ready ? 'SQUAT + PUSH BACK!' : 'STAND TALL, ARMS UP', left / s.duration, s.ready ? '#7cffb0' : '#dfe8ff');
   if (s.age >= SLED_ARRIVE + s.duration) endSled(true);
 }
 function endSled(award) {
@@ -1453,7 +1540,8 @@ function endSled(award) {
     audio.sfx(s.strokes >= 10 ? 'perfect' : 'hit', { hand: 'left', power: 0.9 });
   }
   for (const p of s.poles) scene.remove(p.g);
-  scene.remove(s.snow, s.label);
+  scene.remove(s.snow, s.label, s.skis, s.coach.group);
+  s.coach.tex.dispose(); s.coach.label.geometry.dispose(); s.coach.label.material.dispose();
   s.poleMat.dispose(); s.snowMat.dispose(); s.tex.dispose();
   s.snow.geometry.dispose(); s.label.geometry.dispose(); s.label.material.dispose();
   sled = null;
@@ -1464,22 +1552,26 @@ function endSled(award) {
 
 const bombs = [];
 let barrageSeq = 0;
-const bombGeo = new THREE.IcosahedronGeometry(0.11, 0);
-const bombSpikeGeo = new THREE.ConeGeometry(0.03, 0.12, 5);
-// Hazard yellow on black: nothing you punch uses these colours (hands blue/orange, guard white/teal, walls purple).
-const bombMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xd8ff1a, emissiveIntensity: 0.55, roughness: 0.5, flatShading: true });
-const bombHaloMat = new THREE.MeshBasicMaterial({ color: 0xd8ff1a, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false });
-const bombHaloGeo = new THREE.SphereGeometry(0.19, 14, 10);
+// Homing missiles: a grey body with a hazard-yellow nose and fins, and a flame out the back.
+// Built pointing +z (toward you); each frame it turns to face the way it's flying.
+const missileBodyGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.34, 14).rotateX(Math.PI / 2);
+const missileNoseGeo = new THREE.ConeGeometry(0.055, 0.15, 14).rotateX(Math.PI / 2).translate(0, 0, 0.245);
+const missileFinGeo = new THREE.BoxGeometry(0.008, 0.07, 0.1).translate(0, 0.085, -0.12);
+const missileFlameGeo = new THREE.ConeGeometry(0.045, 0.24, 10).rotateX(-Math.PI / 2).translate(0, 0, -0.29);
+const missileBodyMat = new THREE.MeshStandardMaterial({ color: 0xc9ced8, emissive: 0x30343c, roughness: 0.35, metalness: 0.5 });
+// Hazard yellow: nothing you punch uses it (hands blue/orange, guard white/teal, walls purple).
+const bombMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xd8ff1a, emissiveIntensity: 0.7, roughness: 0.5 });
+const missileFlameMat = new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+const bombHaloMat = new THREE.MeshBasicMaterial({ color: 0xd8ff1a, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false });
+const bombHaloGeo = new THREE.SphereGeometry(0.095, 14, 10).translate(0, 0, 0.22); // a glow round the nose, so you see one coming head-on
+const missilePrev = new THREE.Vector3(), missileVel = new THREE.Vector3(), missileAim = new THREE.Vector3();
 function makeBomb() {
   const g = new THREE.Group();
-  g.add(new THREE.Mesh(bombGeo, bombMat), new THREE.Mesh(bombHaloGeo, bombHaloMat));
-  for (const v of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
-    const sp = new THREE.Mesh(bombSpikeGeo, bombMat);
-    const dir = new THREE.Vector3(...v);
-    sp.position.copy(dir).multiplyScalar(0.12);
-    sp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-    g.add(sp);
-  }
+  g.add(new THREE.Mesh(missileBodyGeo, missileBodyMat), new THREE.Mesh(missileNoseGeo, bombMat), new THREE.Mesh(bombHaloGeo, bombHaloMat));
+  for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(missileFinGeo, bombMat); f.rotation.z = (k * Math.PI) / 2; g.add(f); }
+  const flame = new THREE.Mesh(missileFlameGeo, missileFlameMat);
+  g.add(flame);
+  g.userData.flame = flame;
   return g;
 }
 /** Send a barrage (one lane slot): bombs aimed close to where your head is. False if the lane is busy. */
@@ -1504,7 +1596,7 @@ function spawnBarrage(head, standing) {
     const t0 = (head.z - g.position.z) / speed;
     bombs.push({ group: g, speed, passed: false, id, ox: x - head.x, oy, sx, sy, t0 });
   }
-  say('BOMBS! Move your head - lean, duck, shift', 1);
+  say('MISSILES! Lean or duck out of the way', 1);
   return true;
 }
 const BOMB_LOCK = 0.7; // seconds before arrival when a bomb stops following your head
@@ -1512,6 +1604,7 @@ const BOMB_STARTS = [[-1.3, 0.1], [1.3, 0.1], [0, 0.9], [-0.9, -0.55], [0.9, -0.
 function updateBombs(dt, head) {
   for (let i = bombs.length - 1; i >= 0; i--) {
     const b = bombs[i];
+    missilePrev.copy(b.group.position);
     b.group.position.z += b.speed * dt;
     // Aimed at your head: each bomb follows you until it's 0.7 s out, then locks, so you dodge by moving.
     if (!b.passed && !b.locked && (head.z - b.group.position.z) / b.speed > BOMB_LOCK) {
@@ -1526,7 +1619,13 @@ function updateBombs(dt, head) {
       b.locked = true; // stops following you now: whistle from its side so you know to move
       audio.sfx('incoming', { pan: (b.group.position.x - head.x) / 0.12 }); // offsets are within 12 cm: full left/right
     }
-    b.group.rotation.x += dt * 4; b.group.rotation.y += dt * 3;
+    // Nose the way it's flying, a slow roll, and a flickering flame.
+    missileVel.subVectors(b.group.position, missilePrev);
+    if (missileVel.lengthSq() > 1e-10) b.group.lookAt(missileAim.copy(b.group.position).add(missileVel));
+    b.roll = (b.roll || 0) + dt * 5;
+    b.group.rotateZ(b.roll);
+    const fl = 0.8 + Math.random() * 0.4;
+    b.group.userData.flame.scale.set(fl, fl, 1);
     if (!b.passed && b.group.position.z >= head.z) {
       b.passed = true;
       const p = b.group.position;
@@ -1560,15 +1659,41 @@ function spawnRopes(head, standing) {
     mesh.frustumCulled = false;
     scene.add(mesh);
     return {
-      hand, mesh, mat, hist: [], pump: 0, lastY: null,
+      hand, mesh, mat, hist: [], pump: 0, lastY: null, sparkT: 0, crest: new THREE.Vector3(),
       handle: new THREE.Vector3(centerX + sx * 0.22, standing - 0.72, head.z - 0.42),
       anchor: new THREE.Vector3(centerX + sx * 0.45, 0.75, head.z - 6.5),
     };
   });
-  ropes = { sides, age: 0, duration: 6, onTime: 0, credited: 0, points: 0, lowTime: 0, tip: '', dummy: new THREE.Object3D() };
+  const { lc, tex, label } = burstLabel(); // the intensity meter, below the scoreboard
+  label.position.set(centerX, standing - 0.55, head.z - 2.2); label.scale.setScalar(1.8);
+  scene.add(label);
+  ropes = {
+    sides, age: 0, duration: 6, onTime: 0, credited: 0, points: 0, lowTime: 0, hardTime: 0, tip: '', dummy: new THREE.Object3D(),
+    lc, tex, label, labelKey: '', tier: 0, tierAt: -9,
+  };
   say('BATTLE ROPES! Pump both arms, stay low!', 1);
   audio.sfx('burst');
   pulseBoth(0.4, 60);
+}
+const ROPE_SPARK_DIR = new THREE.Vector3(0, 1, 0.3).normalize();
+const ROPE_METER_TOP = 2.8; // pump speed (m/s) at the right end of the meter
+function drawRopeMeter(r, level, tier, secs) {
+  const key = `${tier}|${Math.round(level * 5)}|${secs}`;
+  if (key === r.labelKey) return;
+  r.labelKey = key;
+  const g = r.lc.getContext('2d');
+  g.clearRect(0, 0, 256, 128);
+  g.fillStyle = 'rgba(8,10,18,0.7)'; g.beginPath(); g.roundRect(4, 4, 248, 120, 22); g.fill();
+  const col = ['#8d95a5', '#7cffb0', '#ffb36b', '#ffd34d'][tier];
+  g.fillStyle = col; g.font = '700 40px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(['PUMP!', 'GOOD', 'HARD x1.5', 'MAX x2'][tier], 120, 50, 200);
+  const x0 = 28, w = 200, y0 = 88; // the meter, with a tick where GOOD, HARD and MAX start
+  g.fillStyle = '#262a38'; g.fillRect(x0, y0, w, 18);
+  g.fillStyle = col; g.fillRect(x0, y0, w * Math.min(1, level / ROPE_METER_TOP), 18);
+  g.fillStyle = '#ffffff';
+  for (const m of [ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX]) g.fillRect(x0 + w * (m / ROPE_METER_TOP) - 1, y0 - 4, 3, 26);
+  g.fillStyle = '#c9ced8'; g.font = '600 18px system-ui, sans-serif'; g.textAlign = 'right'; g.fillText(`${secs}s`, 242, 20);
+  r.tex.needsUpdate = true;
 }
 function ropeHandPos(side, xr, t) {
   if (xr) return fistByHand[side.hand].world;
@@ -1600,22 +1725,41 @@ function updateRopes(dt, xr, head) {
       const base = new THREE.Vector3().lerpVectors(hp.clone().setY(restY), s.anchor, u);
       base.y -= 0.18 * Math.sin(Math.PI * u);                // a little sag
       base.y += (yAt(u * ROPE_DELAY) - restY) * (1 - u) ** 0.6 * 1.3;
+      if (i === 12) s.crest.copy(base); // where the wave is biggest: sparks fly from here
       ropes.dummy.position.copy(base);
       ropes.dummy.scale.setScalar(shown ? 1 : 0.001);
       ropes.dummy.updateMatrix();
       s.mesh.setMatrixAt(i, ropes.dummy.matrix);
     }
     s.mesh.instanceMatrix.needsUpdate = true;
-    s.mat.emissiveIntensity = active && s.pump >= ROPE_PUMP_SPEED ? 1.0 : 0.4;
+    const st = active ? ropeTier(s.pump) : 0;
+    s.mat.emissiveIntensity = [0.4, 1.0, 1.5, 2.2][st];
+    s.mat.emissive.set(st === 3 ? 0xffd34d : HAND_COLOR[s.hand]); // goes gold at max
+    if (st >= 2) { // sparks fly off the rope when you go hard - twice as many, and gold, at max
+      s.sparkT -= dt;
+      if (s.sparkT <= 0) { s.sparkT = st === 3 ? 0.1 : 0.2; shatter(s.crest, ROPE_SPARK_DIR, st === 3 ? 0xffd34d : HAND_COLOR[s.hand], 0.05); }
+    }
   }
+  const level = Math.min(...ropes.sides.map((s) => s.pump)); // your slower arm sets the pace
+  const tier = active ? ropeTier(level) : 0;
+  drawRopeMeter(ropes, active ? level : 0, tier, Math.ceil(Math.max(0, ROPES_ARRIVE + ropes.duration - t)));
+  ropes.label.lookAt(camera.getWorldPosition(sledTmp));
   if (active) {
     const low = head.y < standing - 0.12 || SMOKE;
     if (bothOn) {
       ropes.onTime += dt;
       if (low) ropes.lowTime += dt;
-      ropes.points += dt * 10 * (low ? 1.5 : 1);
+      ropes.points += dt * 10 * (low ? 1.5 : 1) * ROPE_TIER_MULT[tier];
+      if (tier >= 2) ropes.hardTime += dt;
       if (xr && Math.random() < 0.25) pulseBoth(0.2, 15);
     }
+    if (tier >= 2 && tier > ropes.tier && gameTime - ropes.tierAt > 1.2) { // stepped up: a reward
+      ropes.tierAt = gameTime;
+      popText(tier === 3 ? 'MAX POWER! x2' : 'HARDER! x1.5', ropes.label.position.clone().setY(ropes.label.position.y + 0.25), tier === 3 ? '#ffd34d' : '#7cffb0');
+      audio.sfx(tier === 3 ? 'perfect' : 'hit', { hand: 'left', power: 0.7 });
+      pulseBoth(0.6, 60);
+    }
+    ropes.tier = tier;
     while (ropes.onTime - ropes.credited >= 1) { ropes.credited++; attribution.record('ropes', gameTime); }
     const left = Math.ceil(ROPES_ARRIVE + ropes.duration - t);
     const tip = !bothOn ? (ropes.sides.every((s) => s.pump < ROPE_PUMP_SPEED) ? 'Pump both arms!' : 'Both arms - faster!')
@@ -1630,10 +1774,11 @@ function endRopes(award) {
     score.score += pts;
     const pct = Math.round((ropes.onTime / ropes.duration) * 100);
     if (pct >= 50) { score.hits++; score.combo++; score.best = Math.max(score.best, score.combo); }
-    say(`Battle ropes ${pct}%  +${pts}`);
+    say(`Battle ropes ${pct}%${ropes.hardTime >= 1 ? ` · ${Math.round(ropes.hardTime)} s hard` : ''}  +${pts}`);
     audio.sfx(pct >= 70 ? 'perfect' : 'hit', { hand: 'left', power: 0.8 });
   }
   for (const s of ropes.sides) { scene.remove(s.mesh); s.mesh.dispose(); s.mat.dispose(); }
+  scene.remove(ropes.label); ropes.tex.dispose(); ropes.label.geometry.dispose(); ropes.label.material.dispose();
   ropes = null;
   ropesReadyAt = gameTime + 30;
   if (award) trySpawn('slam'); // finish with a two-fisted slam
@@ -2506,7 +2651,7 @@ const options = new OptionsPanel({
       case 'diag': settings.diag = !settings.diag; saveSettings(); break;
       case 'note-slam': case 'note-guard': case 'note-fast': case 'note-great': addNote(NOTE_LABEL[id]); options.toggle(false); break;
       case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift': case 'test-hammer':
-      case 'test-heavy': case 'test-sled': case 'test-barrage': case 'test-bag': case 'test-ropes': testMove(id.slice(5)); options.toggle(false); break;
+      case 'test-heavy': case 'test-sled': case 'test-barrage': case 'test-bag': case 'test-ropes': case 'test-wall': testMove(id.slice(5)); options.toggle(false); break;
       case 'end': controller.beginCoolDown(); options.toggle(false); break;
       case 'close': options.toggle(false); break;
     }

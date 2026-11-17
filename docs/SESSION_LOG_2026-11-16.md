@@ -245,3 +245,12 @@ From the player's own headset session ("it's really good"), plus Morty's last re
 - **Calories (estimate):** Keytel heart-rate formula using age, weight (lb) and optionally sex (new fields on the game page); shown on the scoreboard and the end board.
 
 Checks: core tests pass (new checks for guard zones, swing spacing, the heart-rate delay and calories); auto-play runs to the end board with 0 overlaps and no errors.
+
+## Late evening — headset feedback round 4 (v50)
+
+- **Sled:** skis on the snow under your feet (they follow you), brighter poles, and a ghost coach on the snow ahead-right looping the rep: stand tall with arms up, then squat and drive both poles down and back, then rise. Its caption names each phase; the burst label now says SQUAT + PUSH BACK.
+- **Battle ropes:** an intensity meter under the scoreboard (PUMP / GOOD / HARD x1.5 / MAX x2, with ticks where each starts) driven by your slower arm. Harder pumping is worth more points, the ropes glow brighter (gold at max), sparks fly off the rope crest at HARD (twice as many, gold, at MAX), and stepping up a tier pops HARDER! / MAX POWER! with a sound and a buzz. The end call-out adds seconds spent hard.
+- **Missiles replace the bombs:** grey body, hazard-yellow nose and fins, a flickering flame; each turns to face the way it's flying as it curves in, with a smaller nose glow so it's visible head-on. Same paths, lock and whistle; call-out "MISSILES! Lean or duck out of the way".
+- **Walls test button** (Test 2 row): sends a duck, lean/pillar or side-squat wall, whichever are switched on. Board buttons shrink their text to fit; "Bombs" → "Missiles", "Squat+reach" → "Squat+punch".
+
+Checks: core tests pass (new rope-tier checks); test buttons for sled, ropes, missiles and walls each arrived; a full auto-play run reached the end board with 0 overlaps and no console errors.

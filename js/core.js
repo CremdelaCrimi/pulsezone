@@ -873,6 +873,10 @@ export const punchPower = (speed, travel) => clamp01(0.55 * clamp01((speed - 1) 
 export const bagPoints = (hits) => Math.round(5 * hits + 2 * Math.max(0, hits - 15));
 /** Battle ropes: is a hand pumping hard enough? (smoothed vertical speed, m/s) */
 export const ROPE_PUMP_SPEED = 0.7;
+/** Battle-rope intensity from your slower arm's pump speed: 0 none, 1 on, 2 hard (x1.5 points), 3 max (x2). */
+export const ROPE_HARD = 1.4, ROPE_MAX = 2.2;
+export const ROPE_TIER_MULT = Object.freeze([0, 1, 1.5, 2]);
+export const ropeTier = (pump) => (pump >= ROPE_MAX ? 3 : pump >= ROPE_HARD ? 2 : pump >= ROPE_PUMP_SPEED ? 1 : 0);
 
 // ---------------------------------------------------------------- challenge boost (when you're stuck)
 

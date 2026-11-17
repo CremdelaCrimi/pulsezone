@@ -23,9 +23,10 @@ Open the options board and press one Test button at a time; the board closes and
 | **Hammer** | Strike DOWN onto the drum pad with the bottom of your fist, alternating hands | Registers coming down? Pad height OK? |
 | **Combo** | Punch the 2–4 orbs on the beat | Did they land on the beat? Did COMBO CLEAR show? |
 | **Heavy** (Test 2 row) | Hit the lit patch with the called punch (hooks on the front corners, uppercut on the lower curve); a white flash shows each new target first | Patches easy to reach? Uppercut patch too low? Did hard punches feel rewarded? |
-| **Sled** | Squat into a tuck and push both fists down together, like ski poles | Strokes registering? Too easy/hard (needs ≥ 1.0 m/s down, both within 0.35 s)? Tuck depth OK (15 cm below standing)? |
-| **Bombs** | Keep your head moving: each bomb follows you, whistles from its side when it locks, then you have 0.7 s to lean/duck/step | Fair or unfair? Did the whistle help? Core burn? |
-| **Speed / Ropes** | The original bursts, for comparison | Orbs narrower now: still a good reach? |
+| **Sled** | Copy the ghost coach (front right): stand tall, arms up, then squat and push both poles down and back. Skis under your feet | Coach clear? Can you see your skis? Reps registering (both fists down ≥ 1.0 m/s within 0.35 s, head 15 cm lower)? |
+| **Missiles** | Keep your head moving: each missile curves in from a side, above or below, whistles when it locks, then you have 0.7 s to lean or duck | Read as missiles? Fair? Did the whistle help? |
+| **Speed / Ropes** | Ropes: the meter under the scoreboard shows GOOD / HARD x1.5 / MAX x2; sparks fly when you go hard | Is MAX reachable but hard? Do the sparks feel rewarding? |
+| **Walls** | Test 2 → Walls sends a duck, lean or side-squat wall (whichever are on) | Clear which way to move? |
 
 Also notice the first time each one appears: see-through ghost fists should demonstrate it (first two times ever).
 
