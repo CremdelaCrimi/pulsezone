@@ -250,7 +250,7 @@ export async function runChecks() {
   await step('sled', 'test-sled', 10, (reps) => ({ sledReps: reps, sledPushes: stats.sledPushes }));
   await step('ropes', 'test-ropes', 8, () => ({ ropeTiersBySegment: stats.ropeTiers.slice() }));
   await step('combo', 'test-combo', 9);
-  for (const k of ['knee', 'press', 'chop', 'tiptoe', 'knee', 'chop']) await step(k, `test-${k}`, 9);
+  for (const k of ['knee', 'press', 'chop', 'tiptoe', 'knee', 'chop']) await step(k, `test-${k}`, 17);
   report.total = snap();
   report.clashes = stats.clashes || 0; // a station and a burst at the same time
   report.done = true;

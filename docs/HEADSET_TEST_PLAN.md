@@ -18,12 +18,14 @@ Open the options board and press one Test button at a time; the board closes and
 
 | Button | What to try | Write down |
 |---|---|---|
-| **Knee** (Test → Knee) | Grab the mint bar overhead with both hands, pull it down to your waist with a small crunch as you drive the lit knee up. 2 reps, alternating knees | Grips easy to find? Does the pull count every time? (Knees can't be tracked: it's judged from your hands and head) |
-| **Press** (Test 3) | Wall ball: squat low (25 cm+), then stand and press both fists up to the ring on the ceiling | Squat depth fair? Press counting? |
-| **Chop** (Test 3) | Both hands on the orb high on one side, chop diagonally down to the ring by the opposite hip | Path clear? Counting? |
-| **Tiptoe** (Test 3) | Rise onto your toes and touch the star just out of reach; 2 stars, alternating hands | Star height right for your reach? Does it notice the tiptoe? |
+| **Knee** (Test → Knee) | Copy the ghost coach on the right: grab the mint bar overhead (anywhere along it), follow the arrows to pull it down to your waist as you drive the lit knee up (follow the bobbing arrow). 4 reps, alternating knees | Counts every time now? Coach clear? (Pull to chest with a small crunch, or all the way to the waist without one) |
+| **Press** (Test 3) | Wall ball, 3 reps: squat low (25 cm+), an up-arrow appears, stand and press both fists up to the ceiling ring; the ball drops back for the next rep | Squat depth fair? Coach helpful? |
+| **Chop** (Test 3) | 4 chops, alternating sides: both hands on the high orb, chop down across to the ring by the opposite hip, then the orb jumps to the other side | Twist feels good? Arrow clear? |
+| **Tiptoe** (Test 3) | Rise onto your toes and touch the star just out of reach; 4 stars, alternating hands | Star height right for your reach? Does it notice the tiptoe? |
 | **2 ropes** | Follow both ropes, then smash the gold bar down with both fists | Rope catch OK? Slam: did it register? Bar too high/low? (needs both fists moving down ≥ 1.1 m/s within 0.3 s) |
-| **Hammer** | Strike DOWN onto the drum pad with the bottom of your fist, alternating hands | Registers coming down? Pad height OK? |
+| **Hammer** | Two drum pads, left then right: strike DOWN with the bottom of your fist. Some pairs come in low: squat and hammer | Registers coming down? Low pads a good squat? |
+| **End workout** (top of the board) | First press: 2-minute cool-down. Press again (it now says **Finish now**): ends straight away and shows the summary | Ends when you want? |
+| **Save data** (top of the board) | Downloads all saved workouts on the headset and sends the latest to the phone page | File on the phone page? |
 | **Combo** | Punch the 2–4 orbs on the beat | Did they land on the beat? Did COMBO CLEAR show? |
 | **Heavy** (Test 2 row) | Hit the lit patch with the called punch (hooks on the front corners, uppercut on the lower curve); a white flash shows each new target first | Patches easy to reach? Uppercut patch too low? Did hard punches feel rewarded? |
 | **Sled** | Copy the ghost coach (front right): stand tall, arms up, then squat and push both poles down and back. Skis under your feet | Coach clear? Can you see your skis? Reps registering (both fists down ≥ 1.0 m/s within 0.35 s, head 15 cm lower)? |

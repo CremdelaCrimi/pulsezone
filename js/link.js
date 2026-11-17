@@ -111,6 +111,11 @@ export class HostLink {
     conn.on('error', drop);
   }
 
+  /** Send a message to every linked phone. */
+  send(msg) {
+    for (const c of this.conns) if (c.open) c.send(msg);
+  }
+
   set(state, error = '') {
     this.state = state;
     this.error = error;
@@ -123,8 +128,9 @@ export class HostLink {
  * state: 'idle' | 'connecting' | 'linked' | 'not-found' | 'offline'
  */
 export class BridgeLink {
-  constructor({ onChange = () => {} } = {}) {
+  constructor({ onChange = () => {}, onData = () => {} } = {}) {
     this.onChange = onChange;
+    this.onData = onData;
     this.code = normalizeCode(storageGet(CODE_KEY + '.bridge'));
     this.state = 'idle';
     this.peer = null;
@@ -164,6 +170,7 @@ export class BridgeLink {
     const conn = this.peer.connect(peerIdFor(this.code), { serialization: 'json', reliable: true });
     this.conn = conn;
     conn.on('open', () => this.set('linked'));
+    conn.on('data', (msg) => { if (msg && typeof msg === 'object') this.onData(msg); });
     const lost = () => {
       if (this.conn !== conn) return;
       if (this.state === 'linked') this.set('connecting');

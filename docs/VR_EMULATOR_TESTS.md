@@ -8,7 +8,7 @@ The emulator only loads when the address has `?emulate`. Normal play, including 
 
 1. Start the local server (`node tools/serve.mjs`, or the `pulsezone-web` preview) and open:
    `http://localhost:8080/?emulate&warmup=0&minutes=5&cooldown=0`
-   - Add `&emutimer` if the window is covered or hidden. It runs frames off a timer, because browsers stop animation frames in hidden windows.
+   - Add `&emutimer` if the window is covered or hidden. Browsers stop animation frames there and slow timers to once a second (or a minute), and a hidden window is 0 × 0, which turns the emulated camera into NaN. `&emutimer` runs frames and timers off a MessageChannel clock and pretends the window is 1280 × 720.
 2. In the browser console:
    ```js
    const bot = await import('/test/xr-bot.js');
@@ -25,7 +25,7 @@ The emulator only loads when the address has `?emulate`. Normal play, including 
 - does sled reps (stand tall with arms up, then squat and push both poles down and back);
 - pumps the ropes at four effort levels, to check the intensity meter;
 - slams the bar with both fists;
-- does the whole-body stations: knee drive, ceiling press, woodchopper and tiptoe reach.
+- does the whole-body stations: knee drive (4 reps), ceiling press (3), woodchopper (4, alternating sides) and tiptoe reach (4).
 
 `runChecks()` sends each test move in turn and records what changed. The steps are: free play, guard ×2, hammer, walls ×2, missiles, sled, ropes, combo, then knee, press, chop, tiptoe, knee, chop. (Guard is off in normal play now, but its test still sends one, so the code stays checked.) For each step it records hits, misses, weak / wrong-hand hits, blocks, dodges, wall and missile hits, sled reps and the rope level reached.
 
@@ -50,3 +50,14 @@ The bot's first try hit a pillar and a side-squat wall, because its lean (30 cm)
 - The side-squat walls need the head about 41 cm below standing height.
 
 Worth checking in the headset: are those comfortable without stepping?
+
+## v53 results (2026-11-17)
+
+Full `runChecks()` run with the new rep counts, the easier knee drive, hammer pairs and the move coach:
+- 61 hits, 0 misses, 0 weak, 0 wrong hand; 8 perfect swings.
+- Knee 4/4 (twice), press 3/3, chop 4/4 (twice, both sides), tiptoe 4/4, sled 6/6, rope meter reached every level.
+- Walls: 11 dodged, 0 hit. Missiles: 18 dodged, 0 hit. Guards (still tested): 4 blocked, 0 missed.
+- 0 clashes, 0 overlaps, no console errors.
+- The workout's history record held the per-second rows plus events (station arrivals, grabs, reps).
+
+Also checked: End then Finish now (CoolDown → Finished), the Options board layout, the coach poses, and the phone hand-off with the phone page open in a second tab (a 6-minute workout, 60 KB in 10 pieces, arrived intact).

@@ -201,7 +201,7 @@ export function defaultZoneSettings() {
     warmUpSeconds: 120,
     trainingSeconds: 900,
     coolDownSeconds: 120,
-    startIntensity: 0.15,
+    startIntensity: 0.25,
     coolDownEndIntensity: 0.05,
     minIntensity: 0.05,
     maxIntensity: 1,
@@ -253,6 +253,11 @@ export class ZoneController {
     this.enterPhase(Phase.CoolDown);
   }
 
+  /** End the workout right now (skips whatever is left of the cool-down). */
+  finishNow() {
+    if (this.phase !== Phase.Finished) this.enterPhase(Phase.Finished);
+  }
+
   tick(source, dt) {
     if (dt <= 0 || this.phase === Phase.Finished) return;
     const s = this.s;
@@ -297,14 +302,17 @@ export class ZoneController {
     const errorTrend = setpointRate - this.bpmTrend;
     const p = s.kp * error;
     const d = s.kd * errorTrend;
-    const candidateIntegral = this.integral + s.ki * error * dt;
+    // Catch-up: well below your zone and your heart rate isn't climbing yet, so build intensity
+    // faster (heart rate lags effort by 30-60 s; the trend check stops it piling on once it's rising).
+    const behind = error > 2 * s.zoneHalfWidth && this.bpmTrend < 0.25;
+    const candidateIntegral = this.integral + s.ki * (behind ? 3 : 1) * error * dt;
     const unclamped = candidateIntegral + p + d;
     const desired = clamp(unclamped, s.minIntensity, s.maxIntensity);
     const saturatedHigh = unclamped > s.maxIntensity && error > 0;
     const saturatedLow = unclamped < s.minIntensity && error < 0;
     if (!saturatedHigh && !saturatedLow) this.integral = candidateIntegral;
     this.integral = clamp(this.integral, s.minIntensity, s.maxIntensity);
-    this.intensity = this.step(this.intensity, desired, dt, 1);
+    this.intensity = this.step(this.intensity, desired, dt, behind ? 1.5 : 1);
   }
 
   updateSmoothing(bpm, dt) {
@@ -327,7 +335,9 @@ export class ZoneController {
     // Warm up toward where training will start (with Build & peak that's below your target).
     const goal = this.trainingTarget(0);
     const start = Number.isNaN(this.warmUpStartBpm) ? goal : Math.min(this.warmUpStartBpm, goal);
-    return lerp(start, goal, clamp01(this.phaseElapsedSeconds / Math.max(1, s.warmUpSeconds)));
+    // Ease-out: most of the climb happens early, so you reach your zone sooner.
+    const t = clamp01(this.phaseElapsedSeconds / Math.max(1, s.warmUpSeconds));
+    return lerp(start, goal, 1 - (1 - t) ** 2);
   }
 
   /** Training target at time t (s into training): your target plus the workout shape, kept under the ceiling. */
@@ -341,7 +351,8 @@ export class ZoneController {
     // Training with a shaped workout: how fast the target is moving (feeds the controller's D term).
     if (this.phase === Phase.Training) return this.trainingTarget(this.phaseElapsedSeconds + 1) - this.trainingTarget(this.phaseElapsedSeconds);
     if (Number.isNaN(this.warmUpStartBpm) || this.phaseElapsedSeconds >= s.warmUpSeconds) return 0;
-    return Math.max(0, this.trainingTarget(0) - this.warmUpStartBpm) / Math.max(1, s.warmUpSeconds);
+    const t = this.phaseElapsedSeconds / Math.max(1, s.warmUpSeconds);
+    return (2 * (1 - t) * Math.max(0, this.trainingTarget(0) - this.warmUpStartBpm)) / Math.max(1, s.warmUpSeconds);
   }
 
   advancePhaseIfDue() {
@@ -531,7 +542,7 @@ export function heatLook(status, bpm, target) {
  */
 export const ACTIVITIES = Object.freeze([
   { key: 'jab', label: 'Punches', kind: 'orb', from: 0, base: 1.0, prior: 0.5 },
-  { key: 'low', label: 'Squat punches', kind: 'orb', from: 0.2, base: 0.45, prior: 1.2 },
+  { key: 'low', label: 'Squat punches', kind: 'orb', from: 0.15, base: 0.55, prior: 1.2 },
   { key: 'swing', label: 'Hooks & uppercuts', kind: 'orb', from: 0.25, base: 0.5, prior: 0.7 },
   { key: 'duck', label: 'Ducks', kind: 'wall', from: 0.15, base: 0.3, prior: 1.2 },
   { key: 'lateral', label: 'Side steps', kind: 'wall', from: 0.25, base: 0.35, prior: 1.0 },
@@ -542,10 +553,10 @@ export const ACTIVITIES = Object.freeze([
   // Full-body power moves. Bursts (speed bag, battle ropes) are short all-out efforts
   // that the challenge boost leans on when your heart rate is stuck.
   { key: 'power', label: 'Power punches', kind: 'orb', from: 0.3, base: 0.3, prior: 0.9 },
-  { key: 'pair', label: 'Squat + reach', kind: 'orb', from: 0.3, base: 0.3, prior: 1.4 },
+  { key: 'pair', label: 'Squat + reach', kind: 'orb', from: 0.25, base: 0.45, prior: 1.4 },
   { key: 'guard', label: 'Guard & counter', kind: 'orb', from: 0.3, base: 0.25, prior: 0.9 },
-  // A drum pad at chest height: strike DOWN onto it with the bottom of your fist.
-  { key: 'hammer', label: 'Hammer fists', kind: 'orb', from: 0.25, base: 0.35, prior: 1.0 },
+  // Drum pads (a left-right pair) at chest height, or low for a squat: strike DOWN with the bottom of your fist.
+  { key: 'hammer', label: 'Hammer fists', kind: 'orb', from: 0.15, base: 0.55, prior: 1.0 },
   // Whole-body stations: they stop just in front of you and wait while you do the move (see STATIONS).
   { key: 'knee', label: 'Knee drives', kind: 'station', from: 0.3, base: 0.25, prior: 1.5 },
   { key: 'press', label: 'Squat + ceiling press', kind: 'station', from: 0.3, base: 0.25, prior: 1.6 },
@@ -687,13 +698,17 @@ export const tracePoints = (fraction) => Math.round(50 * clamp01(fraction) ** 1.
  * after every solo thing already on its way, or it would fly through it.
  */
 export const SPAWN_DISTANCE = 14;
+/** Seconds between the two pads of a hammer-fist pair. */
+export const HAMMER_GAP = 0.8;
 export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0, dist = SPAWN_DISTANCE, shots = 1 }) {
   const orbArrive = now + (SPAWN_DISTANCE - 0.5) / speed;
   switch (activity) {
     case 'jab': case 'low':
       return { kind: 'orb', start: orbArrive - 0.3, end: orbArrive + 0.3 };
-    case 'swing': case 'hammer': // hooks, uppercuts and hammer fists get the lane to themselves, so you can recover
+    case 'swing': // hooks and uppercuts get the lane to themselves, so you can recover
       return { kind: 'solo', start: orbArrive - 0.45, end: orbArrive + 0.55 };
+    case 'hammer': // two pads, left then right, HAMMER_GAP s apart
+      return { kind: 'solo', start: orbArrive - 0.45, end: orbArrive + HAMMER_GAP + 0.55 };
     case 'power':
       return { kind: 'solo', start: orbArrive - 0.7, end: orbArrive + 0.6 };
     case 'pair':   // low orb, then the high one 0.85 s later
@@ -843,19 +858,26 @@ export const sledTucked = (headY, standing) => headY < standing - 0.15;
  * `hold` = seconds it waits once stopped; `reps` = reps it asks for.
  */
 export const STATIONS = Object.freeze({
-  knee: { hold: 3.6, reps: 2 },
-  press: { hold: 3.4, reps: 1 },
-  chop: { hold: 2.6, reps: 1 },
-  tiptoe: { hold: 3.0, reps: 2 },
+  knee: { hold: 8, reps: 4 },    // alternating knees
+  press: { hold: 9, reps: 3 },
+  chop: { hold: 7.5, reps: 4 },  // alternating sides
+  tiptoe: { hold: 6, reps: 4 },  // alternating hands
 });
 export const STATION_STOP = 0.45; // metres in front of your head where a station stops
 /** Seconds you get for the second half of a move (pull, press, chop) once the first half is done. */
-export const STATION_WINDOW = Object.freeze({ knee: 1.0, press: 1.8, chop: 1.0 });
+export const STATION_WINDOW = Object.freeze({ knee: 1.6, press: 1.8, chop: 1.2 });
 const dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-/** Knee drive, part 1: both hands on the bar's grips (grips 25 cm either side of the bar's centre). */
-export const kneeGrab = (L, R, bar) => dist3(L, { x: bar.x - 0.25, y: bar.y, z: bar.z }) < 0.24 && dist3(R, { x: bar.x + 0.25, y: bar.y, z: bar.z }) < 0.24;
-/** Part 2: both hands pulled down below your chest, with a small crunch (head 5 cm+ below standing). */
-export const kneePulled = (L, R, headY, standing) => L.y < headY - 0.45 && R.y < headY - 0.45 && headY < standing - 0.05;
+/** Knee drive, part 1: both hands on the bar, anywhere along it (it's 74 cm wide), 28 cm leeway. */
+const nearBar = (f, bar) => Math.abs(f.x - bar.x) < 0.45 && Math.hypot(f.y - bar.y, f.z - bar.z) < 0.28;
+export const kneeGrab = (L, R, bar) => nearBar(L, bar) && nearBar(R, bar);
+/**
+ * Part 2: both hands pulled down to chest height or lower, with a small crunch (head 3 cm+ below
+ * standing). A long pull (hands down by your waist) counts without the crunch.
+ */
+export const kneePulled = (L, R, headY, standing) => {
+  const high = Math.max(L.y, R.y);
+  return high < headY - 0.35 && (headY < standing - 0.03 || high < headY - 0.55);
+};
 /** Ceiling press, part 1: you're in a squat (head 25 cm+ below standing). */
 export const pressLoaded = (headY, standing) => headY < standing - 0.25;
 /** Part 2: standing tall again with both fists pushed up above your head. */

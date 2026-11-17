@@ -7,7 +7,7 @@ const W = 1024, H = 2160;
 export class OptionsPanel {
   /**
    * @param {object} hooks
-   *   getState(): { target, minutes, warmUp, source, sound, volume, challenge, ranking, paused }
+   *   getState(): { target, minutes, warmUp, source, sound, volume, challenge, ranking, paused, phase }
    *   act(id): perform a button action (see ids below)
    */
   constructor(hooks) {
@@ -93,6 +93,10 @@ export class OptionsPanel {
     };
     const value = (text, x, w) => { g.fillStyle = '#ffffff'; g.font = '700 40px system-ui, sans-serif'; g.textAlign = 'center'; g.fillText(text, x + w / 2, y + 37); };
 
+    // Workout controls first, so they're easy to reach (End starts the cool-down; pressed again it ends now).
+    const endText = s.phase === 'CoolDown' ? 'Finish now' : s.phase === 'Finished' ? 'Ended' : 'End workout';
+    button('restart', 'Restart', 50, 200); button('end', endText, 264, 250, s.phase === 'CoolDown');
+    button('save', 'Save data', 528, 220); button('close', 'Close', 762, 212, true); y += 100;
     const R = 90; // row height
     label('Target heart rate'); button('target-', '−', 520, 100); value(`${s.target} BPM`, 630, 230); button('target+', '+', 870, 100); y += R;
     const warm = s.warmUp === 0 ? 'Off' : s.warmUp < 60 ? `${s.warmUp} s` : `${+(s.warmUp / 60).toFixed(1)} min`;
@@ -149,8 +153,6 @@ export class OptionsPanel {
       g.fillText(`${r.bpmPer10.toFixed(0)} · ${r.reps}`, W - 50, y + 22);
       y += 46;
     }
-    y += 22;
-    button('restart', 'Restart', 50, 290); button('end', 'End workout', 367, 290); button('close', 'Close', 684, 290, true);
 
     this.tex.needsUpdate = true;
   }

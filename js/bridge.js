@@ -1,6 +1,6 @@
 // Phone bridge: Charge 6 (Web Bluetooth, via the Bluefy browser on iPhone) -> game on the Quest.
-import { parseHeartRateMeasurement } from './core.js?v52';
-import { BridgeLink, normalizeCode, codeFromInput } from './link.js?v8';
+import { parseHeartRateMeasurement } from './core.js?v53';
+import { BridgeLink, normalizeCode, codeFromInput } from './link.js?v9';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -14,7 +14,40 @@ ui.noBle.hidden = hasBle;
 ui.bleBtn.disabled = ui.bleAllBtn.disabled = !hasBle;
 
 // ------------------------------------------------------------------ link to the game
-const link = new BridgeLink({ onChange: renderLink });
+const link = new BridgeLink({ onChange: renderLink, onData: onGameData });
+
+// ------------------------------------------------------------------ workout data from the game
+// At the end of each workout the game sends its log in pieces; we join them and offer a file to save.
+const WK_KEY = 'pulsezone.lastWorkout';
+const wkParts = {};
+let lastWorkout = null;
+try { lastWorkout = JSON.parse(localStorage.getItem(WK_KEY) || 'null'); } catch { lastWorkout = null; }
+function showWorkout() {
+  $('wkBox').hidden = !lastWorkout;
+  if (lastWorkout) $('wkText').textContent = `Latest workout: ${lastWorkout.label}`;
+}
+function onGameData(msg) {
+  if (msg.t !== 'wk' || typeof msg.part !== 'string') return;
+  const w = wkParts[msg.id] || (wkParts[msg.id] = { got: 0, parts: [] });
+  if (w.parts[msg.i] == null) { w.parts[msg.i] = msg.part; w.got++; }
+  if (w.got < msg.n) return;
+  delete wkParts[msg.id];
+  lastWorkout = { name: String(msg.name), label: String(msg.label), text: w.parts.join('') };
+  try { localStorage.setItem(WK_KEY, JSON.stringify(lastWorkout)); } catch { /* too big to keep: still saveable now */ }
+  showWorkout();
+}
+async function saveWorkout() {
+  if (!lastWorkout) return;
+  const file = new File([lastWorkout.text], lastWorkout.name, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'PulseZone workout' }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = file.name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+$('wkSave').addEventListener('click', saveWorkout);
+showWorkout();
 const LINK_TEXT = {
   idle: ['', 'Type the code shown in the game'],
   connecting: ['warn', 'Looking for the game...'],

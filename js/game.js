@@ -10,15 +10,15 @@ import {
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
-  STATIONS, STATION_STOP, STATION_WINDOW, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
+  STATIONS, STATION_STOP, STATION_WINDOW, HAMMER_GAP, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v52';
-import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v52';
+} from './core.js?v53';
+import { HostLink } from './link.js?v9';
+import { AudioEngine } from './audio.js?v53';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v52';
-import { loadTuning, createDevPanel } from './dev.js?v52';
+import { OptionsPanel } from './options.js?v53';
+import { loadTuning, createDevPanel } from './dev.js?v53';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -31,10 +31,32 @@ const PHONE_TIMEOUT = 6;                       // seconds without phone readings
 // game runs its real VR code: fists, guard zones, sled reps, rope pumping. Never loads without ?emulate.
 let xrDevice = null;
 if (params.has('emulate')) {
-  // A covered or hidden test window stops animation frames; &emutimer runs frames off a ~60 Hz timer instead.
+  // A covered or hidden test window stops animation frames and slows timers to once a second (or
+  // once a minute). &emutimer runs frames and timers off a MessageChannel clock instead, which hidden
+  // windows don't throttle. It spins a CPU core while anything is waiting: test runs only.
   if (params.has('emutimer')) {
-    window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 16);
-    window.cancelAnimationFrame = (id) => clearTimeout(id);
+    // A hidden window is 0 x 0, which turns the emulated headset's camera into NaN: pretend it's 1280 x 720.
+    for (const [k, fallback] of [['innerWidth', 1280], ['innerHeight', 720]]) {
+      const real = Object.getOwnPropertyDescriptor(window, k)?.get?.bind(window) || (() => 0);
+      try { Object.defineProperty(window, k, { configurable: true, get: () => real() || fallback }); } catch { /* keep the real size */ }
+    }
+    const timers = new Map(), mc = new MessageChannel(), clearT = window.clearTimeout;
+    let nextId = 1e7, posted = false;
+    const kick = () => { if (!posted && timers.size) { posted = true; mc.port2.postMessage(0); } };
+    mc.port1.onmessage = () => {
+      posted = false;
+      const now = performance.now();
+      for (const [id, t] of [...timers]) {
+        if (now < t.at) continue;
+        timers.delete(id);
+        try { t.fn(...t.args); } catch (e) { console.error(e); }
+      }
+      kick();
+    };
+    window.setTimeout = (fn, ms = 0, ...args) => { const id = nextId++; timers.set(id, { fn, args, at: performance.now() + ms }); kick(); return id; };
+    window.clearTimeout = (id) => { if (!timers.delete(id)) clearT(id); };
+    window.requestAnimationFrame = (cb) => window.setTimeout(() => cb(performance.now()), 16);
+    window.cancelAnimationFrame = (id) => window.clearTimeout(id);
   }
   const { XRDevice, metaQuest3 } = await import('https://cdn.jsdelivr.net/npm/iwer@2.8.0/build/iwer.module.min.js');
   xrDevice = new XRDevice(metaQuest3);
@@ -185,7 +207,7 @@ document.addEventListener('keydown', unlockAudio, true);
 // ------------------------------------------------------------------ fists (colour = hand)
 
 const HAND_COLOR = { left: 0x3fa9ff, right: 0xff7a3d };
-const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v52
+const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v53
 { const el = document.getElementById('version'); if (el) el.textContent = VERSION; }
 const HAND_CSS = { left: '#7cc4ff', right: '#ffa070' };
 const FIST_R = 0.055;
@@ -346,6 +368,7 @@ function startWorkout() {
   avgSum = avgN = 0; kcal = 0;
   gameTime = 0;
   sessionLog.length = 0;
+  workoutEvents.length = 0;
   finishedPlayed = false;
   shiftReadyAt = 0;
   waveState = 0;
@@ -719,6 +742,17 @@ function spawnOrb(head, standing, activity, opts = {}) {
 }
 
 /**
+ * Hammer fists come as a pair of drum pads, left then right, HAMMER_GAP s apart. Once you're warmed
+ * up some pairs come in low, so you squat and hammer down.
+ */
+function spawnHammers(head, standing) {
+  const low = difficulty.intensity > 0.35 && Math.random() < 0.4;
+  const y = low ? Math.max(0.6, standing - 0.85) : standing - 0.45;
+  for (const k of [0, 1]) spawnOrb(head, standing, 'hammer', { y, behind: k * difficulty.orbSpeed * HAMMER_GAP });
+  if (low) say('SQUAT + HAMMER FISTS!', 1);
+}
+
+/**
  * Squat, then reach up: a low orb for one hand, then a high orb for the other hand about 0.85 s
  * later (it flies in behind the first). Like a squat jump without leaving the floor.
  */
@@ -761,6 +795,29 @@ const ceilingRingGeo = new THREE.RingGeometry(0.17, 0.21, 40).rotateX(Math.PI / 
 const chopOrbGeo = new THREE.SphereGeometry(0.11, 20, 14);
 const hipRingGeo = new THREE.RingGeometry(0.12, 0.16, 32);
 const tipStarGeo = new THREE.OctahedronGeometry(0.075, 0);
+/** A straight guide like the hook arrows: a tube, an arrowhead at `to` and a ghost dot sliding along it. */
+function stationGuide(from, to, mat) {
+  const group = new THREE.Group();
+  const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(from, to), 1, 0.012, 6), mat);
+  const tip = new THREE.Mesh(arrowHeadGeo, mat);
+  tip.position.copy(to);
+  tip.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
+  const ghost = new THREE.Mesh(ghostGeo, MAT.guide);
+  group.add(tube, tip, ghost);
+  return { group, tube, ghost, from: from.clone(), to: to.clone() };
+}
+function disposeGuide(gd) { gd.group.parent?.remove(gd.group); gd.tube.geometry.dispose(); }
+function slideGuides(s) { for (const gd of s.p.guides || []) gd.ghost.position.lerpVectors(gd.from, gd.to, (gameTime * 0.9) % 1); }
+/** Woodchopper: put the orb high on `side` (x>0 = your right) and the hip ring low on the other side. */
+function placeChop(s) {
+  const p = s.p;
+  p.home.set(p.side * 0.35, s.base + 0.1, 0);
+  p.orb.position.copy(p.home);
+  p.hip.position.set(-p.side * 0.25, s.base - 0.85, 0.12);
+  for (const gd of p.guides) disposeGuide(gd);
+  p.guides = [stationGuide(p.home, p.hip.position, p.guideMat)];
+  s.group.add(p.guides[0].group);
+}
 const STATION_SAY = {
   knee: 'KNEE DRIVE! Grab the bar overhead, pull it down and drive your knee up',
   press: 'WALL BALL! Squat low... then press it up to the ceiling',
@@ -783,23 +840,31 @@ function spawnStation(head, standing, key) {
     p.bar.position.copy(p.home);
     p.knee = new THREE.Mesh(kneeRingGeo, glow()); // where to bring your knee: a cue only (knees can't be tracked)
     p.knee.position.set(kneeLeg === 'left' ? -0.12 : 0.12, 0.62, 0.2);
-    group.add(p.bar, p.knee);
+    p.kneeArrow = new THREE.Mesh(arrowHeadGeo, p.knee.material); // bobbing up-arrow under the ring: knee UP
+    p.kneeArrow.scale.setScalar(1.6);
+    p.kneeArrow.position.set(p.knee.position.x, 0.42, 0.2);
+    const gm = glow(); gm.opacity = 0.8;
+    // Pull-down guides from each end of the bar to your waist, like the hook arrows.
+    p.guides = [-1, 1].map((sx) => stationGuide(new THREE.Vector3(sx * 0.25, base + 0.1, 0), new THREE.Vector3(sx * 0.22, base - 0.5, 0.12), gm));
+    group.add(p.bar, p.knee, p.kneeArrow, ...p.guides.map((gd) => gd.group));
   } else if (key === 'press') {
     p.ball = new THREE.Mesh(pressBallGeo, stationMat);
     p.home = new THREE.Vector3(0, base - 0.45, 0);
     p.ball.position.copy(p.home);
     p.ring = new THREE.Mesh(ceilingRingGeo, glow()); // the target on the "ceiling"
     p.ring.position.set(0, base + 0.5, 0);
-    group.add(p.ball, p.ring);
+    const gm = glow(); gm.opacity = 0.8;
+    p.guides = [stationGuide(new THREE.Vector3(0, base - 0.25, 0), new THREE.Vector3(0, base + 0.42, 0), gm)]; // drive it UP
+    p.guides[0].group.visible = false; // shows once you're down in the squat
+    group.add(p.ball, p.ring, p.guides[0].group);
   } else if (key === 'chop') {
     p.side = chopSide; chopSide = -chopSide;
     p.orb = new THREE.Mesh(chopOrbGeo, stationMat);
-    p.home = new THREE.Vector3(p.side * 0.35, base + 0.1, 0);
-    p.orb.position.copy(p.home);
+    p.home = new THREE.Vector3();
     p.hip = new THREE.Mesh(hipRingGeo, glow());
-    p.hip.position.set(-p.side * 0.25, base - 0.85, 0.12);
-    p.guide = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(p.home.clone(), p.hip.position.clone()), 1, 0.012, 6), glow());
-    group.add(p.orb, p.hip, p.guide);
+    p.guideMat = glow(); p.guideMat.opacity = 0.8;
+    p.guides = [];
+    group.add(p.orb, p.hip);
   } else {
     const h = tiptoeHeight(reachUp);
     p.stars = [-1, 1].map((sx) => { const m = new THREE.Mesh(tipStarGeo, stationMat); m.position.set(sx * 0.14, base + h, 0); group.add(m); return m; });
@@ -810,22 +875,26 @@ function spawnStation(head, standing, key) {
   label.position.set(0, base - 0.3, -0.9); label.scale.setScalar(1.4); // further back, so it never blocks your view
   group.add(label);
   scene.add(group);
-  stations.push({
+  const st = {
     key, group, p, mats, lc, tex, label, labelKey: '', speed, stopZ, base, arrived: false, held: 0, duration: STATIONS[key].hold,
     reps: 0, need: STATIONS[key].reps, stage: 0, stageAt: 0, smokeT: 0, done: false, doneAge: 0, nagAt: -9,
-  });
+    coach: makeMoveCoach(key), grabNear: 9, pullBest: { drop: 0, crunch: 0 },
+  };
+  if (key === 'chop') placeChop(st);
+  stations.push(st);
   say(STATION_SAY[key], 1);
 }
 /** World positions of a station's targets (for the test hooks). */
 function stationPoints(s) {
   const g = s.group, w = (v) => g.localToWorld(v.clone()), p = s.p;
-  if (s.key === 'knee') return { gripL: w(p.bar.position.clone().setX(-0.25)), gripR: w(p.bar.position.clone().setX(0.25)) };
+  if (s.key === 'knee') return { gripL: w(p.home.clone().setX(-0.25)), gripR: w(p.home.clone().setX(0.25)) };
   if (s.key === 'press') return { ball: w(p.ball.position), ring: w(p.ring.position) };
   if (s.key === 'chop') return { orb: w(p.orb.position), hip: w(p.hip.position) };
   return { star: w(p.stars[p.next].position) };
 }
 function stationRep(s, at, label) {
   s.reps++;
+  logEvent('rep', { act: s.key, rep: s.reps, secs: +(gameTime - s.stageAt).toFixed(2) });
   attribution.record(s.key, gameTime);
   popText(score.hit(s.key === 'press' ? 2.5 : 1.5, label), at, '#6dffd8');
   audio.sfx('perfect', { hand: 'left', power: 0.8 });
@@ -840,31 +909,50 @@ function stationStep(s, xr, head) {
   const hy = head.y;
   const late = gameTime - s.stageAt > (STATION_WINDOW[s.key] ?? 9);
   stMid.addVectors(L, R).multiplyScalar(0.5);
+  if (s.stage === 1) { // what you managed this attempt (for the workout data, to tune the moves)
+    s.pullBest.drop = Math.max(s.pullBest.drop, hy - Math.max(L.y, R.y));
+    s.pullBest.crunch = Math.max(s.pullBest.crunch, standing - hy);
+  }
+  const grabbed = () => { s.stage = 1; s.stageAt = gameTime; s.pullBest = { drop: 0, crunch: 0 }; pulseBoth(0.3, 30); logEvent('grab', { act: s.key }); };
+  const gaveUp = () => logEvent('late', { act: s.key, drop: +s.pullBest.drop.toFixed(2), crunch: +s.pullBest.crunch.toFixed(2) });
   if (s.key === 'knee') {
-    if (s.stage === 0 && kneeGrab(L, R, p.bar.position)) { s.stage = 1; s.stageAt = gameTime; pulseBoth(0.3, 30); }
+    if (s.stage === 0) {
+      s.grabNear = Math.min(s.grabNear, Math.max(L.distanceTo(p.home), R.distanceTo(p.home)));
+      if (kneeGrab(L, R, p.home)) grabbed();
+    }
     if (s.stage === 1) {
       p.bar.position.set(0, Math.min(p.home.y, stMid.y), 0); // the bar comes down with your hands
       if (kneePulled(L, R, hy, standing)) {
         stationRep(s, g.localToWorld(p.knee.position.clone()), `${kneeLeg.toUpperCase()} KNEE! `);
         kneeLeg = kneeLeg === 'left' ? 'right' : 'left';
-        p.knee.position.x = kneeLeg === 'left' ? -0.12 : 0.12;
+        p.knee.position.x = p.kneeArrow.position.x = kneeLeg === 'left' ? -0.12 : 0.12;
         p.bar.position.copy(p.home); s.stage = 0;
-      } else if (late) { p.bar.position.copy(p.home); s.stage = 0; stationNag(s, 'Pull it down hard - with a crunch!'); }
+      } else if (late) { gaveUp(); p.bar.position.copy(p.home); s.stage = 0; stationNag(s, 'Pull the bar right down to your waist!'); }
     }
   } else if (s.key === 'press') {
-    if (s.stage === 0 && pressLoaded(hy, standing)) { s.stage = 1; s.stageAt = gameTime; pulseBoth(0.3, 30); say('Now PRESS it up!', 2); }
+    if (s.stage === 0 && pressLoaded(hy, standing)) { grabbed(); say('Now PRESS it up!', 2); }
+    p.guides[0].group.visible = s.stage === 1;
     if (s.stage === 1) {
       p.ball.position.lerp(stMid, 0.35); // the ball rides up with your hands
-      if (pressDone(L, R, hy, standing)) { s.flyFrom = p.ball.position.clone(); stationRep(s, g.localToWorld(p.ring.position.clone()), 'WALL BALL! '); }
-      else if (late) { s.stage = 0; p.ball.position.copy(p.home); stationNag(s, 'Squat, then drive it all the way up!'); }
-    } else if (!s.done) p.ball.position.lerp(p.home, 0.2);
+      if (pressDone(L, R, hy, standing)) {
+        s.flyFrom = p.ball.position.clone(); s.flyAt = gameTime;
+        stationRep(s, g.localToWorld(p.ring.position.clone()), 'WALL BALL! ');
+        s.stage = 0;
+      } else if (late) { gaveUp(); s.stage = 0; p.ball.position.copy(p.home); stationNag(s, 'Squat, then drive it all the way up!'); }
+    } else if (!s.done) {
+      if (s.flyFrom && gameTime - s.flyAt < 0.3) p.ball.position.lerpVectors(s.flyFrom, p.ring.position, (gameTime - s.flyAt) / 0.3); // up to the ring...
+      else p.ball.position.lerp(p.home, 0.2); // ...then back down for the next rep
+    }
   } else if (s.key === 'chop') {
-    if (s.stage === 0 && chopGrab(L, R, p.orb.position)) { s.stage = 1; s.stageAt = gameTime; pulseBoth(0.3, 30); }
+    if (s.stage === 0 && chopGrab(L, R, p.orb.position)) grabbed();
     if (s.stage === 1) {
       p.orb.position.copy(stMid);
       const down = (fistByHand.left.vel.y + fistByHand.right.vel.y) / 2 < -0.6;
-      if (chopDone(L, R, p.hip.position) && down) stationRep(s, g.localToWorld(p.hip.position.clone()), 'CHOP! ');
-      else if (late) { s.stage = 0; p.orb.position.copy(p.home); stationNag(s, 'Chop it right down across your body!'); }
+      if (chopDone(L, R, p.hip.position) && down) {
+        stationRep(s, g.localToWorld(p.hip.position.clone()), s.reps + 1 < s.need ? 'CHOP! Other side! ' : 'CHOP! ');
+        s.stage = 0;
+        if (!s.done) { p.side = -p.side; placeChop(s); } // twist back the other way
+      } else if (late) { gaveUp(); s.stage = 0; p.orb.position.copy(p.home); stationNag(s, 'Chop it right down across your body!'); }
     }
   } else {
     const star = p.stars[p.next];
@@ -887,23 +975,28 @@ function updateStations(dt, xr, head) {
     if (s.done) { // finished: the wall ball flies up to the ceiling ring, then everything goes
       s.doneAge += dt;
       if (s.key === 'press' && s.flyFrom) s.p.ball.position.lerpVectors(s.flyFrom, s.p.ring.position, Math.min(1, s.doneAge / 0.3));
+      if (s.coach) s.coach.group.visible = false;
       if (s.doneAge > 0.35) removeStation(s);
       continue;
     }
     if (!s.arrived) {
       g.position.z = Math.min(s.stopZ, g.position.z + s.speed * dt);
-      if (g.position.z >= s.stopZ) { s.arrived = true; s.stageAt = gameTime; audio.sfx('alert'); }
+      if (g.position.z >= s.stopZ) { s.arrived = true; s.stageAt = gameTime; audio.sfx('alert'); logEvent('station', { act: s.key, need: s.need }); }
     } else {
       g.position.set(centerX, 0, head.z - STATION_STOP); // waits just in front of you
       s.held += dt;
       if (SMOKE) { s.smokeT += dt; if (s.smokeT > 0.7) { s.smokeT = 0; stationRep(s, g.position.clone().setY(standing - 0.2), 'NICE! '); } }
       else if (xr) stationStep(s, xr, head);
       if (!s.done && s.held >= s.duration) { // time's up
+        logEvent('timeout', { act: s.key, reps: s.reps, need: s.need, stage: s.stage, grabNear: s.key === 'knee' ? +s.grabNear.toFixed(2) : undefined });
         if (s.reps < s.need) { score.miss(); say(s.reps ? 'Nearly - keep that pace!' : 'Missed it - next one!', 2); }
         removeStation(s);
         continue;
       }
     }
+    slideGuides(s);
+    if (s.key === 'knee') s.p.kneeArrow.position.y = 0.42 + 0.06 * Math.sin(gameTime * 6);
+    if (s.coach) poseMoveCoach(s, head);
     s.label.lookAt(camera.getWorldPosition(sledTmp));
     const what = { knee: s.stage ? 'PULL DOWN + KNEE UP!' : 'GRAB THE BAR', press: s.stage ? 'PRESS IT UP!' : 'SQUAT LOW',
       chop: s.stage ? 'CHOP TO THE HIP!' : 'BOTH HANDS ON IT', tiptoe: 'UP ON YOUR TOES' }[s.key];
@@ -916,9 +1009,114 @@ function removeStation(s) {
   if (i >= 0) stations.splice(i, 1);
   scene.remove(s.group);
   for (const m of s.mats) m.dispose();
-  if (s.p.guide) s.p.guide.geometry.dispose();
+  for (const gd of s.p.guides || []) disposeGuide(gd);
+  if (s.coach) { scene.remove(s.coach.group); s.coach.tex.dispose(); s.coach.label.geometry.dispose(); s.coach.label.material.dispose(); }
   s.tex.dispose(); s.label.geometry.dispose(); s.label.material.dispose();
   if (s.key === 'tiptoe') tiptoeUntil = gameTime + 1.5; // give your heels time to come down before standing height updates
+}
+
+// A ghost coach to your right that loops the station's move, like the sled coach. Poses are
+// keyframes in metres: y up, z toward you, x = YOUR right as you look at it (it mirrors you, like a
+// fitness video), so its lit knee / chop side / reaching hand match yours. `mirror` flips sides.
+const MC_BASE = {
+  head: [0, 1.62, 0.02], neck: [0, 1.45, 0], pelvis: [0, 0.95, 0], hipL: [-0.1, 0.95, 0], hipR: [0.1, 0.95, 0],
+  kneeL: [-0.1, 0.5, 0.03], kneeR: [0.1, 0.5, 0.03], ankleL: [-0.1, 0.06, 0], ankleR: [0.1, 0.06, 0],
+  shL: [-0.19, 1.42, 0], shR: [0.19, 1.42, 0], elL: [-0.22, 1.13, 0.04], elR: [0.22, 1.13, 0.04], haL: [-0.22, 0.86, 0.1], haR: [0.22, 0.86, 0.1],
+};
+const mcPose = (o) => ({ ...MC_BASE, ...o });
+const mcRaise = (pose, dy) => Object.fromEntries(Object.entries(pose).map(([k, v]) => [k, k.startsWith('ankle') ? [v[0], v[1] + dy * 0.7, v[2] - 0.03] : [v[0], v[1] + dy, v[2]]]));
+const MC_BONES = [['neck', 'pelvis', 0.06], ['hipL', 'hipR', 0.05], ['hipL', 'kneeL', 0.05], ['kneeL', 'ankleL', 0.045], ['hipR', 'kneeR', 0.05], ['kneeR', 'ankleR', 0.045],
+  ['shL', 'shR', 0.04], ['shL', 'elL', 0.04], ['elL', 'haL', 0.035], ['shR', 'elR', 0.04], ['elR', 'haR', 0.035]];
+const MC_KNEE_UP = mcPose({ elL: [-0.24, 1.7, 0.08], elR: [0.24, 1.7, 0.08], haL: [-0.25, 1.95, 0.14], haR: [0.25, 1.95, 0.14] });
+const MC_KNEE_PULL = mcPose({ // left knee up (mirrored for the right)
+  head: [0, 1.52, 0.16], neck: [0, 1.37, 0.1], shL: [-0.19, 1.34, 0.08], shR: [0.19, 1.34, 0.08],
+  elL: [-0.28, 1.12, 0.18], elR: [0.28, 1.12, 0.18], haL: [-0.22, 1.02, 0.36], haR: [0.22, 1.02, 0.36],
+  kneeL: [-0.1, 0.98, 0.42], ankleL: [-0.1, 0.58, 0.32],
+});
+const MC_PRESS_HOLD = mcPose({ elL: [-0.24, 1.12, 0.12], elR: [0.24, 1.12, 0.12], haL: [-0.12, 1.22, 0.28], haR: [0.12, 1.22, 0.28] });
+const MC_PRESS_SQUAT = mcPose({
+  head: [0, 1.24, 0.14], neck: [0, 1.08, 0.07], pelvis: [0, 0.62, -0.2], hipL: [-0.11, 0.62, -0.2], hipR: [0.11, 0.62, -0.2],
+  kneeL: [-0.16, 0.5, 0.24], kneeR: [0.16, 0.5, 0.24], shL: [-0.19, 1.05, 0.05], shR: [0.19, 1.05, 0.05],
+  elL: [-0.25, 0.84, 0.18], elR: [0.25, 0.84, 0.18], haL: [-0.12, 0.92, 0.36], haR: [0.12, 0.92, 0.36],
+});
+const MC_PRESS_UP = mcPose({ head: [0, 1.63, -0.01], elL: [-0.21, 1.72, 0.03], elR: [0.21, 1.72, 0.03], haL: [-0.1, 1.98, 0.05], haR: [0.1, 1.98, 0.05] });
+const MC_CHOP_HIGH = mcPose({ // orb high on the right (mirrored for the left)
+  head: [0.02, 1.62, 0.04], shL: [-0.17, 1.43, 0.06], shR: [0.19, 1.43, -0.05],
+  elL: [0.04, 1.62, 0.22], elR: [0.32, 1.64, 0.06], haL: [0.3, 1.86, 0.24], haR: [0.38, 1.88, 0.18],
+});
+const MC_CHOP_LOW = mcPose({
+  head: [-0.04, 1.47, 0.15], neck: [-0.02, 1.32, 0.09], pelvis: [0, 0.84, -0.08], hipL: [-0.1, 0.84, -0.08], hipR: [0.1, 0.84, -0.08],
+  kneeL: [-0.13, 0.48, 0.17], kneeR: [0.13, 0.48, 0.17], shL: [-0.2, 1.3, -0.02], shR: [0.15, 1.3, 0.13],
+  elL: [-0.34, 1.06, 0.12], elR: [-0.05, 1.08, 0.32], haL: [-0.33, 0.86, 0.33], haR: [-0.25, 0.84, 0.38],
+});
+const MC_TOES = mcRaise(mcPose({ elR: [0.21, 1.72, 0.03], haR: [0.15, 1.98, 0.06] }), 0.09); // right hand up (mirrored for the left)
+const MOVE_COACH = { // [phase 0..1, pose, caption from here on]
+  knee: { cycle: 2.2, prop: 'bar', frames: [[0, MC_KNEE_UP, 'GRAB THE BAR'], [0.3, MC_KNEE_UP], [0.55, MC_KNEE_PULL, 'PULL DOWN + KNEE UP'], [0.75, MC_KNEE_PULL, 'BACK UP TALL'], [1, MC_KNEE_UP]] },
+  press: { cycle: 2.6, prop: 'ball', frames: [[0, MC_PRESS_HOLD, 'SQUAT LOW'], [0.12, MC_PRESS_HOLD], [0.4, MC_PRESS_SQUAT], [0.5, MC_PRESS_SQUAT, 'DRIVE UP + PRESS'], [0.7, MC_PRESS_UP], [0.82, MC_PRESS_UP, 'BRING IT DOWN'], [1, MC_PRESS_HOLD]] },
+  chop: { cycle: 1.8, prop: 'orb', frames: [[0, MC_CHOP_HIGH, 'BOTH HANDS UP HIGH'], [0.3, MC_CHOP_HIGH], [0.5, MC_CHOP_LOW, 'CHOP ACROSS + DOWN'], [0.7, MC_CHOP_LOW, 'BACK UP HIGH'], [1, MC_CHOP_HIGH]] },
+  tiptoe: { cycle: 2.0, prop: 'star', frames: [[0, MC_BASE, 'UP ON YOUR TOES'], [0.2, MC_BASE], [0.5, MC_TOES, 'REACH THE STAR'], [0.75, MC_TOES], [1, MC_BASE]] },
+};
+const mcFlip = (name) => (name.endsWith('L') ? name.slice(0, -1) + 'R' : name.endsWith('R') ? name.slice(0, -1) + 'L' : name);
+const mcA = new THREE.Vector3(), mcB = new THREE.Vector3();
+function makeMoveCoach(key) {
+  const group = new THREE.Group();
+  const bones = MC_BONES.map(([a, b, r]) => { const m = new THREE.Mesh(coachLimbGeo, coachMat); group.add(m); return { m, a, b, r }; });
+  const headMesh = new THREE.Mesh(coachHeadGeo, coachMat);
+  const prop = new THREE.Mesh({ bar: coachLimbGeo, ball: pressBallGeo, orb: chopOrbGeo, star: tipStarGeo }[MOVE_COACH[key].prop], stationMat);
+  group.add(headMesh, prop);
+  const { lc, tex, label } = burstLabel();
+  label.position.set(0, 2.05, 0); label.scale.setScalar(2.2);
+  group.add(label);
+  group.scale.setScalar(0.85);
+  scene.add(group);
+  return { group, bones, headMesh, prop, lc, tex, label, text: '', joints: {} };
+}
+function poseMoveCoach(s, head) {
+  const c = s.coach, mv = MOVE_COACH[s.key];
+  c.group.position.set(centerX + 0.95, 0, head.z - 3.0);
+  c.group.rotation.y = -0.5;
+  const mirror = s.key === 'knee' ? kneeLeg === 'right' : s.key === 'chop' ? s.p.side < 0 : s.key === 'tiptoe' ? s.p.next === 0 : false;
+  if (s.coachT0 === undefined) s.coachT0 = gameTime;
+  const t = ((gameTime - s.coachT0) % mv.cycle) / mv.cycle;
+  const f = mv.frames;
+  let i = 0;
+  while (i < f.length - 2 && t >= f[i + 1][0]) i++;
+  const k = coachEase(Math.min(1, (t - f[i][0]) / Math.max(1e-4, f[i + 1][0] - f[i][0])));
+  let caption = '';
+  for (const fr of f) if (fr[0] <= t && fr[2]) caption = fr[2];
+  const J = c.joints;
+  for (const name of Object.keys(MC_BASE)) {
+    const src = mirror ? mcFlip(name) : name, a = f[i][1][src], b = f[i + 1][1][src];
+    const v = J[name] || (J[name] = new THREE.Vector3());
+    v.set((a[0] + (b[0] - a[0]) * k) * (mirror ? -1 : 1), a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k);
+  }
+  for (const bn of c.bones) {
+    mcA.copy(J[bn.a]); mcB.copy(J[bn.b]);
+    const len = Math.max(1e-4, mcA.distanceTo(mcB));
+    bn.m.position.addVectors(mcA, mcB).multiplyScalar(0.5);
+    mcB.sub(mcA).divideScalar(len);
+    bn.m.quaternion.setFromUnitVectors(sledUp, mcB);
+    bn.m.scale.set(bn.r, len, bn.r);
+  }
+  c.headMesh.position.copy(J.head);
+  if (mv.prop === 'bar') { // a bar between the hands, a little wider than them
+    mcA.copy(J.haL); mcB.copy(J.haR);
+    const len = mcA.distanceTo(mcB) + 0.24;
+    c.prop.position.addVectors(mcA, mcB).multiplyScalar(0.5);
+    c.prop.quaternion.setFromUnitVectors(sledUp, mcB.sub(mcA).normalize());
+    c.prop.scale.set(0.022, len, 0.022);
+  } else if (mv.prop === 'star') c.prop.position.set(mirror ? -0.15 : 0.15, 2.2, 0.06);
+  else c.prop.position.addVectors(J.haL, J.haR).multiplyScalar(0.5).add(mcA.set(0, mv.prop === 'ball' ? 0.08 : 0.02, 0.06));
+  if (caption !== c.text) {
+    c.text = caption;
+    const g = c.lc.getContext('2d');
+    g.clearRect(0, 0, 256, 128);
+    g.fillStyle = 'rgba(8,10,18,0.6)'; g.beginPath(); g.roundRect(4, 34, 248, 60, 18); g.fill();
+    g.fillStyle = '#9fe6ff'; g.font = '700 30px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(caption, 128, 64, 236);
+    c.tex.needsUpdate = true;
+  }
+  c.label.lookAt(camera.getWorldPosition(sledTmp));
 }
 
 // ------------------------------------------------------------------ guard & counter
@@ -2415,6 +2613,7 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
   const needSpeed = orb.power ? powerPunchSpeed(orb.minPunch) : orb.minPunch * (orb.swing ? 0.7 : 1);
   const needTravel = minPunchTravel(difficulty.intensity, orb.power) * (orb.swing ? 0.8 : 1);
   if (punchMode && (speed < needSpeed || travel < needTravel)) {
+    logEvent('weak', { act: orb.activity, speed: +speed.toFixed(2) });
     score.weakHit(orb.power ? 'Power orb - full punch from the shoulder!' : speed < needSpeed ? 'Punch harder!' : 'Punch through it - not a flick!');
     audio.sfx('weak');
     pulse(fist, 0.2, 20);
@@ -2433,6 +2632,7 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
   if (orb.swing === 'down' && fist && punchMode) { // a hammer fist only counts coming down onto the pad
     const d = fistDisplacement(fist);
     if (!swingMatches('down', [d.x, d.y, d.z], 0.45)) {
+      logEvent('weak', { act: 'hammer', why: 'not down' });
       score.weakHit('Hammer fist - strike DOWN onto the pad!');
       audio.sfx('weak'); pulse(fist, 0.2, 20); flashWeak();
       return false;
@@ -2517,6 +2717,7 @@ function finishWorkout() {
     try { localStorage.setItem(BESTS_KEY, JSON.stringify(bests)); } catch { /* ignore */ }
   }
   lastSummary = { w, records };
+  archiveWorkout(w);
   clearObstacles(); // nothing left hanging in front of the board
   drawSummary(w, records);
   summaryBoard.visible = true;
@@ -2812,7 +3013,7 @@ const options = new OptionsPanel({
   getState: () => ({
     target: settings.targetBpm, minutes: settings.trainingMinutes, warmUp: settings.warmUpSeconds, profile: settings.profile, diag: settings.diag, source: sourceKind, sound: settings.sound,
     volume: Math.round(settings.volume * 10), challenge: settings.challenge,
-    gameType: settings.gameType, moves: { ...settings.moves },
+    gameType: settings.gameType, moves: { ...settings.moves }, phase: controller.phase,
     musicStyle: settings.musicStyle, songAvailable,
     ranking: attribution.ranking().map((r) => ({ ...r, bpmPer10: Math.round(r.bpmPer10) })),
   }),
@@ -2855,7 +3056,8 @@ const options = new OptionsPanel({
       case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift': case 'test-hammer':
       case 'test-heavy': case 'test-sled': case 'test-barrage': case 'test-bag': case 'test-ropes': case 'test-wall':
       case 'test-knee': case 'test-press': case 'test-chop': case 'test-tiptoe': testMove(id.slice(5)); options.toggle(false); break;
-      case 'end': controller.beginCoolDown(); options.toggle(false); break;
+      case 'end': endPressed(); options.toggle(false); break;
+      case 'save': saveWorkoutData(); break;
       case 'close': options.toggle(false); break;
     }
     $('target').value = settings.targetBpm; $('minutes').value = settings.trainingMinutes;
@@ -2964,6 +3166,65 @@ function logRow() {
   });
   pendingNote = '';
 }
+// Every workout's per-second log and events, kept on the headset (last 12, about 3 MB at most) and
+// sent to the phone at the end. "Save data" downloads them all as one JSON file.
+const workoutEvents = [];
+function logEvent(type, data = {}) { if (workoutEvents.length < 4000) workoutEvents.push({ t: +gameTime.toFixed(1), type, ...data }); }
+const HISTORY_KEY = 'pulsezone.history';
+function loadHistory() { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; } }
+function workoutRecord(summary) {
+  const cols = sessionLog.length ? Object.keys(sessionLog[0]) : [];
+  return {
+    date: new Date(Date.now() - gameTime * 1000).toISOString(), version: VERSION, summary,
+    settings: { targetBpm: settings.targetBpm, minutes: settings.trainingMinutes, warmUp: settings.warmUpSeconds, profile: settings.profile,
+      challenge: settings.challenge, gameType: settings.gameType, moves: { ...settings.moves } },
+    cols, rows: sessionLog.map((r) => cols.map((c) => r[c])), events: workoutEvents.slice(),
+  };
+}
+function archiveWorkout(summary) {
+  if (sessionLog.length < 30) return; // under 30 s: nothing worth keeping
+  const rec = workoutRecord(summary);
+  const hist = [...loadHistory(), rec].slice(-12);
+  while (hist.length > 1 && JSON.stringify(hist).length > 3e6) hist.shift();
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(hist)); } catch { /* storage full: keep the latest only */
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify([rec])); } catch { /* give up */ }
+  }
+  sendToPhone(rec);
+}
+const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+/**
+ * Send one workout to the linked phone in small pieces: PeerJS's JSON channel drops messages over
+ * ~16 KB, and re-escaping the quotes inside each piece can nearly double it, so 6000 characters each.
+ */
+function sendToPhone(rec) {
+  if (link.state !== 'linked') return false;
+  const text = JSON.stringify({ app: 'PulseZone', version: VERSION, saved: new Date().toISOString(), workouts: [rec] });
+  const id = Math.random().toString(36).slice(2, 8), size = 6000, n = Math.ceil(text.length / size);
+  const name = `pulsezone-workout-${rec.date.slice(0, 16).replace(/[:T]/g, '-')}.json`;
+  const label = `${new Date(rec.date).toLocaleString()} · ${Math.max(1, Math.round(rec.rows.length / 60))} min`;
+  for (let i = 0; i < n; i++) link.send({ t: 'wk', id, i, n, name, label, part: text.slice(i * size, (i + 1) * size) });
+  return true;
+}
+function saveWorkoutData() {
+  const all = loadHistory();
+  if (controller.phase !== Phase.Finished && sessionLog.length >= 10) all.push(workoutRecord(null)); // the one in progress
+  if (!all.length) { say('No workout data yet', 1); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ app: 'PulseZone', version: VERSION, saved: new Date().toISOString(), workouts: all })], { type: 'application/json' }));
+  a.download = `pulsezone-workouts-${stamp()}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  const phone = sendToPhone(all[all.length - 1]);
+  say(`Saved ${all.length} workout${all.length > 1 ? 's' : ''} to Downloads${phone ? ' + sent the latest to your phone' : ''}`, 1);
+}
+/** End workout: the first press starts the 2-minute cool-down, a second press ends it right away. */
+function endPressed() {
+  if (controller.phase === Phase.CoolDown) controller.finishNow();
+  else if (controller.phase !== Phase.Finished) {
+    controller.beginCoolDown();
+    say('COOL-DOWN: 2 easy minutes. Press End again (Options) to finish now', 1);
+  }
+}
 function saveSession() {
   if (!sessionLog.length) return;
   try { localStorage.setItem(SESSION_KEY, JSON.stringify(sessionLog)); } catch { /* storage full: skip */ }
@@ -3053,7 +3314,7 @@ window.addEventListener('keydown', (e) => {
     case 'Tab': e.preventDefault(); workloadMode = { Motion: 'AutoPlayer', AutoPlayer: 'Manual', Manual: 'Motion' }[workloadMode]; updatePanel(true); break;
     case 'KeyL': signalLostToggle = !signalLostToggle; break;
     case 'KeyT': fastForward = !fastForward; break;
-    case 'KeyE': controller.beginCoolDown(); break;
+    case 'KeyE': endPressed(); break;
     case 'KeyR': startWorkout(); break;
     case 'KeyB': toggleSource(); break;
     case 'KeyO': options.toggle(); break;
@@ -3191,6 +3452,7 @@ function trySpawn(activity, extra = {}) {
   else if (activity === 'pair') spawnPair(head, standing);
   else if (activity === 'guard') spawnGuardSet(head, standing, shots);
   else if (STATIONS[activity]) spawnStation(head, standing, activity);
+  else if (activity === 'hammer') spawnHammers(head, standing);
   else spawnOrb(head, standing, activity, { shift: extra.shift || 0 });
   return true;
 }
@@ -3283,6 +3545,7 @@ let finishedPlayed = false;
 
 const skyTmp = new THREE.Color(), instTmp = new THREE.Vector3(), HIT_RED = new THREE.Color(0x5a0a0a); // reused every frame
 function frame(time) {
+  if (!Number.isFinite(time)) time = performance.now(); // a bad frame time would freeze the clock for good
   const rawDt = lastTime ? Math.max(0, Math.min(0.1, (time - lastTime) / 1000)) : 0;
   lastTime = Math.max(lastTime, time);
   const dt = rawDt * BASE_SPEED * (fastForward ? 5 : 1);
@@ -3467,6 +3730,7 @@ function frame(time) {
     if (SMOKE && orbs[i] === o && o.group.position.z > head.z - 1.2) tryHit(o, null, o.hand, 5);
     if (orbs[i] === o && !o.dying && o.group.position.z > o.passZ) {
       score.miss(); audio.sfx('miss'); // a missed orb is not a rep: the model only learns from what you did
+      logEvent('miss', { act: o.activity });
       if (o.combo) comboResult(o, false);
       removeOrb(o);
     }
@@ -3485,6 +3749,7 @@ function frame(time) {
       w.hit = true;
       w.fill.material = MAT.wallHit;
       score.wallHit();
+      logEvent('wall-hit', { act: w.type });
       say(w.type === 'rise' ? 'Stand up!' : w.type === 'duck' || w.type.startsWith('squat') ? 'Get lower!' : 'Move over!', 1);
       audio.sfx('wall');
       pulseBoth(1, 120);
@@ -3604,7 +3869,7 @@ window.pz = {
   peek() {
     const v = (p) => [+p.x.toFixed(3), +p.y.toFixed(3), +p.z.toFixed(3)];
     return {
-      t: gameTime, head: v(head), standing, centerX, paused: options.open, phase: controller.phase, presenting: renderer.xr.isPresenting,
+      t: gameTime, head: v(head), standing, centerX, paused: options.open, phase: controller.phase, events: workoutEvents.slice(-12), coach: stations[0]?.coach?.text || null, presenting: renderer.xr.isPresenting,
       fists: fists.map((f) => ({ hand: f.hand, at: v(f.world), speed: +f.speed.toFixed(2) })),
       orbs: orbs.filter((o) => !o.dying).map((o) => ({ at: v(o.group.position), r: o.r, hand: o.hand, swing: o.swing || null, activity: o.activity, power: !!o.power, speed: o.speed })),
       walls: walls.map((w) => ({ type: w.type, z: w.mesh.position.z, depth: w.depth, speed: w.speed, hit: w.hit, poly: w.poly })),

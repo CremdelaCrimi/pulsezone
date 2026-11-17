@@ -516,8 +516,11 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(p.kind === 'solo' && Math.abs(p.end - ((14 - STATION_STOP) / 4 + STATIONS.knee.hold + 0.5)) < 1e-9, 'a station books the lane while it waits in front of you');
   check(['press', 'chop', 'tiptoe'].every((k) => lanePlan(k, { now: 0, speed: 4 })?.kind === 'solo'), 'every station gets the lane to itself');
   const bar = v(0, 1.75, 0);
-  check(kneeGrab(v(-0.25, 1.75, 0.05), v(0.25, 1.7, 0), bar) && !kneeGrab(v(-0.25, 1.75, 0), v(0.25, 1.2, 0), bar), 'knee drive: both hands must be on the grips');
-  check(kneePulled(v(-0.2, 1.0, 0), v(0.2, 1.0, 0), 1.53, 1.6) && !kneePulled(v(-0.2, 1.0, 0), v(0.2, 1.0, 0), 1.6, 1.6), 'knee drive: hands pulled down AND a small crunch');
+  check(kneeGrab(v(-0.25, 1.75, 0.05), v(0.25, 1.7, 0), bar) && !kneeGrab(v(-0.25, 1.75, 0), v(0.25, 1.2, 0), bar), 'knee drive: both hands must be on the bar');
+  check(kneePulled(v(-0.2, 1.2, 0), v(0.2, 1.2, 0), 1.56, 1.6) && !kneePulled(v(-0.2, 1.2, 0), v(0.2, 1.2, 0), 1.6, 1.6)
+    && kneePulled(v(-0.2, 1.0, 0), v(0.2, 1.0, 0), 1.6, 1.6) && !kneePulled(v(-0.2, 1.0, 0), v(0.2, 1.4, 0), 1.5, 1.6),
+  'knee drive: hands to chest with a small crunch, or all the way down without one');
+  check(kneeGrab(v(-0.05, 1.8, 0.1), v(0.4, 1.65, 0), bar) && !kneeGrab(v(-0.6, 1.75, 0), v(0.25, 1.75, 0), bar), 'knee drive: grab anywhere along the bar');
   check(pressLoaded(1.3, 1.6) && !pressLoaded(1.45, 1.6), 'ceiling press loads in a squat (25 cm+)');
   check(pressDone(v(0, 1.8, 0), v(0, 1.8, 0), 1.58, 1.6) && !pressDone(v(0, 1.8, 0), v(0, 1.5, 0), 1.58, 1.6) && !pressDone(v(0, 1.6, 0), v(0, 1.6, 0), 1.35, 1.6), 'ceiling press: stand tall with both fists overhead');
   const orb = v(0.35, 1.7, 0), hip = v(-0.25, 0.75, 0.12);
