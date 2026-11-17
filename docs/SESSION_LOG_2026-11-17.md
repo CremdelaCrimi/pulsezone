@@ -25,3 +25,9 @@ Bugs found and fixed while testing:
 - The new top-row buttons were drawn before the board's button helper existed, which would have broken the Options board.
 - Workout pieces over ~16 KB were silently dropped by PeerJS's JSON channel; pieces are now 6000 characters.
 - Emulator only: a hidden window made the emulated camera NaN (0 × 0 canvas) and throttled timers; `&emutimer` now handles both. A bad frame time can no longer freeze the game clock.
+
+## Later — v53 pushed, waiting on workout data
+
+- v53 pushed and confirmed live (game, phone page with the Workout data section, Finish now button).
+- The user asked for insights from their last session. No workout file was on the PC (OneDrive and Downloads searched; the Quest wasn't connected over USB). Next: get the file via the phone page (Save workout file → Save to Files → OneDrive → FitBit Game) or Options → Save data on the Quest plus USB, then analyse heart rate vs moves, the knee-drive near-misses (drop / crunch), and how fast the catch-up reaches the zone. Only v53+ workouts have the full log and events.
+- docs/GAME_DESIGN_BRIEF.md brought up to date with v50–v53.
