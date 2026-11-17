@@ -10,14 +10,15 @@ import {
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
+  STATIONS, STATION_STOP, STATION_WINDOW, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v51';
+} from './core.js?v52';
 import { HostLink } from './link.js?v8';
-import { AudioEngine } from './audio.js?v51';
+import { AudioEngine } from './audio.js?v52';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v51';
-import { loadTuning, createDevPanel } from './dev.js?v51';
+import { OptionsPanel } from './options.js?v52';
+import { loadTuning, createDevPanel } from './dev.js?v52';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -51,7 +52,8 @@ const settings = {
   profile: 'steady',   // workout shape: 'steady' | 'waves' (target rolls +/-5 BPM) | 'build' (climbs to a peak)  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
   // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
   moves: {
-    jab: true, low: true, swing: true, power: true, pair: true, guard: true, trace: true, sweep: true, hammer: true,
+    jab: true, low: true, swing: true, power: true, pair: true, guard: false, trace: true, sweep: true, hammer: true,
+    knee: true, press: true, chop: true, tiptoe: true, // whole-body stations
     bag: true, ropes: true, heavy: true, sled: true, barrage: true, duck: true, squatSide: true, lean: true, pillar: true,
     shift: false, // side shifts (stepping off your centre line) are off by default: safer to stay centred
   },
@@ -64,11 +66,13 @@ try {
   delete settings.walls; delete settings.trace;
   delete settings.warmUpMinutes; // older saves had a 2-minute warm-up; it's now in seconds (30 s default)
   if (!(saved.migrated >= 2)) { settings.moves.shift = false; settings.migrated = 2; } // 2026-11-16: side shifts now off by default (stay centred)
+  if (!(saved.migrated >= 3)) { settings.moves.guard = false; settings.migrated = 3; } // 2026-11-16: guard & counter removed from the mix (not fun)
 } catch { /* ignore */ }
 const MOVE_LABELS = {
   jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then punch up', guard: 'Guard & counter', hammer: 'Hammer fists',
   trace: 'Rope tracing', sweep: 'Two-hand rope', bag: 'Speed bag', ropes: 'Battle ropes', heavy: 'Heavy bag', sled: 'Sled run', barrage: 'Dodge barrage (missiles)',
   duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar', shift: 'Side shifts (step left/right)',
+  knee: 'Pull-down knee drive', press: 'Squat + ceiling press', chop: 'Woodchopper', tiptoe: 'Tiptoe reach',
 };
 /** Which activities the moveset allows right now (forSpawn: also respect burst cooldowns). */
 const enabledActivities = (forSpawn = false) => ({
@@ -89,6 +93,7 @@ const enabledActivities = (forSpawn = false) => ({
   duck: settings.moves.duck,
   squatSide: settings.moves.squatSide,
   lateral: settings.moves.lean || settings.moves.pillar,
+  knee: settings.moves.knee, press: settings.moves.press, chop: settings.moves.chop, tiptoe: settings.moves.tiptoe,
 });
 if (params.has('warmup')) settings.warmUpSeconds = Number(params.get('warmup')) * 60; // ?warmup= is in minutes
 if (params.has('minutes')) settings.trainingMinutes = Number(params.get('minutes'));
@@ -180,7 +185,7 @@ document.addEventListener('keydown', unlockAudio, true);
 // ------------------------------------------------------------------ fists (colour = hand)
 
 const HAND_COLOR = { left: 0x3fa9ff, right: 0xff7a3d };
-const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v51
+const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v52
 { const el = document.getElementById('version'); if (el) el.textContent = VERSION; }
 const HAND_CSS = { left: '#7cc4ff', right: '#ffa070' };
 const FIST_R = 0.055;
@@ -398,7 +403,7 @@ function setProfile(p) {
   document.querySelectorAll('input[name=profile]').forEach((r) => { r.checked = r.value === p; });
   saveSettings();
 }
-const NOTE_LABEL = { 'note-slam': 'slam missed', 'note-guard': 'guard picky', 'note-fast': 'too fast', 'note-great': 'felt great' };
+const NOTE_LABEL = { 'note-slam': 'slam missed', 'note-guard': 'rep missed', 'note-fast': 'too fast', 'note-great': 'felt great' };
 /** Note buttons (VR board): bookmark this second in the workout CSV (column 'note'). */
 function addNote(label) {
   pendingNote = pendingNote ? `${pendingNote}; ${label}` : label;
@@ -428,7 +433,7 @@ function testMove(key) {
     queuedCombo = list[Math.floor(Math.random() * list.length)];
   }
   queuedActivity = key; queuedFor = 0; testQueued = true;
-  const names = { sweep: 'two-hand rope + slam', duck: 'duck wall', lateral: 'lean wall', squatSide: 'side-squat wall' };
+  const names = { sweep: 'two-hand rope + slam', duck: 'duck wall', lateral: 'lean wall', squatSide: 'side-squat wall', knee: 'knee drive', press: 'ceiling press', chop: 'woodchopper', tiptoe: 'tiptoe reach' };
   say(`Test: ${names[key] || key} coming${after}`, 1);
 }
 function setSound(on) { settings.sound = on; audio.setEnabled(on); $('sound').checked = on; saveSettings(); }
@@ -617,6 +622,7 @@ function clearObstacles() {
   guards.length = 0;
   for (const s of slams) scene.remove(s.group);
   slams.length = 0;
+  while (stations.length) removeStation(stations[0]);
   pendingBurst = null;
   bagReadyAt = ropesReadyAt = heavyReadyAt = sledReadyAt = 0;
   spawnTimer = 0;
@@ -733,6 +739,186 @@ function spawnPair(head, standing) {
     link: [lowX - highX, lowY - highY, gap],
   });
   say('Squat... then PUNCH UP!');
+}
+
+// ------------------------------------------------------------------ whole-body stations
+
+/**
+ * Whole-body moves that fly in, stop just in front of you and wait while you do them (see STATIONS
+ * in core.js): pull-down knee drive, squat + ceiling press, woodchopper and tiptoe reach. All on
+ * your centre line. A label on each one says what to do, how many reps are left and the time left.
+ */
+const stations = [];
+let chopSide = 1, kneeLeg = 'left', tiptoeUntil = -9, reachUp = 0.45;
+const STATION_COLOR = 0x6dffd8; // mint: nothing else in the game uses it
+const stationMat = new THREE.MeshStandardMaterial({ color: 0x14302a, emissive: STATION_COLOR, emissiveIntensity: 0.6, roughness: 0.4 });
+const stationGlowMat = new THREE.MeshBasicMaterial({ color: STATION_COLOR, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false });
+const kneeBarGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.74, 12).rotateZ(Math.PI / 2);
+const kneeGripGeo = new THREE.TorusGeometry(0.06, 0.014, 8, 20).rotateY(Math.PI / 2);
+const kneeRingGeo = new THREE.RingGeometry(0.1, 0.13, 32);
+const pressBallGeo = new THREE.SphereGeometry(0.13, 24, 16);
+const ceilingRingGeo = new THREE.RingGeometry(0.17, 0.21, 40).rotateX(Math.PI / 2);
+const chopOrbGeo = new THREE.SphereGeometry(0.11, 20, 14);
+const hipRingGeo = new THREE.RingGeometry(0.12, 0.16, 32);
+const tipStarGeo = new THREE.OctahedronGeometry(0.075, 0);
+const STATION_SAY = {
+  knee: 'KNEE DRIVE! Grab the bar overhead, pull it down and drive your knee up',
+  press: 'WALL BALL! Squat low... then press it up to the ceiling',
+  chop: 'WOODCHOPPER! Both hands on the orb, chop down to the opposite hip',
+  tiptoe: 'UP ON YOUR TOES! Reach the stars',
+};
+const stTmpL = new THREE.Vector3(), stTmpR = new THREE.Vector3(), stTmpH = new THREE.Vector3(), stMid = new THREE.Vector3();
+function spawnStation(head, standing, key) {
+  const group = new THREE.Group();
+  const speed = difficulty.orbSpeed;
+  const stopZ = head.z - STATION_STOP;
+  group.position.set(centerX, 0, stopZ - (SPAWN_DISTANCE - STATION_STOP));
+  const base = standing, p = {}, mats = [];
+  const glow = () => { const m = stationGlowMat.clone(); mats.push(m); return m; };
+  if (key === 'knee') {
+    p.bar = new THREE.Group();
+    p.bar.add(new THREE.Mesh(kneeBarGeo, stationMat));
+    for (const sx of [-1, 1]) { const g = new THREE.Mesh(kneeGripGeo, stationMat); g.position.x = sx * 0.25; p.bar.add(g); }
+    p.home = new THREE.Vector3(0, base + 0.15, 0);
+    p.bar.position.copy(p.home);
+    p.knee = new THREE.Mesh(kneeRingGeo, glow()); // where to bring your knee: a cue only (knees can't be tracked)
+    p.knee.position.set(kneeLeg === 'left' ? -0.12 : 0.12, 0.62, 0.2);
+    group.add(p.bar, p.knee);
+  } else if (key === 'press') {
+    p.ball = new THREE.Mesh(pressBallGeo, stationMat);
+    p.home = new THREE.Vector3(0, base - 0.45, 0);
+    p.ball.position.copy(p.home);
+    p.ring = new THREE.Mesh(ceilingRingGeo, glow()); // the target on the "ceiling"
+    p.ring.position.set(0, base + 0.5, 0);
+    group.add(p.ball, p.ring);
+  } else if (key === 'chop') {
+    p.side = chopSide; chopSide = -chopSide;
+    p.orb = new THREE.Mesh(chopOrbGeo, stationMat);
+    p.home = new THREE.Vector3(p.side * 0.35, base + 0.1, 0);
+    p.orb.position.copy(p.home);
+    p.hip = new THREE.Mesh(hipRingGeo, glow());
+    p.hip.position.set(-p.side * 0.25, base - 0.85, 0.12);
+    p.guide = new THREE.Mesh(new THREE.TubeGeometry(new THREE.LineCurve3(p.home.clone(), p.hip.position.clone()), 1, 0.012, 6), glow());
+    group.add(p.orb, p.hip, p.guide);
+  } else {
+    const h = tiptoeHeight(reachUp);
+    p.stars = [-1, 1].map((sx) => { const m = new THREE.Mesh(tipStarGeo, stationMat); m.position.set(sx * 0.14, base + h, 0); group.add(m); return m; });
+    p.next = Math.random() < 0.5 ? 0 : 1;
+    p.stars[1 - p.next].visible = false; // one star at a time, alternating hands
+  }
+  const { lc, tex, label } = burstLabel();
+  label.position.set(0, base - 0.3, -0.9); label.scale.setScalar(1.4); // further back, so it never blocks your view
+  group.add(label);
+  scene.add(group);
+  stations.push({
+    key, group, p, mats, lc, tex, label, labelKey: '', speed, stopZ, base, arrived: false, held: 0, duration: STATIONS[key].hold,
+    reps: 0, need: STATIONS[key].reps, stage: 0, stageAt: 0, smokeT: 0, done: false, doneAge: 0, nagAt: -9,
+  });
+  say(STATION_SAY[key], 1);
+}
+/** World positions of a station's targets (for the test hooks). */
+function stationPoints(s) {
+  const g = s.group, w = (v) => g.localToWorld(v.clone()), p = s.p;
+  if (s.key === 'knee') return { gripL: w(p.bar.position.clone().setX(-0.25)), gripR: w(p.bar.position.clone().setX(0.25)) };
+  if (s.key === 'press') return { ball: w(p.ball.position), ring: w(p.ring.position) };
+  if (s.key === 'chop') return { orb: w(p.orb.position), hip: w(p.hip.position) };
+  return { star: w(p.stars[p.next].position) };
+}
+function stationRep(s, at, label) {
+  s.reps++;
+  attribution.record(s.key, gameTime);
+  popText(score.hit(s.key === 'press' ? 2.5 : 1.5, label), at, '#6dffd8');
+  audio.sfx('perfect', { hand: 'left', power: 0.8 });
+  pulseBoth(0.6, 60);
+  shatter(at, new THREE.Vector3(0, 1, 0.3), STATION_COLOR, 0.5);
+  if (s.reps >= s.need) { s.done = true; if (s.key !== 'press') s.group.visible = false; }
+}
+function stationNag(s, text) { if (gameTime - s.nagAt > 2) { s.nagAt = gameTime; say(text, 2); } }
+function stationStep(s, xr, head) {
+  const g = s.group, p = s.p;
+  const L = g.worldToLocal(stTmpL.copy(fistByHand.left.world)), R = g.worldToLocal(stTmpR.copy(fistByHand.right.world));
+  const hy = head.y;
+  const late = gameTime - s.stageAt > (STATION_WINDOW[s.key] ?? 9);
+  stMid.addVectors(L, R).multiplyScalar(0.5);
+  if (s.key === 'knee') {
+    if (s.stage === 0 && kneeGrab(L, R, p.bar.position)) { s.stage = 1; s.stageAt = gameTime; pulseBoth(0.3, 30); }
+    if (s.stage === 1) {
+      p.bar.position.set(0, Math.min(p.home.y, stMid.y), 0); // the bar comes down with your hands
+      if (kneePulled(L, R, hy, standing)) {
+        stationRep(s, g.localToWorld(p.knee.position.clone()), `${kneeLeg.toUpperCase()} KNEE! `);
+        kneeLeg = kneeLeg === 'left' ? 'right' : 'left';
+        p.knee.position.x = kneeLeg === 'left' ? -0.12 : 0.12;
+        p.bar.position.copy(p.home); s.stage = 0;
+      } else if (late) { p.bar.position.copy(p.home); s.stage = 0; stationNag(s, 'Pull it down hard - with a crunch!'); }
+    }
+  } else if (s.key === 'press') {
+    if (s.stage === 0 && pressLoaded(hy, standing)) { s.stage = 1; s.stageAt = gameTime; pulseBoth(0.3, 30); say('Now PRESS it up!', 2); }
+    if (s.stage === 1) {
+      p.ball.position.lerp(stMid, 0.35); // the ball rides up with your hands
+      if (pressDone(L, R, hy, standing)) { s.flyFrom = p.ball.position.clone(); stationRep(s, g.localToWorld(p.ring.position.clone()), 'WALL BALL! '); }
+      else if (late) { s.stage = 0; p.ball.position.copy(p.home); stationNag(s, 'Squat, then drive it all the way up!'); }
+    } else if (!s.done) p.ball.position.lerp(p.home, 0.2);
+  } else if (s.key === 'chop') {
+    if (s.stage === 0 && chopGrab(L, R, p.orb.position)) { s.stage = 1; s.stageAt = gameTime; pulseBoth(0.3, 30); }
+    if (s.stage === 1) {
+      p.orb.position.copy(stMid);
+      const down = (fistByHand.left.vel.y + fistByHand.right.vel.y) / 2 < -0.6;
+      if (chopDone(L, R, p.hip.position) && down) stationRep(s, g.localToWorld(p.hip.position.clone()), 'CHOP! ');
+      else if (late) { s.stage = 0; p.orb.position.copy(p.home); stationNag(s, 'Chop it right down across your body!'); }
+    }
+  } else {
+    const star = p.stars[p.next];
+    for (const f of [L, R]) {
+      if (f.distanceTo(star.position) < 0.17) {
+        if (tiptoeReached(f, star.position, hy, s.base)) {
+          stationRep(s, g.localToWorld(star.position.clone()), 'TIPTOE! ');
+          star.visible = false; p.next = 1 - p.next; p.stars[p.next].visible = true;
+          break;
+        }
+        stationNag(s, 'Up on your toes!');
+      }
+    }
+  }
+}
+function updateStations(dt, xr, head) {
+  for (let i = stations.length - 1; i >= 0; i--) {
+    const s = stations[i];
+    const g = s.group;
+    if (s.done) { // finished: the wall ball flies up to the ceiling ring, then everything goes
+      s.doneAge += dt;
+      if (s.key === 'press' && s.flyFrom) s.p.ball.position.lerpVectors(s.flyFrom, s.p.ring.position, Math.min(1, s.doneAge / 0.3));
+      if (s.doneAge > 0.35) removeStation(s);
+      continue;
+    }
+    if (!s.arrived) {
+      g.position.z = Math.min(s.stopZ, g.position.z + s.speed * dt);
+      if (g.position.z >= s.stopZ) { s.arrived = true; s.stageAt = gameTime; audio.sfx('alert'); }
+    } else {
+      g.position.set(centerX, 0, head.z - STATION_STOP); // waits just in front of you
+      s.held += dt;
+      if (SMOKE) { s.smokeT += dt; if (s.smokeT > 0.7) { s.smokeT = 0; stationRep(s, g.position.clone().setY(standing - 0.2), 'NICE! '); } }
+      else if (xr) stationStep(s, xr, head);
+      if (!s.done && s.held >= s.duration) { // time's up
+        if (s.reps < s.need) { score.miss(); say(s.reps ? 'Nearly - keep that pace!' : 'Missed it - next one!', 2); }
+        removeStation(s);
+        continue;
+      }
+    }
+    s.label.lookAt(camera.getWorldPosition(sledTmp));
+    const what = { knee: s.stage ? 'PULL DOWN + KNEE UP!' : 'GRAB THE BAR', press: s.stage ? 'PRESS IT UP!' : 'SQUAT LOW',
+      chop: s.stage ? 'CHOP TO THE HIP!' : 'BOTH HANDS ON IT', tiptoe: 'UP ON YOUR TOES' }[s.key];
+    const left = s.arrived ? Math.max(0, s.duration - s.held) : s.duration;
+    drawBurstLabel(s, `${s.reps}/${s.need}`, what, left / s.duration, s.stage ? '#7cffb0' : '#6dffd8');
+  }
+}
+function removeStation(s) {
+  const i = stations.indexOf(s);
+  if (i >= 0) stations.splice(i, 1);
+  scene.remove(s.group);
+  for (const m of s.mats) m.dispose();
+  if (s.p.guide) s.p.guide.geometry.dispose();
+  s.tex.dispose(); s.label.geometry.dispose(); s.label.material.dispose();
+  if (s.key === 'tiptoe') tiptoeUntil = gameTime + 1.5; // give your heels time to come down before standing height updates
 }
 
 // ------------------------------------------------------------------ guard & counter
@@ -2667,7 +2853,8 @@ const options = new OptionsPanel({
       case 'diag': settings.diag = !settings.diag; saveSettings(); break;
       case 'note-slam': case 'note-guard': case 'note-fast': case 'note-great': addNote(NOTE_LABEL[id]); options.toggle(false); break;
       case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift': case 'test-hammer':
-      case 'test-heavy': case 'test-sled': case 'test-barrage': case 'test-bag': case 'test-ropes': case 'test-wall': testMove(id.slice(5)); options.toggle(false); break;
+      case 'test-heavy': case 'test-sled': case 'test-barrage': case 'test-bag': case 'test-ropes': case 'test-wall':
+      case 'test-knee': case 'test-press': case 'test-chop': case 'test-tiptoe': testMove(id.slice(5)); options.toggle(false); break;
       case 'end': controller.beginCoolDown(); options.toggle(false); break;
       case 'close': options.toggle(false); break;
     }
@@ -2706,7 +2893,8 @@ function buildMovesUI() {
       <label><input type="radio" name="profile" value="waves"> Waves (+/-5 BPM every few minutes)</label>
       <label><input type="radio" name="profile" value="build"> Build &amp; peak (start easy, finish hard)</label>
     </div>
-    ${group('Orbs', ['jab', 'low', 'swing', 'power', 'pair', 'guard', 'trace', 'sweep'])}
+    ${group('Orbs', ['jab', 'low', 'swing', 'hammer', 'power', 'pair', 'guard', 'trace', 'sweep'])}
+    ${group('Whole-body moves', ['knee', 'press', 'chop', 'tiptoe'])}
     ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes', 'heavy', 'sled', 'barrage'])}
     ${group('Walls & footwork', ['duck', 'squatSide', 'lean', 'pillar', 'shift'])}
     <div class="muted" id="movesNote" style="font-size:12px"></div>`;
@@ -2891,6 +3079,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 });
 
 function desktopPunch(hand) {
+  const st = stations.find((s) => s.arrived && !s.done);
+  if (st) { punchTimer = 0.12; punchHand = hand; stationRep(st, st.group.position.clone().setY(standing - 0.2), 'NICE! '); return; } // desktop: a click = one rep
   if (heavy && heavy.age >= HEAVY_ARRIVE) { punchTimer = 0.12; punchHand = hand; heavyHit(hand, null, 0.7, hand === heavy.targetHand); return; }
   if (sled && sled.age >= SLED_ARRIVE) { // desktop: stand (let go of C), then hold C and click = one rep
     punchTimer = 0.12; punchHand = hand;
@@ -3000,6 +3190,7 @@ function trySpawn(activity, extra = {}) {
   else if (activity === 'trace' || activity === 'sweep') spawnTrace(head, standing, activity === 'sweep');
   else if (activity === 'pair') spawnPair(head, standing);
   else if (activity === 'guard') spawnGuardSet(head, standing, shots);
+  else if (STATIONS[activity]) spawnStation(head, standing, activity);
   else spawnOrb(head, standing, activity, { shift: extra.shift || 0 });
   return true;
 }
@@ -3106,7 +3297,9 @@ function frame(time) {
   const gdt = paused ? 0 : dt;                                   // game time stops while options are open
 
   camera.getWorldPosition(head);
-  standing = head.y > standing ? head.y : standing - 0.01 * gdt;
+  const onToes = gameTime < tiptoeUntil || stations.some((s) => s.key === 'tiptoe');
+  standing = head.y > standing && !onToes ? head.y : head.y > standing ? standing : standing - 0.01 * gdt;
+  if (xr) for (const f of fists) reachUp = Math.max(reachUp, Math.min(0.7, f.world.y - head.y)); // how far above your eyes you reach
   standing = Math.min(2.1, Math.max(1.0, standing));
   if (head.y < standing - 0.25) lastLowAt = gameTime; // for stand-tall boxes: did you actually get low?
   if (recenterSoon && (!xr || head.y > 0.8)) { centerX = xr ? head.x : 0; recenterSoon = false; }
@@ -3189,7 +3382,7 @@ function frame(time) {
     const shiftBusy = shiftPlan && gameTime < shiftPlan.end + SHIFT.margin;
     if (pendingBurst && !standNext && !shiftBusy) {
       // A burst waits until the lane is clear, then takes over for a few seconds.
-      if (!burstActive() && !orbs.length && !walls.length && !traces.length && !guards.length && !slams.length && !bombs.length) {
+      if (!burstActive() && !orbs.length && !walls.length && !traces.length && !guards.length && !slams.length && !bombs.length && !stations.length) {
         ({ bag: spawnBag, ropes: spawnRopes, heavy: spawnHeavy, sled: spawnSled })[pendingBurst](head, standing);
         lastPick = pendingBurst; lastReason = pendingBurstTest ? 'test' : 'burst'; // the diag line shows what actually came
         pendingBurst = null; pendingBurstTest = false;
@@ -3244,6 +3437,7 @@ function frame(time) {
     if (heavy) updateHeavy(gdt, xr);
     if (sled) updateSled(gdt, xr, head, standing);
     updateBombs(gdt, head);
+    updateStations(gdt, xr, head);
   }
   updateShards(rawDt);
   updatePop(rawDt);
@@ -3420,6 +3614,9 @@ window.pz = {
       sled: sled && { age: sled.age, ready: sled.ready, tucked: sled.tucked, strokes: sled.strokes },
       ropes: ropes && { age: ropes.age, tier: ropes.tier, pumps: ropes.sides.map((s) => +s.pump.toFixed(2)), hard: +ropes.hardTime.toFixed(1), on: +ropes.onTime.toFixed(1) },
       heavy: !!heavy, bag: !!bag, traces: traces.length,
+      stations: stations.map((s) => ({ key: s.key, stage: s.stage, reps: s.reps, need: s.need, arrived: s.arrived, done: !!s.done, held: +s.held.toFixed(2), duration: s.duration, base: s.base,
+        points: Object.fromEntries(Object.entries(stationPoints(s)).map(([k, p]) => [k, v(p)])) })),
+      reachUp: +reachUp.toFixed(2),
     };
   },
   /** Emulator only: start the VR session, as if you pressed ENTER VR. */
@@ -3462,6 +3659,7 @@ window.pz = {
       ...slams.map((s) => ({ what: 'slam', a: (head.z - 0.8 - s.group.position.z) / s.speed, b: (head.z - 0.2 - s.group.position.z) / s.speed })),
       ...traces.map((t) => ({ what: 'rope', a: (t.planeZ - t.group.position.z) / t.speed, b: (t.planeZ - t.group.position.z + t.length) / t.speed })),
       ...guards.map((g) => ({ what: `guard${g.seq}`, a: (g.hitZ - g.group.position.z) / g.speed, b: (g.hitZ - g.group.position.z) / g.speed })),
+      ...stations.map((s) => { const a = s.arrived ? 0 : (s.stopZ - s.group.position.z) / s.speed; return { what: s.key, a, b: a + s.duration - s.held }; }),
     ];
     const plain = new Set(['jab', 'low']);
     const out = [];

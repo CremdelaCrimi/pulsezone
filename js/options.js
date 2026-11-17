@@ -2,7 +2,7 @@
 // (trigger = click). Also works on desktop with the mouse. The game pauses while it's open.
 import * as THREE from 'three';
 
-const W = 1024, H = 2000;
+const W = 1024, H = 2160;
 
 export class OptionsPanel {
   /**
@@ -107,7 +107,9 @@ export class OptionsPanel {
     button('move-swing', 'Hook/upper', 445, 190, s.moves.swing && s.gameType === 'punch'); button('move-hammer', 'Hammer', 645, 160, s.moves.hammer && s.gameType === 'punch');
     button('move-trace', 'Rope', 815, 160, s.moves.trace); y += R;
     label('More'); button('move-power', 'Power', 175, 165, s.moves.power && s.gameType === 'punch'); button('move-pair', 'Squat+punch', 350, 230, s.moves.pair);
-    button('move-guard', 'Guard', 590, 215, s.moves.guard); button('move-sweep', '2 ropes', 815, 160, s.moves.sweep); y += R;
+    button('move-sweep', '2 ropes', 590, 215, s.moves.sweep); y += R;
+    label('Body'); button('move-knee', 'Knee', 175, 150, s.moves.knee); button('move-press', 'Press', 335, 150, s.moves.press);
+    button('move-chop', 'Chop', 495, 150, s.moves.chop); button('move-tiptoe', 'Tiptoe', 655, 150, s.moves.tiptoe); y += R;
     label('Bursts'); button('move-bag', 'Speed', 175, 150, s.moves.bag); button('move-ropes', 'Ropes', 335, 150, s.moves.ropes);
     button('move-heavy', 'Heavy', 495, 150, s.moves.heavy); button('move-sled', 'Sled', 655, 150, s.moves.sled); button('move-barrage', 'Missiles', 815, 160, s.moves.barrage); y += R;
     label('Walls'); button('move-duck', 'Duck', 175, 140, s.moves.duck); button('move-squatSide', 'Side squat', 325, 200, s.moves.squatSide);
@@ -120,10 +122,11 @@ export class OptionsPanel {
     // Test tools only show when Diag is on, so normal workouts get a tidy board.
     label('Test'); button('diag', s.diag ? 'Diag on' : 'Diag (test tools)', 175, s.diag ? 150 : 300, s.diag);
     if (s.diag) {
-      button('test-guard', 'Guard', 335, 150); button('test-sweep', '2 ropes', 495, 150); button('test-hammer', 'Hammer', 655, 150); button('test-combo', 'Combo', 815, 160); y += R;
+      button('test-knee', 'Knee', 335, 150); button('test-sweep', '2 ropes', 495, 150); button('test-hammer', 'Hammer', 655, 150); button('test-combo', 'Combo', 815, 160); y += R;
       label('Test 2'); button('test-heavy', 'Heavy', 175, 126); button('test-sled', 'Sled', 309, 126); button('test-barrage', 'Missiles', 443, 126);
       button('test-bag', 'Speed', 577, 126); button('test-ropes', 'Ropes', 711, 126); button('test-wall', 'Walls', 845, 130); y += R;
-      label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Guard picky', 385, 200, false);
+      label('Test 3'); button('test-press', 'Press', 175, 150); button('test-chop', 'Chop', 335, 150); button('test-tiptoe', 'Tiptoe', 495, 150); y += R;
+      label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Rep missed', 385, 200, false);
       button('note-fast', 'Too fast', 595, 180, false); button('note-great', 'Felt great', 785, 190, false);
     }
     y += R;

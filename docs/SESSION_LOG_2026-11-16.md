@@ -263,3 +263,14 @@ Checks: core tests pass (new rope-tier checks); test buttons for sled, ropes, mi
 - Open question for the headset: the pillar needs about a 31 cm lean, and side-squat walls need about a 41 cm drop.
 - Also set up Meta's Quest connection tool (`@meta-quest/metavr` 1.10.0) as a local MCP server for this project; it needs Developer Mode and USB before it can see the headset.
 
+## Night — guard out, four whole-body moves in (v52)
+
+- **Guard & counter removed from the mix:** off by default and switched off in existing saved settings, gone from the VR board and Test row (still on the page checklist if ever wanted).
+- **Whole-body "stations"**: each flies in, stops 45 cm in front of you and waits while you do the move, with a label for what to do, reps left and time left. All on the centre line.
+  - **Pull-down knee drive**: grab the bar overhead (grips 25 cm either side), pull it to your waist with a small crunch (head 5 cm down) as a lit ring shows which knee to drive. 2 reps, alternating knees. Knees can't be tracked, so it's judged from hands and head.
+  - **Squat + ceiling press (wall ball)**: squat 25 cm+, then stand tall with both fists above your head within 1.8 s; the ball flies up to the ceiling ring.
+  - **Woodchopper**: both hands on the orb high on one side, then both down at the ring by the opposite hip within 1 s, moving down. Alternates sides.
+  - **Tiptoe reach**: touch a star just out of reach with your head 3 cm+ above standing height; 2 stars, alternating hands. Star height follows how high you've been seen to reach; a tiptoe doesn't raise your recorded standing height.
+- VR board: new **Body** row (Knee, Press, Chop, Tiptoe), Knee on the Test row, new **Test 3** row (Press, Chop, Tiptoe). The board is a little taller.
+- The VR bot learned the four moves; `runChecks()` now ends with them.
+

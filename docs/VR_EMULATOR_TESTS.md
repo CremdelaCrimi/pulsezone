@@ -24,9 +24,10 @@ The emulator only loads when the address has `?emulate`. Normal play, including 
 - leans or squats under walls and away from missiles (up to 40 cm lean, 50 cm squat; never a step);
 - does sled reps (stand tall with arms up, then squat and push both poles down and back);
 - pumps the ropes at four effort levels, to check the intensity meter;
-- slams the bar with both fists.
+- slams the bar with both fists;
+- does the whole-body stations: knee drive, ceiling press, woodchopper and tiptoe reach.
 
-`runChecks()` sends each test move in turn and records what changed. The steps are: free play, guard ×2, hammer, walls ×2, missiles, sled, ropes, combo. For each step it records hits, misses, weak / wrong-hand hits, blocks, dodges, wall and missile hits, sled reps and the rope level reached.
+`runChecks()` sends each test move in turn and records what changed. The steps are: free play, guard ×2, hammer, walls ×2, missiles, sled, ropes, combo, then knee, press, chop, tiptoe, knee, chop. (Guard is off in normal play now, but its test still sends one, so the code stays checked.) For each step it records hits, misses, weak / wrong-hand hits, blocks, dodges, wall and missile hits, sled reps and the rope level reached.
 
 ## Hooks it uses
 

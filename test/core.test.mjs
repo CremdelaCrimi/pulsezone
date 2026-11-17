@@ -7,6 +7,7 @@ import {
   wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sensorLooksFlat, breakdownDue, barrageShape, barragePlan, bombHits, heavyPoints, sledTucked, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
   GUARD_ZONES, GUARD_SEQ_GAP, guardZonesFor, guardCovers, kcalPerMinute,
   ropeTier, ROPE_TIER_MULT, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX,
+  STATIONS, STATION_STOP, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -190,7 +191,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
   // Learning: a synthetic player whose heart responds strongly to side squats and barely to punches.
   // Generated with a slightly different lag than the learner assumes, plus noise.
-  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9, heavy: 0.8, sled: 1.6, barrage: 1.2, hammer: 0.9 };
+  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9, heavy: 0.8, sled: 1.6, barrage: 1.2, hammer: 0.9, knee: 1.4, press: 1.5, chop: 1.1, tiptoe: 0.5 };
   const att = new HeartRateAttribution({ weights: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 1.0])) });
   const rng = mulberry32(7);
   const tr = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
@@ -506,6 +507,26 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(ropeTier(0.3) === 0 && ropeTier(ROPE_PUMP_SPEED) === 1 && ropeTier(ROPE_HARD) === 2 && ropeTier(ROPE_MAX + 0.5) === 3, 'tiers: none / on / hard / max');
   check(ROPE_PUMP_SPEED < ROPE_HARD && ROPE_HARD < ROPE_MAX, 'thresholds rise');
   check(ROPE_TIER_MULT[0] === 0 && ROPE_TIER_MULT[2] === 1.5 && ROPE_TIER_MULT[3] === 2, 'harder pumping is worth more points');
+}
+
+{
+  console.log('Whole-body stations');
+  const v = (x, y, z) => ({ x, y, z });
+  const p = lanePlan('knee', { now: 0, speed: 4 });
+  check(p.kind === 'solo' && Math.abs(p.end - ((14 - STATION_STOP) / 4 + STATIONS.knee.hold + 0.5)) < 1e-9, 'a station books the lane while it waits in front of you');
+  check(['press', 'chop', 'tiptoe'].every((k) => lanePlan(k, { now: 0, speed: 4 })?.kind === 'solo'), 'every station gets the lane to itself');
+  const bar = v(0, 1.75, 0);
+  check(kneeGrab(v(-0.25, 1.75, 0.05), v(0.25, 1.7, 0), bar) && !kneeGrab(v(-0.25, 1.75, 0), v(0.25, 1.2, 0), bar), 'knee drive: both hands must be on the grips');
+  check(kneePulled(v(-0.2, 1.0, 0), v(0.2, 1.0, 0), 1.53, 1.6) && !kneePulled(v(-0.2, 1.0, 0), v(0.2, 1.0, 0), 1.6, 1.6), 'knee drive: hands pulled down AND a small crunch');
+  check(pressLoaded(1.3, 1.6) && !pressLoaded(1.45, 1.6), 'ceiling press loads in a squat (25 cm+)');
+  check(pressDone(v(0, 1.8, 0), v(0, 1.8, 0), 1.58, 1.6) && !pressDone(v(0, 1.8, 0), v(0, 1.5, 0), 1.58, 1.6) && !pressDone(v(0, 1.6, 0), v(0, 1.6, 0), 1.35, 1.6), 'ceiling press: stand tall with both fists overhead');
+  const orb = v(0.35, 1.7, 0), hip = v(-0.25, 0.75, 0.12);
+  check(chopGrab(v(0.3, 1.7, 0), v(0.4, 1.65, 0), orb) && chopDone(v(-0.2, 0.8, 0.1), v(-0.3, 0.75, 0.1), hip) && !chopDone(v(0.2, 0.8, 0.1), v(-0.3, 0.75, 0.1), hip), 'woodchopper: grab high, both hands to the opposite hip');
+  check(tiptoeReached(v(0.1, 2.15, 0), v(0.14, 2.15, 0), 1.64, 1.6) && !tiptoeReached(v(0.1, 2.15, 0), v(0.14, 2.15, 0), 1.61, 1.6), 'tiptoe: the star only counts with your heels up');
+  check(tiptoeHeight(0.2) === 0.4 && tiptoeHeight(1) === 0.65 && Math.abs(tiptoeHeight(0.5) - 0.55) < 1e-9, 'tiptoe stars sit just above your reach');
+  const picks = new Set();
+  for (let i = 0; i < 400; i++) picks.add(chooseActivity({ intensity: 0.8, status: 'InZone' }));
+  check(['knee', 'press', 'chop', 'tiptoe'].every((k) => picks.has(k)), 'the game sends the new moves');
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

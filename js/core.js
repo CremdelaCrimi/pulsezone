@@ -546,6 +546,11 @@ export const ACTIVITIES = Object.freeze([
   { key: 'guard', label: 'Guard & counter', kind: 'orb', from: 0.3, base: 0.25, prior: 0.9 },
   // A drum pad at chest height: strike DOWN onto it with the bottom of your fist.
   { key: 'hammer', label: 'Hammer fists', kind: 'orb', from: 0.25, base: 0.35, prior: 1.0 },
+  // Whole-body stations: they stop just in front of you and wait while you do the move (see STATIONS).
+  { key: 'knee', label: 'Knee drives', kind: 'station', from: 0.3, base: 0.25, prior: 1.5 },
+  { key: 'press', label: 'Squat + ceiling press', kind: 'station', from: 0.3, base: 0.25, prior: 1.6 },
+  { key: 'chop', label: 'Woodchoppers', kind: 'station', from: 0.25, base: 0.25, prior: 1.2 },
+  { key: 'tiptoe', label: 'Tiptoe reach', kind: 'station', from: 0.15, base: 0.2, prior: 0.6 },
   { key: 'bag', label: 'Speed bag', kind: 'burst', from: 0.35, base: 0.1, prior: 0.3 },     // per punch on the bag
   { key: 'ropes', label: 'Battle ropes', kind: 'burst', from: 0.45, base: 0.1, prior: 1.6 }, // per second of pumping
   { key: 'heavy', label: 'Heavy bag', kind: 'burst', from: 0.4, base: 0.1, prior: 0.9 },    // per strong punch (hooks, uppercuts)
@@ -709,6 +714,10 @@ export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0,
       const arrive = now + (dist - 0.5) / speed;
       return { kind: 'solo', start: arrive - 0.7, end: arrive + 0.7 };
     }
+    case 'knee': case 'press': case 'chop': case 'tiptoe': { // flies in, stops in front of you, waits `hold` s
+      const arrive = now + (SPAWN_DISTANCE - STATION_STOP) / speed;
+      return { kind: 'solo', start: arrive - 0.6, end: arrive + STATIONS[activity].hold + 0.5 };
+    }
     case 'duck': case 'lateral': case 'squatSide': case 'stand': {
       const ws = speed * 0.8;
       return { kind: 'solo', start: now + SPAWN_DISTANCE / ws - 0.7, end: now + (SPAWN_DISTANCE + depth) / ws + 0.6 };
@@ -774,10 +783,11 @@ export const comboPlan = (first, n, gap) => ({ kind: 'solo', start: first - 0.5,
  * (sent 2.5x as often). Below the zone it's one of the moves that raise YOUR heart rate most.
  */
 export const SPOTLIGHT = Object.freeze({ first: 180, every: 240, seconds: 60, boost: 2.5 });
-export const SPOTLIGHT_MOVES = Object.freeze(['power', 'guard', 'low', 'swing', 'pair', 'sweep', 'trace', 'duck', 'squatSide', 'lateral']);
+export const SPOTLIGHT_MOVES = Object.freeze(['power', 'guard', 'low', 'swing', 'pair', 'sweep', 'trace', 'duck', 'squatSide', 'lateral', 'knee', 'press', 'chop']);
 export const SPOTLIGHT_NAMES = Object.freeze({
   power: 'POWER ROUND', guard: 'DEFENCE DRILL', low: 'SQUAT ROUND', swing: 'HOOKS & UPPERCUTS', pair: 'SQUAT + PUNCH UP', hammer: 'HAMMER FISTS',
   sweep: 'TWO-HAND ROPES', trace: 'ROPE ROUND', duck: 'DUCK & WEAVE', squatSide: 'SIDE SQUATS', lateral: 'FOOTWORK',
+  knee: 'KNEE DRIVES', press: 'WALL BALLS', chop: 'WOODCHOPPERS', tiptoe: 'TIPTOE ROUND',
 });
 /** Is a spotlight due at this many seconds into training (given when the last one started)? */
 export function spotlightDue(t, lastStart) {
@@ -821,6 +831,42 @@ export const heavyPoints = (power, onTarget) => Math.round((4 + 8 * clamp01(powe
 
 /** Sled run: you're "tucked" when your head is at least 15 cm below your standing height. */
 export const sledTucked = (headY, standing) => headY < standing - 0.15;
+
+// ---------------------------------------------------------------- whole-body stations
+
+/**
+ * Whole-body moves that fly in, stop just in front of you and wait while you do them, all on your
+ * centre line (no steps): a pull-down knee drive (grab the bar overhead, pull it to your waist as a
+ * knee comes up; 2 reps, alternating knees), a squat-to-ceiling press (wall ball), a woodchopper
+ * (both hands from high on one side down to the opposite hip) and a tiptoe reach (2 stars just
+ * out of reach). The headset can't see knees or toes, so those are judged from your hands and head.
+ * `hold` = seconds it waits once stopped; `reps` = reps it asks for.
+ */
+export const STATIONS = Object.freeze({
+  knee: { hold: 3.6, reps: 2 },
+  press: { hold: 3.4, reps: 1 },
+  chop: { hold: 2.6, reps: 1 },
+  tiptoe: { hold: 3.0, reps: 2 },
+});
+export const STATION_STOP = 0.45; // metres in front of your head where a station stops
+/** Seconds you get for the second half of a move (pull, press, chop) once the first half is done. */
+export const STATION_WINDOW = Object.freeze({ knee: 1.0, press: 1.8, chop: 1.0 });
+const dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+/** Knee drive, part 1: both hands on the bar's grips (grips 25 cm either side of the bar's centre). */
+export const kneeGrab = (L, R, bar) => dist3(L, { x: bar.x - 0.25, y: bar.y, z: bar.z }) < 0.24 && dist3(R, { x: bar.x + 0.25, y: bar.y, z: bar.z }) < 0.24;
+/** Part 2: both hands pulled down below your chest, with a small crunch (head 5 cm+ below standing). */
+export const kneePulled = (L, R, headY, standing) => L.y < headY - 0.45 && R.y < headY - 0.45 && headY < standing - 0.05;
+/** Ceiling press, part 1: you're in a squat (head 25 cm+ below standing). */
+export const pressLoaded = (headY, standing) => headY < standing - 0.25;
+/** Part 2: standing tall again with both fists pushed up above your head. */
+export const pressDone = (L, R, headY, standing) => headY > standing - 0.1 && L.y > headY + 0.12 && R.y > headY + 0.12;
+/** Woodchopper: both hands on the high orb to start, both down at the opposite hip to finish. */
+export const chopGrab = (L, R, orb) => dist3(L, orb) < 0.26 && dist3(R, orb) < 0.26;
+export const chopDone = (L, R, hip) => dist3(L, hip) < 0.3 && dist3(R, hip) < 0.3;
+/** Tiptoe reach: a hand on the star while your head is 3 cm+ above your usual standing height. */
+export const tiptoeReached = (fist, star, headY, base) => dist3(fist, star) < 0.17 && headY >= base + 0.03;
+/** How high (above your eyes) to put the tiptoe stars, from how far up you've been seen to reach. */
+export const tiptoeHeight = (reachUp) => Math.min(0.65, Math.max(0.4, reachUp + 0.05));
 
 /** Can `plan` be added to the booked `lane` slots without crowding anything? */
 export function laneFree(lane, plan) {

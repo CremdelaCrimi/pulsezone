@@ -109,6 +109,9 @@ function tick(ts) {
   const p = pz.peek();
   if (!dev || !p.presenting) return;
   const hz = p.head[2];
+  const clash = p.stations.length > 0 && !!(p.ropes || p.sled || p.heavy || p.bag); // two things at once: a game bug
+  if (clash && !me.clash) stats.clashes = (stats.clashes || 0) + 1;
+  me.clash = clash;
   const hitWalls = p.walls.filter((w) => w.hit);
   if (hitWalls.length > (me.hitWalls || 0)) stats.wallHits.push({ type: hitWalls.at(-1).type, head: p.head, centerX: p.centerX, bombs: p.bombs.length });
   me.hitWalls = hitWalls.length;
@@ -140,10 +143,32 @@ function tick(ts) {
     const seg = a < 2.7 ? 0 : a < 4.2 ? 1 : a < 5.7 ? 2 : 3;
     stats.ropeTiers[seg] = Math.max(stats.ropeTiers[seg] ?? 0, p.ropes.tier);
   }
+  const st = p.stations.find((x) => x.arrived && !x.done);
+  if (st) { // whole-body stations: squat, crunch or rise on your toes as the move needs
+    if (st.key === 'knee' && st.stage === 1) base[1] = STAND - 0.09;
+    if (st.key === 'press') base[1] = st.stage === 0 ? STAND - 0.33 : STAND;
+    if (st.key === 'tiptoe') base[1] = STAND + 0.05;
+  }
   const head = safeHead(p, base);
   me.head = towards(me.head, head, 2.6 * dt);
 
   // Hands: guard if a shot is close, else slam, else punch the orbs.
+  if (!target.left && st) {
+    const P = st.points;
+    if (st.key === 'knee') {
+      if (st.stage === 0) { target.left = P.gripL; target.right = P.gripR; }
+      else { target.left = [P.gripL[0], me.head[1] - 0.65, P.gripL[2]]; target.right = [P.gripR[0], me.head[1] - 0.65, P.gripR[2]]; }
+    } else if (st.key === 'press') {
+      if (st.stage === 0) { target.left = add(P.ball, [-0.1, 0, 0.05]); target.right = add(P.ball, [0.1, 0, 0.05]); }
+      else { target.left = [p.centerX - 0.12, me.head[1] + 0.3, hz - 0.35]; target.right = [p.centerX + 0.12, me.head[1] + 0.3, hz - 0.35]; }
+    } else if (st.key === 'chop') {
+      const to = st.stage === 0 ? P.orb : P.hip;
+      target.left = add(to, [-0.06, 0, 0]); target.right = add(to, [0.06, 0, 0]);
+    } else {
+      const hand = P.star[0] < p.centerX ? 'left' : 'right';
+      target[hand] = P.star; target[hand === 'left' ? 'right' : 'left'] = rest(hand === 'left' ? 'right' : 'left');
+    }
+  }
   if (!target.left) {
     const g = p.guards.map((x) => ({ ...x, tta: (x.hitZ - x.z) / x.speed })).filter((x) => x.tta > -0.15 && x.tta < 0.75).sort((a, b) => a.tta - b.tta)[0];
     const slam = p.slams.find((s) => s.at[2] > hz - 0.95 && s.at[2] < hz - 0.2);
@@ -208,10 +233,10 @@ export async function runChecks() {
     if (act) pz.act(act);
     if (name === 'sled') await waitFor(() => pz.peek().sled, 25);
     if (name === 'ropes') { stats.ropeTiers = []; await waitFor(() => pz.peek().ropes, 25); }
-    let sledReps = 0;
+    let sledReps = 0, stationReps = 0, stationNeed = 0;
     const t0 = performance.now();
-    while (performance.now() - t0 < seconds * 1000) { const s = pz.peek().sled; if (s) sledReps = Math.max(sledReps, s.strokes); await wait(0.1); }
-    const row = { name, ...diff(before, snap()), ...(extra ? extra(sledReps) : {}) };
+    while (performance.now() - t0 < seconds * 1000) { const pk = pz.peek(); const s = pk.sled; if (s) sledReps = Math.max(sledReps, s.strokes); for (const x of pk.stations) if (x.key === name) { stationReps = Math.max(stationReps, x.reps); stationNeed = x.need; } await wait(0.1); }
+    const row = { name, ...diff(before, snap()), ...(extra ? extra(sledReps) : {}), ...(stationNeed ? { reps: `${stationReps}/${stationNeed}` } : {}) };
     report.steps.push(row);
     return row;
   };
@@ -225,7 +250,9 @@ export async function runChecks() {
   await step('sled', 'test-sled', 10, (reps) => ({ sledReps: reps, sledPushes: stats.sledPushes }));
   await step('ropes', 'test-ropes', 8, () => ({ ropeTiersBySegment: stats.ropeTiers.slice() }));
   await step('combo', 'test-combo', 9);
+  for (const k of ['knee', 'press', 'chop', 'tiptoe', 'knee', 'chop']) await step(k, `test-${k}`, 9);
   report.total = snap();
+  report.clashes = stats.clashes || 0; // a station and a burst at the same time
   report.done = true;
   return report;
 }

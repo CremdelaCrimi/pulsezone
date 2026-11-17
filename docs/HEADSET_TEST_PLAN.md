@@ -18,7 +18,10 @@ Open the options board and press one Test button at a time; the board closes and
 
 | Button | What to try | Write down |
 |---|---|---|
-| **Guard** | Read the badge (FACE / LEFT / RIGHT / BODY) and the ring, and cover that spot: both fists by your chin, one fist by that temple, or both fists down by your ribs. Sometimes a 1-2 | Did each zone register? Enough warning? |
+| **Knee** (Test → Knee) | Grab the mint bar overhead with both hands, pull it down to your waist with a small crunch as you drive the lit knee up. 2 reps, alternating knees | Grips easy to find? Does the pull count every time? (Knees can't be tracked: it's judged from your hands and head) |
+| **Press** (Test 3) | Wall ball: squat low (25 cm+), then stand and press both fists up to the ring on the ceiling | Squat depth fair? Press counting? |
+| **Chop** (Test 3) | Both hands on the orb high on one side, chop diagonally down to the ring by the opposite hip | Path clear? Counting? |
+| **Tiptoe** (Test 3) | Rise onto your toes and touch the star just out of reach; 2 stars, alternating hands | Star height right for your reach? Does it notice the tiptoe? |
 | **2 ropes** | Follow both ropes, then smash the gold bar down with both fists | Rope catch OK? Slam: did it register? Bar too high/low? (needs both fists moving down ≥ 1.1 m/s within 0.3 s) |
 | **Hammer** | Strike DOWN onto the drum pad with the bottom of your fist, alternating hands | Registers coming down? Pad height OK? |
 | **Combo** | Punch the 2–4 orbs on the beat | Did they land on the beat? Did COMBO CLEAR show? |
@@ -56,7 +59,7 @@ Set the workout shape to **Waves**: about 30 s into training you'll get **WAVE U
 
 ## Bookmarks during the session
 
-On the options board, the **Note** row stamps the current second in the workout log: **Slam missed**, **Guard picky**, **Too fast**, **Felt great**. Use it the moment something feels off; you won't remember the minute later.
+On the options board, the **Note** row stamps the current second in the workout log: **Slam missed**, **Rep missed**, **Too fast**, **Felt great**. Use it the moment something feels off; you won't remember the minute later.
 
 ## Afterwards (write down)
 
