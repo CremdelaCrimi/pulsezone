@@ -10,7 +10,7 @@ import {
   TRACE_RADIUS, TRACE_DEPTH, onRope, LOW_WALLS, heartTrend, streakMilestone, ZONE_STREAK_STEP,
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
-  STATIONS, STATION_STOP, STATION_WINDOW, HAMMER_GAP, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
+  STATIONS, STATION_STOP, STATION_WINDOW, HAMMER_GAP, kneeGrab, kneePulled, pressLoaded, pressDone, chopSwing, TREE_CHOP, SLALOM, slalomCount, BOMB_VOLLEY, barrageVolleys, tiptoeReached, tiptoeHeight,
   stationHold, wallBallBeat, wallBallGoal, WALLBALL, ACTS, actPlan, actAt, actWeights, weekSummary, weekDots, PLAN_SHAPES, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
@@ -676,17 +676,17 @@ function clearObstacles() {
  * Walls are translucent boxes: the open gap is where your head goes, and the box's length is
  * how long you have to hold the position (about 1.2 s for a duck).
  */
-function spawnWall(head, standing, type, activity) {
+function spawnWall(head, standing, type, activity, opts = {}) {
   const poly = wallPolygon(type, standing);
   const speed = difficulty.orbSpeed * 0.8;
-  const depth = wallDepth(type, speed);
+  const depth = opts.hold ? Math.max(0.3, opts.hold * speed) : wallDepth(type, speed);
   const shape = new THREE.Shape(poly.map(([x, y]) => new THREE.Vector2(x + centerX, y)));
   const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
   const group = new THREE.Group();
   const fill = new THREE.Mesh(geo, MAT.wall);
   const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), MAT.wallEdge);
   group.add(fill, edge);
-  group.position.z = head.z - 14 - depth; // geometry spans z..z+depth (near face = z+depth)
+  group.position.z = head.z - 14 - depth - (opts.behind || 0); // geometry spans z..z+depth (near face = z+depth)
   scene.add(group);
   if (LOW_WALLS.includes(type)) standNext = true;   // you'll have to stand back up for the next box
   if (type === 'rise') standNext = false;
@@ -772,7 +772,7 @@ function spawnHammers(head, standing) {
  * Squat, then reach up: a low orb for one hand, then a high orb for the other hand about 0.85 s
  * later (it flies in behind the first). Like a squat jump without leaving the floor.
  */
-function spawnPair(head, standing) {
+function spawnPair(head, standing, finish = 'up') {
   const d = difficulty;
   const side = Math.random() < 0.5 ? -1 : 1;
   const lowX = side * (0.12 + Math.random() * 0.15);
@@ -785,10 +785,10 @@ function spawnPair(head, standing) {
   spawnOrb(head, standing, 'pair', { x: lowX, y: lowY, hand: lowHand, speed: d.orbSpeed });
   spawnOrb(head, standing, 'pair', {
     x: highX, y: highY, hand: highHand, behind: gap, speed: d.orbSpeed,
-    swing: settings.gameType === 'punch' ? 'up' : null,
+    swing: settings.gameType !== 'punch' ? null : finish === 'hook' ? (highHand === 'right' ? 'left' : 'right') : 'up',
     link: [lowX - highX, lowY - highY, gap],
   });
-  say('Squat... then PUNCH UP!');
+  say(finish === 'hook' ? 'Squat... then HOOK!' : 'Squat... then PUNCH UP!');
 }
 
 // ------------------------------------------------------------------ whole-body stations
@@ -809,6 +809,16 @@ const kneeRingGeo = new THREE.RingGeometry(0.1, 0.13, 32);
 const pressBallGeo = new THREE.SphereGeometry(0.13, 24, 16);
 const ceilingRingGeo = new THREE.RingGeometry(0.17, 0.21, 40).rotateX(Math.PI / 2);
 const chopOrbGeo = new THREE.SphereGeometry(0.11, 20, 14);
+// Tree chop (v56): a trunk to swing through, a lit start spot by one shoulder, an axe in your hands.
+const treeTrunkGeo = new THREE.CylinderGeometry(0.075, 0.11, 2.6, 14).translate(0, 1.3, 0);
+const treeCrownGeo = new THREE.ConeGeometry(0.55, 1.3, 10).translate(0, 3.0, 0);
+const treeCutGeo = new THREE.BoxGeometry(0.14, 0.08, 0.14);
+const treeBarkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.9 });
+const treeLeafMat = new THREE.MeshStandardMaterial({ color: 0x1f5a34, roughness: 0.8, emissive: 0x0b2414, emissiveIntensity: 0.5 });
+const treeCutMat = new THREE.MeshStandardMaterial({ color: 0xe8c79a, emissive: 0x6d4a20, emissiveIntensity: 0.6 });
+const axeHandleGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.55, 8);
+const axeHeadGeo = new THREE.BoxGeometry(0.16, 0.1, 0.03);
+const axeMat = new THREE.MeshStandardMaterial({ color: 0xc8d2dc, metalness: 0.7, roughness: 0.3, emissive: 0x334455, emissiveIntensity: 0.4 });
 const hipRingGeo = new THREE.RingGeometry(0.12, 0.16, 32);
 const tipStarGeo = new THREE.OctahedronGeometry(0.13, 0); // bigger again in v55 (Morty: still looked small)
 const tipHaloGeo = new THREE.RingGeometry(0.17, 0.22, 32);
@@ -825,12 +835,12 @@ function stationGuide(from, to, mat) {
 }
 function disposeGuide(gd) { gd.group.parent?.remove(gd.group); gd.tube.geometry.dispose(); }
 function slideGuides(s) { for (const gd of s.p.guides || []) gd.ghost.position.lerpVectors(gd.from, gd.to, (gameTime * 0.9) % 1); }
-/** Woodchopper: put the orb high on `side` (x>0 = your right) and the hip ring low on the other side. */
+/** Tree chop: the lit start spot beside the shoulder on `side` (x>0 = your right), an arrow across the trunk to the other side. */
 function placeChop(s) {
   const p = s.p;
-  p.home.set(p.side * 0.35, s.base + 0.1, 0);
+  p.home.set(p.side * 0.42, s.base - 0.3, 0.05);
   p.orb.position.copy(p.home);
-  p.hip.position.set(-p.side * 0.25, s.base - 0.85, 0.12);
+  p.hip.position.set(-p.side * 0.42, s.base - 0.4, 0.05); // where the swing ends (kept as 'hip' for the test hooks)
   for (const gd of p.guides) disposeGuide(gd);
   p.guides = [stationGuide(p.home, p.hip.position, p.guideMat)];
   s.group.add(p.guides[0].group);
@@ -838,7 +848,7 @@ function placeChop(s) {
 const STATION_SAY = {
   knee: 'KNEE DRIVE! Grab the bar overhead, pull it down and drive your knee up',
   press: 'WALL BALL ROUND! Squat, drive up, press it to the ring - on the beat, all the way',
-  chop: 'WOODCHOPPER! Both hands on the orb, chop down to the opposite hip',
+  chop: 'CHOP THE TREE! Hands together by your shoulder, swing across through the trunk',
   tiptoe: 'TIPTOE REACH! Up on your toes and touch the star',
 };
 const stTmpL = new THREE.Vector3(), stTmpR = new THREE.Vector3(), stTmpH = new THREE.Vector3(), stMid = new THREE.Vector3();
@@ -876,12 +886,24 @@ function spawnStation(head, standing, key) {
     group.add(p.ball, p.ring, p.guides[0].group);
   } else if (key === 'chop') {
     p.side = chopSide; chopSide = -chopSide;
-    p.orb = new THREE.Mesh(chopOrbGeo, stationMat);
+    p.orb = new THREE.Mesh(chopOrbGeo, glow()); // the start spot: hands together here
+    p.orb.material.opacity = 0.7;
     p.home = new THREE.Vector3();
-    p.hip = new THREE.Mesh(hipRingGeo, glow());
+    p.hip = new THREE.Object3D();
     p.guideMat = glow(); p.guideMat.opacity = 0.8;
     p.guides = [];
-    group.add(p.orb, p.hip);
+    p.swing = { armedAt: null };
+    p.tree = new THREE.Group(); // the trunk stands a little beyond where your hands pass
+    p.tree.position.set(0, 0, -0.4); // 85 cm out: in view without filling it
+    p.tree.add(new THREE.Mesh(treeTrunkGeo, treeBarkMat), new THREE.Mesh(treeCrownGeo, treeLeafMat));
+    p.cut = new THREE.Mesh(treeCutGeo, treeCutMat); // the notch: deeper with every chop
+    p.cut.position.set(0, base - 0.35, 0.07); p.cut.scale.set(0.3, 1, 0.3);
+    p.tree.add(p.cut);
+    p.axe = new THREE.Group();
+    const handle = new THREE.Mesh(axeHandleGeo, treeBarkMat), headM = new THREE.Mesh(axeHeadGeo, axeMat);
+    handle.position.y = -0.1; headM.position.set(0.07, 0.16, 0);
+    p.axe.add(handle, headM); p.axe.visible = false;
+    group.add(p.orb, p.hip, p.tree, p.axe);
   } else {
     const h = tiptoeHeight(reachUp);
     p.stars = [-1, 1].map((sx) => { const m = new THREE.Mesh(tipStarGeo, stationMat); m.position.set(sx * 0.14, base + h, 0); m.add(new THREE.Mesh(tipHaloGeo, glow())); group.add(m); return m; });
@@ -932,7 +954,7 @@ function stationRep(s, at, label) {
   audio.sfx('perfect', { hand: 'left', power: 0.8 });
   pulseBoth(0.6, 60);
   shatter(at, new THREE.Vector3(0, 1, 0.3), STATION_COLOR, 0.5);
-  if (s.reps >= s.need && !s.round) { s.done = true; if (s.key !== 'press') s.group.visible = false; } // a round runs its full time
+  if (s.reps >= s.need && !s.round) { s.done = true; if (s.key !== 'press' && s.key !== 'chop') s.group.visible = false; } // a round runs its full time; the tree falls
 }
 /** End of a wall-ball round: the ball flies to the ring, and a call-out with how you did. */
 function finishRound(s) {
@@ -990,16 +1012,19 @@ function stationStep(s, xr, head) {
       else p.ball.position.lerp(p.home, 0.2); // ...then back down for the next rep
     }
   } else if (s.key === 'chop') {
-    if (s.stage === 0 && chopGrab(L, R, p.orb.position)) grabbed();
-    if (s.stage === 1) {
-      p.orb.position.copy(stMid);
-      const down = (fistByHand.left.vel.y + fistByHand.right.vel.y) / 2 < -0.6;
-      if (chopDone(L, R, p.hip.position) && down) {
-        stationRep(s, g.localToWorld(p.hip.position.clone()), s.reps + 1 < s.need ? 'CHOP! Other side! ' : 'CHOP! ');
-        s.stage = 0;
-        if (!s.done) { p.side = -p.side; placeChop(s); } // twist back the other way
-      } else if (late) { gaveUp(); s.stage = 0; p.orb.position.copy(p.home); stationNag(s, 'Chop it right down across your body!'); }
-    }
+    // Tree chop (v56): hands together by the lit shoulder arms it; swinging across through the trunk is a chop.
+    const gap = L.distanceTo(R);
+    p.axe.visible = gap < TREE_CHOP.together + 0.1;
+    if (p.axe.visible) { p.axe.position.copy(stMid); p.axe.rotation.set(0, 0, -p.side * 0.5 + stMid.x * p.side * 1.5); }
+    const r = chopSwing(p.swing, { midX: stMid.x, midY: stMid.y - s.base, gap, side: p.side, t: gameTime });
+    if (r === 'armed' && s.stage === 0) grabbed();
+    else if (r === 'chop') {
+      stationRep(s, g.localToWorld(new THREE.Vector3(0, stMid.y, 0)), s.reps + 1 < s.need ? 'CHOP! Other side! ' : 'TIMBER! ');
+      const deep = 0.3 + 0.7 * Math.min(1, s.reps / s.need);
+      p.cut.scale.set(deep, 1, deep);
+      s.stage = 0;
+      if (!s.done) { p.side = -p.side; placeChop(s); } // swing back the other way
+    } else if (r === 'late') { gaveUp(); s.stage = 0; stationNag(s, 'Swing right across the tree!'); }
   } else {
     const star = p.stars[p.next];
     for (const f of [L, R]) {
@@ -1026,6 +1051,12 @@ function updateStations(dt, xr, head) {
       s.doneAge += dt;
       if (s.key === 'press' && s.flyFrom) s.p.ball.position.lerpVectors(s.flyFrom, s.p.ring.position, Math.min(1, s.doneAge / 0.3));
       if (s.coach) s.coach.group.visible = false;
+      if (s.key === 'chop') { // TIMBER: the tree tips away from you, then goes
+        s.p.axe.visible = false; s.p.orb.visible = false; for (const gd of s.p.guides) gd.group.visible = false;
+        s.p.tree.rotation.x = -Math.min(1, (s.doneAge / 0.9) ** 2) * 1.45;
+        if (s.doneAge > 1.0) removeStation(s);
+        continue;
+      }
       if (s.doneAge > 0.35) removeStation(s);
       continue;
     }
@@ -1058,10 +1089,10 @@ function updateStations(dt, xr, head) {
     }
     slideGuides(s);
     if (s.key === 'knee') s.p.kneeArrow.position.y = 0.42 + 0.06 * Math.sin(gameTime * 6);
-    if (s.coach) poseMoveCoach(s, head);
+    if (s.coach) { s.coach.group.visible = s.arrived; if (s.arrived) poseMoveCoach(s, head); } // v56: not while it flies in (Gio: it hid the orbs before it)
     s.label.lookAt(camera.getWorldPosition(sledTmp));
     let what = { knee: s.stage ? 'PULL DOWN + KNEE UP!' : 'GRAB THE BAR', press: s.stage ? 'PRESS IT UP!' : 'SQUAT LOW',
-      chop: s.stage ? 'CHOP TO THE HIP!' : 'BOTH HANDS ON IT', tiptoe: 'TIPTOE + TOUCH THE STAR' }[s.key];
+      chop: s.stage ? 'SWING ACROSS!' : 'HANDS TOGETHER AT THE LIGHT', tiptoe: 'TIPTOE + TOUCH THE STAR' }[s.key];
     // Rounds: one cue, the coach's, which flips with the beat (Morty: "SQUAT LOW" and "DRIVE UP + PRESS" fought).
     if (s.round) what = `${(s.coach?.text || what).replace('DRIVE UP + PRESS', 'DRIVE UP + PRESS!')}  ·  ${Math.ceil(Math.max(0, s.duration - s.held))}s`;
     if (!renderer.xr.isPresenting) what += '  ·  click = rep'; // desktop: say what the input is (Morty)
@@ -1106,20 +1137,19 @@ const MC_PRESS_SQUAT = mcPose({
   elL: [-0.25, 0.84, 0.18], elR: [0.25, 0.84, 0.18], haL: [-0.12, 0.92, 0.36], haR: [0.12, 0.92, 0.36],
 });
 const MC_PRESS_UP = mcPose({ head: [0, 1.63, -0.01], elL: [-0.21, 1.72, 0.03], elR: [0.21, 1.72, 0.03], haL: [-0.1, 1.98, 0.05], haR: [0.1, 1.98, 0.05] });
-const MC_CHOP_HIGH = mcPose({ // orb high on the right (mirrored for the left)
-  head: [0.02, 1.62, 0.04], shL: [-0.17, 1.43, 0.06], shR: [0.19, 1.43, -0.05],
-  elL: [0.04, 1.62, 0.22], elR: [0.32, 1.64, 0.06], haL: [0.3, 1.86, 0.24], haR: [0.38, 1.88, 0.18],
+const MC_CHOP_HIGH = mcPose({ // wound up by the right shoulder (mirrored for the left); horizontal since v56
+  head: [0.02, 1.6, 0.03], shL: [-0.16, 1.42, 0.07], shR: [0.2, 1.42, -0.05],
+  elL: [0.02, 1.3, 0.24], elR: [0.36, 1.2, 0.02], haL: [0.36, 1.36, 0.2], haR: [0.44, 1.36, 0.12],
 });
-const MC_CHOP_LOW = mcPose({
-  head: [-0.04, 1.47, 0.15], neck: [-0.02, 1.32, 0.09], pelvis: [0, 0.84, -0.08], hipL: [-0.1, 0.84, -0.08], hipR: [0.1, 0.84, -0.08],
-  kneeL: [-0.13, 0.48, 0.17], kneeR: [0.13, 0.48, 0.17], shL: [-0.2, 1.3, -0.02], shR: [0.15, 1.3, 0.13],
-  elL: [-0.34, 1.06, 0.12], elR: [-0.05, 1.08, 0.32], haL: [-0.33, 0.86, 0.33], haR: [-0.25, 0.84, 0.38],
+const MC_CHOP_LOW = mcPose({ // swung across to the left at chest height, shoulders turned
+  head: [-0.02, 1.58, 0.06], shL: [-0.2, 1.41, -0.05], shR: [0.15, 1.41, 0.09],
+  elL: [-0.36, 1.18, 0.04], elR: [-0.04, 1.26, 0.26], haL: [-0.46, 1.24, 0.14], haR: [-0.38, 1.25, 0.22],
 });
 const MC_TOES = mcRaise(mcPose({ elR: [0.21, 1.72, 0.03], haR: [0.15, 1.98, 0.06] }), 0.09); // right hand up (mirrored for the left)
 const MOVE_COACH = { // [phase 0..1, pose, caption from here on]
   knee: { cycle: 2.2, prop: 'bar', frames: [[0, MC_KNEE_UP, 'GRAB THE BAR'], [0.3, MC_KNEE_UP], [0.55, MC_KNEE_PULL, 'PULL DOWN + KNEE UP'], [0.75, MC_KNEE_PULL, 'BACK UP TALL'], [1, MC_KNEE_UP]] },
   press: { cycle: 2.6, prop: 'ball', frames: [[0, MC_PRESS_HOLD, 'SQUAT LOW'], [0.12, MC_PRESS_HOLD], [0.4, MC_PRESS_SQUAT], [0.5, MC_PRESS_SQUAT, 'DRIVE UP + PRESS'], [0.7, MC_PRESS_UP], [0.82, MC_PRESS_UP, 'BRING IT DOWN'], [1, MC_PRESS_HOLD]] },
-  chop: { cycle: 1.8, prop: 'orb', frames: [[0, MC_CHOP_HIGH, 'BOTH HANDS UP HIGH'], [0.3, MC_CHOP_HIGH], [0.5, MC_CHOP_LOW, 'CHOP ACROSS + DOWN'], [0.7, MC_CHOP_LOW, 'BACK UP HIGH'], [1, MC_CHOP_HIGH]] },
+  chop: { cycle: 1.6, prop: 'orb', frames: [[0, MC_CHOP_HIGH, 'HANDS BY YOUR SHOULDER'], [0.3, MC_CHOP_HIGH], [0.5, MC_CHOP_LOW, 'SWING ACROSS THE TREE'], [0.7, MC_CHOP_LOW, 'WIND UP AGAIN'], [1, MC_CHOP_HIGH]] },
   tiptoe: { cycle: 2.0, prop: 'star', frames: [[0, MC_BASE, 'UP ON YOUR TOES'], [0.2, MC_BASE], [0.5, MC_TOES, 'REACH THE STAR'], [0.75, MC_TOES], [1, MC_BASE]] },
 };
 const mcFlip = (name) => (name.endsWith('L') ? name.slice(0, -1) + 'R' : name.endsWith('R') ? name.slice(0, -1) + 'L' : name);
@@ -1134,6 +1164,7 @@ function makeMoveCoach(key) {
   label.position.set(0, 2.05, 0); label.scale.setScalar(2.2);
   group.add(label);
   group.scale.setScalar(0.85);
+  group.visible = false; // shown once its station arrives
   scene.add(group);
   return { group, bones, headMesh, prop, lc, tex, label, text: '', joints: {} };
 }
@@ -1708,7 +1739,7 @@ function spawnHeavy(head, standing) {
   const { lc, tex, label } = burstLabel();
   label.position.set(0.62, 0.3, -0.3); label.scale.setScalar(1.3); // beside the bag, clear of the scoreboard
   group.add(body, chain, label);
-  const station = new THREE.Vector3(centerX, standing - 0.45, head.z - 0.78); // far enough to see the lit patch, still in reach
+  const station = new THREE.Vector3(centerX, standing - 0.25, head.z - 0.78); // 20 cm higher in v56 so the uppercut spot is in view
   group.position.set(station.x, station.y, head.z - 10);
   scene.add(group);
   heavy = {
@@ -2050,19 +2081,25 @@ function spawnBarrage(head, standing) {
   lane.push(plan);
   const id = ++barrageSeq;
   const offsets = [-0.12, -0.06, 0, 0.06, 0.12];
+  const volleys = barrageVolleys(n); // v56: rows to duck under and pairs that pick your side, so you weave
+  const weave = volleys.includes('L') || volleys.includes('R');
   for (let i = 0; i < n; i++) {
-    const g = makeBomb();
-    const x = Math.max(centerX - 0.4, Math.min(centerX + 0.4, head.x + offsets[Math.floor(Math.random() * offsets.length)]));
-    const oy = Math.random() * 0.12 - 0.08;
-    g.position.set(x, head.y + oy, head.z - SPAWN_DISTANCE - gap * i * speed);
-    scene.add(g);
-    // Each bomb starts off to one side (or above / below) and curves in, so you can't just watch one spot.
-    const [sx, sy] = BOMB_STARTS[Math.floor(Math.random() * BOMB_STARTS.length)];
-    g.position.x += sx; g.position.y += sy;
-    const t0 = (head.z - g.position.z) / speed;
-    bombs.push({ group: g, speed, passed: false, id, ox: x - head.x, oy, sx, sy, t0 });
+    const v = volleys[i], single = v === 'S';
+    const jitter = single ? offsets[Math.floor(Math.random() * offsets.length)] : 0;
+    const oy = single ? Math.random() * 0.12 - 0.08 : 0.01; // rows and pairs at eye height: go under or aside
+    const [bx, by] = BOMB_STARTS[Math.floor(Math.random() * BOMB_STARTS.length)];
+    for (const dx of BOMB_VOLLEY[v]) {
+      // Singles start off to one side (or above / below) and curve in; rows and pairs fan in from above.
+      const sx = single ? bx : dx, sy = single ? by : 0.5;
+      const g = makeBomb();
+      const x = head.x + jitter + dx;
+      g.position.set(x + sx, head.y + oy + sy, head.z - SPAWN_DISTANCE - gap * i * speed);
+      scene.add(g);
+      const t0 = (head.z - g.position.z) / speed;
+      bombs.push({ group: g, speed, passed: false, id, ox: x - head.x, oy, sx, sy, t0, row: !single, lead: dx === 0 });
+    }
   }
-  say('MISSILES! Lean or duck out of the way', 1);
+  say(weave ? 'DUCK AND WEAVE! Lean away, duck under the row, come up the other side' : 'MISSILES! Lean or duck out of the way', 1);
   return true;
 }
 const BOMB_LOCK = 0.7; // seconds before arrival when a bomb stops following your head
@@ -2077,13 +2114,14 @@ function updateBombs(dt, head) {
       const k = Math.min(1, dt * 6);
       const tta = (head.z - b.group.position.z) / b.speed;
       const far = Math.max(0, Math.min(1, (tta - BOMB_LOCK) / Math.max(0.1, b.t0 - BOMB_LOCK))) ** 1.5; // 1 at launch, 0 at lock
-      const tx = Math.max(centerX - 0.4, Math.min(centerX + 0.4, head.x + b.ox)) + b.sx * far;
+      const lim = b.row ? 0.75 : 0.4; // rows and pairs keep their spread
+      const tx = Math.max(centerX - lim, Math.min(centerX + lim, head.x + b.ox)) + b.sx * far;
       const ty = Math.max(0.7, head.y + b.oy) + b.sy * far;
       b.group.position.x += (tx - b.group.position.x) * k;
       b.group.position.y += (ty - b.group.position.y) * k;
     } else if (!b.passed && !b.locked) {
       b.locked = true; // stops following you now: whistle from its side so you know to move
-      audio.sfx('incoming', { pan: (b.group.position.x - head.x) / 0.12 }); // offsets are within 12 cm: full left/right
+      if (!b.row || b.lead) audio.sfx('incoming', { pan: b.row ? 0 : (b.group.position.x - head.x) / 0.12 }); // one whistle per row; singles pan full left/right
     }
     // Nose the way it's flying, a slow roll, and a flickering flame.
     missileVel.subVectors(b.group.position, missilePrev);
@@ -3073,8 +3111,10 @@ const PROFILE_LABEL = { steady: 'steady', waves: 'waves', build: 'build & peak' 
 const PHASE_LABEL = { WarmUp: 'WARM-UP', Training: 'TRAINING', CoolDown: 'COOL-DOWN', Finished: 'DONE' };
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
+const hudCompact = () => renderer.xr.isPresenting && controller.phase !== Phase.Finished && !options.open;
 function drawHud(xr) {
   const c = controller, src = source();
+  const compact = hudCompact();
   const fresh = sayFresh();
   // "~" and a muted colour while the heart rate is only estimated (phone asleep).
   const bpmText = src.hasReading && c.status !== Zone.NoSignal ? `${phoneFallback ? '~' : ''}${src.currentBpm}` : '--';
@@ -3084,14 +3124,14 @@ function drawHud(xr) {
   const key = [bpmText, c.status, c.phase, Math.floor(remaining), Math.round(c.intensity * 100), score.score, score.combo,
     fresh ? lastEvent : '', statusLine, sourceKind, phoneFallback, workloadMode, link.code, xr, Math.round(c.currentSetpoint), c.s.targetBpm,
     Math.round(boostPct / 5), options.open, trendShown, settings.diag && `${lastPick}|${lastReason}|${projSmooth == null ? '' : Math.round(projSmooth)}`, Math.floor(zoneStreak), !!breathCue, spotlight && spotlight.key,
-    spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds), chargeLine(), actIdx, workoutShape, verdictShow && gameTime < verdictShow.until ? verdictShow.text : ''].join('|');
+    spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds), chargeLine(), actIdx, workoutShape, verdictShow && gameTime < verdictShow.until ? verdictShow.text : '', compact].join('|');
   if (key === hudKey) return;
   hudKey = key;
 
   const g = hctx, W = hudCanvas.width;
   g.clearRect(0, 0, W, hudCanvas.height);
-  g.fillStyle = 'rgba(8,10,18,0.55)';
-  g.beginPath(); g.roundRect(8, 8, W - 16, hudCanvas.height - 16, 28); g.fill();
+  g.fillStyle = compact ? 'rgba(8,10,18,0.35)' : 'rgba(8,10,18,0.55)';
+  g.beginPath(); g.roundRect(8, 8, W - 16, (compact ? 480 : hudCanvas.height) - 16, 28); g.fill();
   g.textAlign = 'center'; g.textBaseline = 'middle';
   const zc = c.phase === Phase.Finished ? '#dfe3ea' : ZONE_COLOR[c.status];
 
@@ -3109,8 +3149,7 @@ function drawHud(xr) {
     g.fillStyle = '#8d95a5'; g.font = '600 24px system-ui, sans-serif';
     g.fillText(`${PHASE_LABEL[c.phase]} LEFT`, 42, 120);
   }
-  g.fillStyle = '#ffb36b'; g.font = '600 28px system-ui, sans-serif';
-  g.fillText(`${Math.round(kcal)} kcal`, 42, 162); // estimated from heart rate
+  if (!compact) { g.fillStyle = '#ffb36b'; g.font = '600 28px system-ui, sans-serif'; g.fillText(`${Math.round(kcal)} kcal`, 42, 162); } // estimated from heart rate
   g.textAlign = 'center';
 
   const shaped = c.phase === Phase.Training && c.s.profile !== 'steady';
@@ -3120,20 +3159,23 @@ function drawHud(xr) {
   g.fillStyle = zc; g.font = '600 40px system-ui, sans-serif';
   g.fillText(c.phase === Phase.Finished ? statusLabel(c) : `${statusLabel(c)}  ·  ${target}`, W / 2, 230);
 
-  g.fillStyle = '#c9ced8'; g.font = '30px system-ui, sans-serif';
+  g.fillStyle = '#c9ced8'; g.font = compact ? '600 34px system-ui, sans-serif' : '30px system-ui, sans-serif';
   const srcName = sourceKind === 'sim' ? (workloadMode === 'Manual' ? `SIM HR (Manual, effort ${Math.round(manualWorkload * 100)}%)` : `SIM HR (${workloadMode})`) : phoneFallback ? 'ESTIMATED HR (phone asleep)' : 'PHONE HR';
   const boostText = ''; // the challenge boost shows as the red glow past the intensity bar
   g.fillText(c.phase === Phase.Finished ? 'WORKOUT COMPLETE'
     : options.open ? 'PAUSED - options open'
-      : `${c.phase === Phase.Training && actNow() ? `ACT ${actIdx + 1}/${acts.length} ${ACTS[actNow()].name}` : PHASE_LABEL[c.phase]} ${mmss(remaining)}  ·  intensity ${Math.round(c.intensity * 100)}%${boostText}  ·  ${srcName}`, W / 2, 290);
+      : compact ? (c.phase === Phase.Training && actNow() ? `ACT ${actIdx + 1}/${acts.length}  ${ACTS[actNow()].name}` : PHASE_LABEL[c.phase])
+        : `${c.phase === Phase.Training && actNow() ? `ACT ${actIdx + 1}/${acts.length} ${ACTS[actNow()].name}` : PHASE_LABEL[c.phase]} ${mmss(remaining)}  ·  intensity ${Math.round(c.intensity * 100)}%${boostText}  ·  ${srcName}`, W / 2, 290);
 
   const bx = 212, by = 325, bw = 600, bh = 22;
+  if (!compact) {
   g.fillStyle = '#262a38'; g.beginPath(); g.roundRect(bx, by, bw, bh, 11); g.fill();
   g.fillStyle = `hsl(${190 - 175 * c.intensity} 85% 58%)`;
   g.beginPath(); g.roundRect(bx, by, Math.max(bh, bw * c.intensity), bh, 11); g.fill();
   if (boostPct >= 5) { // challenge boost shown as a glowing extension past the bar
     g.fillStyle = 'rgba(255,90,60,0.85)';
     g.beginPath(); g.roundRect(bx + bw + 8, by, 60 * boost.value, bh, 11); g.fill();
+  }
   }
 
   g.fillStyle = '#ffffff'; g.font = '600 40px system-ui, sans-serif';
@@ -3168,12 +3210,12 @@ function drawHud(xr) {
     g.fillStyle = '#7fd8ff'; g.font = '600 34px system-ui, sans-serif';
     g.fillText('Breathe with the reactor: 4 in, 6 out', W / 2, 455);
   }
-  if (statusLine) {
+  if (statusLine && !(compact && !phoneFallback && src.hasReading && src.secondsSinceLastReading < 5)) { // compact: only when something's wrong
     const ok = !phoneFallback && src.hasReading && src.secondsSinceLastReading < 5;
     g.fillStyle = ok ? '#b8bfcc' : '#ffd34d'; g.font = '26px system-ui, sans-serif';
     wrapText(g, statusLine, W / 2, 520, 900, 30);
   }
-  if (settings.diag && c.phase !== Phase.Finished) {
+  if (compact && !settings.diag) { /* no footer on the compact board */ } else if (settings.diag && c.phase !== Phase.Finished) {
     // Diagnostics: what the game is doing right now (for test sessions).
     const top = attribution.ranking()[0];
     const proj = projSmooth == null ? '--' : Math.round(projSmooth);
@@ -3632,6 +3674,21 @@ function xrButtons() {
 const SLAM_DIST = 7; // after battle ropes the slam comes from 7 m, so it arrives in ~2 s
 const BURSTS = ['bag', 'ropes', 'heavy', 'sled'];
 const burstActive = () => !!(bag || ropes || heavy || sled);
+/** Slalom (v56): quick side-squat boxes, alternating left and right. False if the lane is busy. */
+function spawnSlalom() {
+  const n = slalomCount(difficulty.intensity), ws = difficulty.orbSpeed * 0.8;
+  const span = (n - 1) * SLALOM.period * ws + Math.max(0.3, SLALOM.hold * ws);
+  const plan = lanePlan('squatSide', { now: gameTime, speed: difficulty.orbSpeed, intensity: difficulty.intensity, depth: span });
+  if (!laneFree(lane, plan)) return false;
+  lane.push(plan);
+  let side = Math.random() < 0.5 ? 'squatLeft' : 'squatRight';
+  for (let i = 0; i < n; i++) {
+    spawnWall(head, standing, side, 'squatSide', { hold: SLALOM.hold, behind: i * SLALOM.period * ws });
+    side = side === 'squatLeft' ? 'squatRight' : 'squatLeft';
+  }
+  say('SLALOM! Dip left, dip right - quick!', 1);
+  return true;
+}
 function trySpawn(activity, extra = {}) {
   if (activity === 'combo') return queuedCombo ? spawnCombo(head, standing, queuedCombo) : true;
   if (activity === 'barrage') return spawnBarrage(head, standing);
@@ -3641,6 +3698,7 @@ function trySpawn(activity, extra = {}) {
     say({ bag: 'Speed bag coming...', ropes: 'Battle ropes coming...', heavy: 'Heavy bag coming...', sled: 'Sled run coming...' }[activity]);
     return true;
   }
+  if (activity === 'squatSide' && difficulty.intensity >= SLALOM.from && Math.random() < SLALOM.chance) return spawnSlalom();
   const wallType = wallTypeFor(activity, Math.random, settings.moves);
   const kind = ACTIVITIES.find((a) => a.key === activity)?.kind;
   if (kind === 'wall' && !wallType) return true; // no wall shape allowed for this one: skip it
@@ -3656,6 +3714,7 @@ function trySpawn(activity, extra = {}) {
   else if (wallType) spawnWall(head, standing, wallType, activity);
   else if (activity === 'trace' || activity === 'sweep') spawnTrace(head, standing, activity === 'sweep');
   else if (activity === 'pair') spawnPair(head, standing);
+  else if (activity === 'low') spawnPair(head, standing, 'hook'); // v56: the lone knee-high orb was unclear
   else if (activity === 'guard') spawnGuardSet(head, standing, shots);
   else if (STATIONS[activity]) spawnStation(head, standing, activity);
   else if (activity === 'hammer') spawnHammers(head, standing);
@@ -4004,7 +4063,10 @@ function frame(time) {
   scene.fog.color.copy(scene.background);
 
   // Layout: scoreboard ahead, heat gauge and options tab to its left, options board on the left.
-  hud.position.set(centerX, standing + 0.35, head.z - 3.2);
+  // v56 (Gio: "cleaner and further away so you can see what's coming up"): in the headset, while you
+  // work out, the board is a compact strip high up and 5 m out, above the lane; the full board comes back at the end.
+  if (hudCompact()) { hud.position.set(centerX, standing + 1.0, head.z - 5.2); hud.scale.setScalar(1.45); }
+  else { hud.position.set(centerX, standing + 0.35, head.z - 3.2); hud.scale.setScalar(1); }
   if (summaryBoard.visible) { summaryBoard.position.set(centerX, standing - 1.0, head.z - 2.5); summaryBoard.rotation.x = -0.35; }
   thermo.mesh.position.set(centerX - 1.65, standing + 0.3, head.z - 3.1);
   reactor.group.position.set(centerX + 1.65, standing + 0.45, head.z - 3.1);

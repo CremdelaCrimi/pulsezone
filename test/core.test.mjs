@@ -7,7 +7,7 @@ import {
   wallDepth, tracePath, traceSeconds, tracePoints, heartTrend, streakMilestone, summarizeWorkout, updateBests, fistSlams, slamTogether, SLAM_GAP, SHIFT, shiftWanted, shiftOffsetAt, availableCombos, comboGap, comboChance, comboPlan, COMBOS, profileOffset, songTone, breathAt, spotlightDue, pickSpotlight, sensorLooksFlat, breakdownDue, barrageShape, barragePlan, bombHits, heavyPoints, sledTucked, sweepPath, sweepSeconds, SWEEP_HALF_GAP, onRope, TRACE_RADIUS, LOW_WALLS, wallTypeFor as wallFor, minPunchTravel, powerPunchSpeed, punchPower, bagPoints, lanePlan, laneFree,
   GUARD_ZONES, GUARD_SEQ_GAP, guardZonesFor, guardCovers, kcalPerMinute,
   ropeTier, ROPE_TIER_MULT, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX,
-  STATIONS, STATION_STOP, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
+  STATIONS, STATION_STOP, chopSwing, TREE_CHOP, SLALOM, slalomCount, barrageVolleys, BOMB_VOLLEY, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
   stationHold, wallBallBeat, wallBallGoal, WALLBALL, ACTS, actPlan, actAt, actWeights, weekStart, weekSummary, weekDots, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
 } from '../js/core.js';
 import { readFileSync } from 'node:fs';
@@ -444,7 +444,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     const orb = lanePlan('jab', { now: t, speed: sp });
     check(orb.start >= rope.end && orb.start - rope.end < 0.2, `the next orb arrives just after the rope (${(orb.start + 0.3 - (rope.end - 0.7)).toFixed(1)} s after its tail)`);
     const orbs = [lanePlan('jab', { now: 0, speed: sp })];
-    check(laneFree(orbs, lanePlan('low', { now: 0.4, speed: sp })), 'plain orbs can share the lane');
+    check(laneFree(orbs, lanePlan('jab', { now: 0.4, speed: sp })) && !laneFree(orbs, lanePlan('low', { now: 0.4, speed: sp })), 'plain orbs can share the lane; squat + hook (v56) gets it to itself');
     check(!laneFree(orbs, lanePlan('power', { now: 0.4, speed: sp })) && !laneFree(orbs, lanePlan('guard', { now: 0.2, speed: sp })),
       'power orbs and guard shots get the lane to themselves');
     const wall = lanePlan('duck', { now: 0, speed: sp, depth: wallDepth('duck', sp * 0.8) });
@@ -705,6 +705,30 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   ws = weekSummary([...full(D(2025, 10, 27)), ...full(D(2025, 11, 10)), ...full(D(2025, 11, 17))], now);
   check(ws.streak === 2 && ws.done === 3 && ws.nextShape === 'steady', 'a missed week breaks the streak; this week counts once it is full; a 4th workout starts the cycle again');
   check(weekDots(1) === '●○○' && weekDots(4) === '●●●●', 'week dots');
+}
+
+console.log('\n== v56: tree chop, slalom, duck-and-weave missiles');
+{
+  const st = { armedAt: null };
+  const step = (midX, midY, gap, t) => chopSwing(st, { midX, midY, gap, side: 1, t });
+  check(step(0.4, -0.3, 0.1, 0) === 'armed' && step(0.1, -0.3, 0.5, 0.3) === null && step(-0.2, -0.35, 0.5, 0.6) === 'chop', 'tree chop: hands together by the right shoulder, swing across = a chop (hands can spread mid-swing)');
+  const st2 = { armedAt: null };
+  check(chopSwing(st2, { midX: -0.3, midY: -0.3, gap: 0.1, side: 1, t: 0 }) === null, 'tree chop: a swing that never started at the lit side does not count');
+  chopSwing(st2, { midX: 0.4, midY: -0.3, gap: 0.1, side: 1, t: 0 });
+  check(chopSwing(st2, { midX: 0.05, midY: -0.3, gap: 0.3, side: 1, t: TREE_CHOP.window + 0.1 }) === 'late', 'tree chop: wound up, left the start spot but never swung across = late');
+  const st3 = { armedAt: null };
+  chopSwing(st3, { midX: -0.4, midY: 0, gap: 0.1, side: -1, t: 0 });
+  check(chopSwing(st3, { midX: 0.2, midY: -0.6, gap: 0.6, side: -1, t: 0.5 }) === 'chop', 'tree chop: mirrored for the left side; a low swing still counts');
+  check(slalomCount(SLALOM.from) === SLALOM.minN && slalomCount(1) === SLALOM.maxN, `slalom: ${SLALOM.minN} boxes at the start, ${SLALOM.maxN} at full intensity`);
+  let weaves = 0, odd = '';
+  for (let k = 0; k < 300; k++) {
+    const v = barrageVolleys(5).join('');
+    if (/[LR]/.test(v)) { weaves++; if (v !== 'LDRDL' && v !== 'RDLDR') odd = v; } else if (v !== 'SSDSS') odd = v;
+  }
+  check(!odd, `missile volleys follow the patterns${odd ? ` (got ${odd})` : ''}: weave L-D-R-D-L, or singles with one row`);
+  check(weaves > 150 && weaves < 240, `missiles: about 2 in 3 barrages are duck-and-weave (${weaves}/300)`);
+  check(BOMB_VOLLEY.D.some((dx) => bombHits(0.3 - dx, 0)) && BOMB_VOLLEY.D.every((dx) => !bombHits(-dx, -0.22)), "a row can't be leaned past (a 30 cm lean is hit) but a 22 cm duck clears it");
+  check(BOMB_VOLLEY.L.every((dx) => !bombHits(-0.22 - dx, 0)) && BOMB_VOLLEY.L.some((dx) => bombHits(0.22 - dx, 0)), "an L volley: leaning left clears it, leaning right doesn't");
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

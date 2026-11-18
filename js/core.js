@@ -382,7 +382,7 @@ export const EASY = Object.freeze({
   obstacleChance: 0, heavyOrbChance: 0, minPunchSpeed: 0.6, directionalChance: 0, crossBodyChance: 0,
 });
 export const HARD = Object.freeze({
-  spawnInterval: 0.45, orbSpeed: 4.5, horizontalSpread: 0.45, verticalSpread: 0.55, // narrower after play-testing: less reaching
+  spawnInterval: 0.45, orbSpeed: 4.5, horizontalSpread: 0.36, verticalSpread: 0.42, // narrower again in v56 (Gio: "a little all over the place")
   obstacleChance: 0.32, heavyOrbChance: 0, minPunchSpeed: 1.6, directionalChance: 0.4, crossBodyChance: 0.25,
 });
 
@@ -542,7 +542,7 @@ export function heatLook(status, bpm, target) {
  */
 export const ACTIVITIES = Object.freeze([
   { key: 'jab', label: 'Punches', kind: 'orb', from: 0, base: 1.0, prior: 0.5 },
-  { key: 'low', label: 'Squat punches', kind: 'orb', from: 0.15, base: 0.55, prior: 1.2 },
+  { key: 'low', label: 'Squat + hook', kind: 'orb', from: 0.15, base: 0.55, prior: 1.2 },
   { key: 'swing', label: 'Hooks & uppercuts', kind: 'orb', from: 0.25, base: 0.5, prior: 0.7 },
   { key: 'duck', label: 'Ducks', kind: 'wall', from: 0.15, base: 0.3, prior: 1.2 },
   { key: 'lateral', label: 'Side steps', kind: 'wall', from: 0.25, base: 0.35, prior: 1.0 },
@@ -634,6 +634,12 @@ export function wallTypeFor(activity, rng = Math.random, allow = { lean: true, p
 }
 
 /** Walls are boxes: their length is how long you must hold the position (seconds at wall speed). */
+/**
+ * Slalom (v56; Gio: "quick dips left and right ... dodge piles quickly"): a run of short side-squat
+ * boxes, alternating left and right, ~1.1 s apart. All in place: dip and lean, no stepping.
+ */
+export const SLALOM = Object.freeze({ from: 0.4, chance: 0.5, hold: 0.45, period: 1.1, minN: 4, maxN: 6 });
+export const slalomCount = (intensity) => Math.round(SLALOM.minN + (SLALOM.maxN - SLALOM.minN) * clamp01((intensity - SLALOM.from) / (1 - SLALOM.from)));
 export const WALL_HOLD_SECONDS = Object.freeze({ rise: 0.6, duck: 1.2, squatLeft: 1.0, squatRight: 1.0, dodgeLeft: 0.8, dodgeRight: 0.8, pillar: 0.6 });
 export const wallDepth = (type, speed) => Math.max(0.4, (WALL_HOLD_SECONDS[type] ?? 0.8) * speed);
 
@@ -704,7 +710,7 @@ export const HAMMER_GAP = 0.8;
 export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0, dist = SPAWN_DISTANCE, shots = 1 }) {
   const orbArrive = now + (SPAWN_DISTANCE - 0.5) / speed;
   switch (activity) {
-    case 'jab': case 'low':
+    case 'jab':
       return { kind: 'orb', start: orbArrive - 0.3, end: orbArrive + 0.3 };
     case 'swing': // hooks and uppercuts get the lane to themselves, so you can recover
       return { kind: 'solo', start: orbArrive - 0.45, end: orbArrive + 0.55 };
@@ -712,7 +718,7 @@ export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0,
       return { kind: 'solo', start: orbArrive - 0.45, end: orbArrive + HAMMER_GAP + 0.55 };
     case 'power':
       return { kind: 'solo', start: orbArrive - 0.7, end: orbArrive + 0.6 };
-    case 'pair':   // low orb, then the high one 0.85 s later
+    case 'pair': case 'low': // low orb, then the high one (pair) or a hook (low, v56) 0.85 s later
       return { kind: 'solo', start: orbArrive - 0.6, end: orbArrive + 0.85 + 0.6 };
     case 'guard': { // the hot shot, then a counter orb from close range
       const gs = speed * 0.9, cs = Math.max(2.5, speed);
@@ -833,6 +839,20 @@ export function barrageShape(intensity) {
 }
 export const bombHits = (dx, dy) => Math.hypot(dx, dy) < BOMB_RADIUS;
 /** Lane slot for a barrage: like a combo, it gets the lane to itself. */
+/**
+ * Volley types (v56; Gio: missiles only made him lean side to side, no ducking or weaving):
+ * S = one bomb at your head (lean either way or duck); L = bombs at your head and to your right
+ * (go left or duck); R = the mirror; D = a row of three at head height (duck under).
+ * A weave goes L, D, R, D, ... so your head traces a U under the row and back up the other side.
+ */
+export const BOMB_VOLLEY = Object.freeze({ S: [0], L: [0, 0.26], R: [0, -0.26], D: [-0.28, 0, 0.28] });
+export function barrageVolleys(n, rng = Math.random) {
+  if (rng() < 0.65) { // weave
+    const first = rng() < 0.5 ? 'L' : 'R';
+    return Array.from({ length: n }, (_, i) => (i % 2 ? 'D' : (i / 2) % 2 ? (first === 'L' ? 'R' : 'L') : first));
+  }
+  return Array.from({ length: n }, (_, i) => (i === Math.floor(n / 2) ? 'D' : 'S')); // mostly singles, one duck
+}
 export const barragePlan = (first, n, gap) => ({ kind: 'solo', start: first - 0.6, end: first + gap * (n - 1) + 0.6 });
 
 /** Heavy bag targets: a glowing patch shows where (and with which hand) to hit next. */
@@ -904,6 +924,22 @@ export const pressDone = (L, R, headY, standing) => headY > standing - 0.1 && L.
 /** Woodchopper: both hands on the high orb to start, both down at the opposite hip to finish. */
 export const chopGrab = (L, R, orb) => dist3(L, orb) < 0.26 && dist3(R, orb) < 0.26;
 export const chopDone = (L, R, hip) => dist3(L, hip) < 0.3 && dist3(R, hip) < 0.3;
+/**
+ * Tree chop (v56, replaces the hip woodchopper; Gio: "isn't forgiving ... an actual tree ... more
+ * horizontal"): hands together beside one shoulder, then swing them across through the trunk to
+ * the other side, anywhere between hip and head height. No exact targets to touch.
+ * `mid` is the hands' midpoint relative to the trunk (x toward `side`, y relative to standing eye height).
+ */
+export const TREE_CHOP = Object.freeze({ together: 0.42, start: 0.12, through: 0.06, window: 1.4, low: 0.9, high: 0.35 });
+export function chopSwing(state, { midX, midY, gap, side, t }) {
+  const C = TREE_CHOP;
+  const inBand = midY > -C.low && midY < C.high;
+  if (gap < C.together && inBand && midX * side > C.start) { state.armedAt = t; return 'armed'; }
+  if (state.armedAt == null) return null;
+  if (t - state.armedAt >= C.window) { state.armedAt = null; return 'late'; }
+  if (inBand && midX * side < -C.through) { state.armedAt = null; return 'chop'; }
+  return null;
+}
 /** Tiptoe reach: a hand on the star while your head is 3 cm+ above your usual standing height. */
 export const TIPTOE_RADIUS = 0.22; // was 0.17: the star is bigger now and has an arrow up to it
 export const tiptoeReached = (fist, star, headY, base) => dist3(fist, star) < TIPTOE_RADIUS && headY >= base + 0.03;
@@ -1007,7 +1043,7 @@ export function boostDifficulty(d, boost) {
     ...d,
     spawnInterval: d.spawnInterval * (1 - 0.35 * boost),
     orbSpeed: d.orbSpeed * (1 + 0.12 * boost),
-    horizontalSpread: Math.min(0.5, d.horizontalSpread + 0.05 * boost),
+    horizontalSpread: Math.min(0.42, d.horizontalSpread + 0.05 * boost),
   };
 }
 
