@@ -14,12 +14,12 @@ import {
   stationHold, wallBallBeat, wallBallGoal, WALLBALL, ACTS, actPlan, actAt, actWeights, weekSummary, weekDots, PLAN_SHAPES, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v55';
+} from './core.js?v56';
 import { HostLink } from './link.js?v9';
-import { AudioEngine } from './audio.js?v55';
+import { AudioEngine } from './audio.js?v56';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v55';
-import { loadTuning, createDevPanel } from './dev.js?v55';
+import { OptionsPanel } from './options.js?v56';
+import { loadTuning, createDevPanel } from './dev.js?v56';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -1004,7 +1004,11 @@ function stationStep(s, xr, head) {
     const star = p.stars[p.next];
     for (const f of [L, R]) {
       if (f.distanceTo(star.position) < 0.22) {
+        // One touch per rep: with both hands up, the other hand was already on the next star, so one
+        // reach counted 3 reps in a frame (2026-11-18 workout). Wait a beat before the next star counts.
+        if (gameTime - (p.lastTipAt ?? -9) < 0.6) break;
         if (tiptoeReached(f, star.position, hy, s.base)) {
+          p.lastTipAt = gameTime;
           stationRep(s, g.localToWorld(star.position.clone()), 'TIPTOE! ');
           star.visible = false; p.next = 1 - p.next; p.stars[p.next].visible = true; p.placeGuide();
           break;
@@ -3799,9 +3803,11 @@ function frame(time) {
   const src = source();
   if (!paused && controller.phase !== Phase.Finished) {
     gameTime += gdt;
+    // (v56 fix: in v54 the charge line landed between this if and its else, so the cool-down drain
+    // ran every frame and the boost could never grow - Gio's 2026-11-18 workout sat at boost 0.)
     if (controller.phase !== Phase.CoolDown) boost.update(gdt, { status: controller.status, intensity: controller.intensity, bpmTrend: controller.bpmTrend, climbing: trendShown === 'climbing', hold: sensorFlat || phoneFallback || !!charge });
-    if (charge) boost.value = 0; // don't escalate on a guessed heart rate
     else boost.value = Math.max(0, boost.value - gdt / 10);
+    if (charge) boost.value = 0; // the charge replaces the boost
     // Watch for a stuck sensor: the same BPM for a long time while you're clearly working.
     if (sourceKind === 'phone' && !phoneFallback && src.hasReading) {
       if (src.currentBpm !== flatBpm) { flatBpm = src.currentBpm; flatFor = 0; } else flatFor += gdt;
