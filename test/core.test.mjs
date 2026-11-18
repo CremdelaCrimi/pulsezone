@@ -8,6 +8,7 @@ import {
   GUARD_ZONES, GUARD_SEQ_GAP, guardZonesFor, guardCovers, kcalPerMinute,
   ropeTier, ROPE_TIER_MULT, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX,
   STATIONS, STATION_STOP, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
+  stationHold, wallBallBeat, wallBallGoal, WALLBALL, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
 } from '../js/core.js';
 
 const DT = 0.05;
@@ -530,6 +531,26 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   const picks = new Set();
   for (let i = 0; i < 400; i++) picks.add(chooseActivity({ intensity: 0.8, status: 'InZone' }));
   check(['knee', 'press', 'chop', 'tiptoe'].every((k) => picks.has(k)), 'the game sends the new moves');
+}
+
+{
+  console.log('\n== v54: wall-ball rounds, charge & coast, star reach');
+  check(stationHold('press', 0) === WALLBALL.minSeconds && stationHold('press', 1) === WALLBALL.maxSeconds && stationHold('knee', 1) === STATIONS.knee.hold, 'a wall-ball round lasts 20 s easy, 30 s at full intensity; other stations unchanged');
+  check(wallBallBeat(0) === 3.2 && Math.abs(wallBallBeat(1) - 2.2) < 1e-9 && wallBallBeat(0.5) < wallBallBeat(0.2), 'the beat ladders from 3.2 s to 2.2 s per rep');
+  const g20 = wallBallGoal(20), g30 = wallBallGoal(30);
+  check(g20 >= 6 && g20 <= 8 && g30 >= 10 && g30 <= 12, `a round asks for ~7 (20 s) to ~11 (30 s) reps: ${g20}, ${g30}`);
+  const lp = lanePlan('press', { now: 0, speed: 4, intensity: 1 });
+  check(Math.abs(lp.end - ((14 - STATION_STOP) / 4 + 30 + 0.5)) < 1e-9, 'the lane is booked for the whole round');
+  const base = { phase: 'Training', status: 'Below', bpm: 100, target: 120, trainingT: 120, now: 200, readyAt: 0 };
+  check(chargeWanted(base), 'charge: well below the zone in training starts one');
+  check(!chargeWanted({ ...base, bpm: 112 }) && !chargeWanted({ ...base, climbing: true }) && !chargeWanted({ ...base, trainingT: 30 })
+    && !chargeWanted({ ...base, phase: 'WarmUp' }) && !chargeWanted({ ...base, readyAt: 300 }), 'no charge when close, already climbing, too early, in warm-up or on cooldown');
+  check(predictPeak(110, 8, 0.1) === 118 && predictPeak(110, 0, 1) === 125 && predictPeak(110, 80, 0) === 145 && predictPeak(110, -5, -1) === 110, 'peak prediction: projection or trend, capped at +35, never below now');
+  check(!coastOver({ secs: 10, trend: 0, status: 'Below' }) && coastOver({ secs: 16, trend: 0, status: 'Below' }) && !coastOver({ secs: 16, trend: 0.3, status: 'Below' })
+    && coastOver({ secs: 5, trend: 1, status: 'Above' }) && coastOver({ secs: 45, trend: 1, status: 'Below' }), 'coast ends when heart rate levels off, goes over, or after 45 s');
+  check(landingVerdict(122, 120).verdict === 'perfect' && landingVerdict(127, 120).verdict === 'nearly' && landingVerdict(130, 120).verdict === 'over' && landingVerdict(108, 120).verdict === 'short', 'landing verdicts');
+  const v = (x, y, z) => ({ x, y, z });
+  check(tiptoeReached(v(0.1, 2.15, 0), v(0.1, 2.35, 0), 1.64, 1.6) && !tiptoeReached(v(0.1, 2.1, 0), v(0.1, 2.35, 0), 1.64, 1.6), 'star reach: 22 cm catch radius');
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

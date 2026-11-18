@@ -31,3 +31,14 @@ Bugs found and fixed while testing:
 - v53 pushed and confirmed live (game, phone page with the Workout data section, Finish now button).
 - The user asked for insights from their last session. No workout file was on the PC (OneDrive and Downloads searched; the Quest wasn't connected over USB). Next: get the file via the phone page (Save workout file → Save to Files → OneDrive → FitBit Game) or Options → Save data on the Quest plus USB, then analyse heart rate vs moves, the knee-drive near-misses (drop / crunch), and how fast the catch-up reaches the zone. Only v53+ workouts have the full log and events.
 - docs/GAME_DESIGN_BRIEF.md brought up to date with v50–v53.
+
+## v54: Morty's top 3 (wall-ball rounds, charge & coast, star reach)
+
+From Morty's v53 play-through and the heart-rate research (docs/HR_RESEARCH_2026-11-17.md):
+
+- **Wall-ball rounds.** The squat + ceiling press is now a continuous round: 20 s when it's easy, 30 s at full intensity. A beat ladders from one rep every 3.2 s to one every 2.2 s. The ring pulses and a tick sounds on each beat; the ghost coach presses on the beat; reps within 0.6 s of a beat score "ON THE BEAT" (worth more). The round asks for ~7-11 reps and runs its full time; making the goal pays 20 points a rep. It holds the lane for the whole round, so it's rarer in the normal mix (weight 0.25 -> 0.07); charges send it on purpose.
+- **Charge & coast.** In training (after the first minute), when you're 10+ BPM below the target and your heart isn't already climbing: CHARGE (30 s all out, built around a wall-ball round, or battle ropes if presses are off; the challenge boost is paused). Then COAST: light moves while your heart rate keeps rising on its own; the scoreboard shows the zone to land in and the predicted peak. It lands when heart rate levels off (after 15 s), goes over, or after 45 s: PERFECT LANDING (in zone, +300), NEARLY (within 3 BPM, +100), OVERSHOT or SHORT. Then 150 s before the next one. Afterwards the controller resumes from the effort that got you there. End board lists landings. Options: "Charge" in the Body row (on by default) and a Charge test button (Test 3).
+- **Tiptoe reach** (Morty: "a dud", 0/4 twice): bigger star, an arrow from shoulder height up to the lit star, 22 cm catch radius (was 17). Station labels now say "click = rep" on desktop.
+- The main cue reads CHARGE: ALL OUT / COASTING during a charge, instead of PICK IT UP.
+
+Checks: core tests pass (10 new). VR emulator bot: all stations complete (knee 4/4, wall ball 41/11 in a 30 s round, chop 4/4, tiptoe 4/4), an automatic charge fired at 91 BPM -> round -> coast at 115 -> landed NEARLY at 114 (target 120); a test charge landed SHORT (started at 124, coasted down). 5-min auto-play to the end board, no console errors. Not tried in the headset; the bot squats far faster than a person, so real round rep counts will be much lower (that's what the goal is tuned for).

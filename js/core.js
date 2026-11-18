@@ -559,7 +559,8 @@ export const ACTIVITIES = Object.freeze([
   { key: 'hammer', label: 'Hammer fists', kind: 'orb', from: 0.15, base: 0.55, prior: 1.0 },
   // Whole-body stations: they stop just in front of you and wait while you do the move (see STATIONS).
   { key: 'knee', label: 'Knee drives', kind: 'station', from: 0.3, base: 0.25, prior: 1.5 },
-  { key: 'press', label: 'Squat + ceiling press', kind: 'station', from: 0.3, base: 0.25, prior: 1.6 },
+  // A wall-ball ROUND holds the lane for 20-30 s, so it's sent rarely in the normal mix (charges send it on purpose).
+  { key: 'press', label: 'Wall-ball rounds', kind: 'station', from: 0.3, base: 0.07, prior: 1.6 },
   { key: 'chop', label: 'Woodchoppers', kind: 'station', from: 0.25, base: 0.25, prior: 1.2 },
   { key: 'tiptoe', label: 'Tiptoe reach', kind: 'station', from: 0.15, base: 0.2, prior: 0.6 },
   { key: 'bag', label: 'Speed bag', kind: 'burst', from: 0.35, base: 0.1, prior: 0.3 },     // per punch on the bag
@@ -731,7 +732,7 @@ export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0,
     }
     case 'knee': case 'press': case 'chop': case 'tiptoe': { // flies in, stops in front of you, waits `hold` s
       const arrive = now + (SPAWN_DISTANCE - STATION_STOP) / speed;
-      return { kind: 'solo', start: arrive - 0.6, end: arrive + STATIONS[activity].hold + 0.5 };
+      return { kind: 'solo', start: arrive - 0.6, end: arrive + stationHold(activity, intensity) + 0.5 };
     }
     case 'duck': case 'lateral': case 'squatSide': case 'stand': {
       const ws = speed * 0.8;
@@ -859,10 +860,26 @@ export const sledTucked = (headY, standing) => headY < standing - 0.15;
  */
 export const STATIONS = Object.freeze({
   knee: { hold: 8, reps: 4 },    // alternating knees
-  press: { hold: 9, reps: 3 },
+  press: { hold: 25, reps: 8, round: true }, // a wall-ball ROUND: hold and reps come from WALLBALL below
   chop: { hold: 7.5, reps: 4 },  // alternating sides
   tiptoe: { hold: 6, reps: 4 },  // alternating hands
 });
+/**
+ * Wall-ball rounds (Morty, 2026-11-17: "three reps is a taster; thirty seconds is a heart-rate
+ * event"): squat -> drive up -> press overhead, continuously for 20 s (easy) to 30 s (full
+ * intensity), on a beat that ladders from one rep every 3.2 s to one every 2.2 s across the round.
+ * Stacks the three biggest heart-rate dials: legs driving up, arms overhead, and cadence.
+ */
+export const WALLBALL = Object.freeze({ minSeconds: 20, maxSeconds: 30, slowBeat: 3.2, fastBeat: 2.2, onBeat: 0.6 });
+/** Seconds a station waits once stopped (the wall-ball round scales with intensity). */
+export const stationHold = (key, intensity = 0.5) => (key === 'press' ? lerp(WALLBALL.minSeconds, WALLBALL.maxSeconds, clamp01(intensity)) : STATIONS[key].hold);
+/** Seconds between wall-ball beats, `frac` (0..1) of the way through the round. */
+export const wallBallBeat = (frac) => lerp(WALLBALL.slowBeat, WALLBALL.fastBeat, clamp01(frac));
+/** How many beats (reps asked for) fit in a round of `seconds`. */
+export function wallBallGoal(seconds) {
+  let t = 0, n = 0;
+  for (;;) { const b = wallBallBeat(t / seconds); if (t + b > seconds + 1e-6) return n; t += b; n++; }
+}
 export const STATION_STOP = 0.45; // metres in front of your head where a station stops
 /** Seconds you get for the second half of a move (pull, press, chop) once the first half is done. */
 export const STATION_WINDOW = Object.freeze({ knee: 1.6, press: 1.8, chop: 1.2 });
@@ -886,7 +903,8 @@ export const pressDone = (L, R, headY, standing) => headY > standing - 0.1 && L.
 export const chopGrab = (L, R, orb) => dist3(L, orb) < 0.26 && dist3(R, orb) < 0.26;
 export const chopDone = (L, R, hip) => dist3(L, hip) < 0.3 && dist3(R, hip) < 0.3;
 /** Tiptoe reach: a hand on the star while your head is 3 cm+ above your usual standing height. */
-export const tiptoeReached = (fist, star, headY, base) => dist3(fist, star) < 0.17 && headY >= base + 0.03;
+export const TIPTOE_RADIUS = 0.22; // was 0.17: the star is bigger now and has an arrow up to it
+export const tiptoeReached = (fist, star, headY, base) => dist3(fist, star) < TIPTOE_RADIUS && headY >= base + 0.03;
 /** How high (above your eyes) to put the tiptoe stars, from how far up you've been seen to reach. */
 export const tiptoeHeight = (reachUp) => Math.min(0.65, Math.max(0.4, reachUp + 0.05));
 
@@ -989,6 +1007,43 @@ export function boostDifficulty(d, boost) {
     orbSpeed: d.orbSpeed * (1 + 0.12 * boost),
     horizontalSpread: Math.min(0.5, d.horizontalSpread + 0.05 * boost),
   };
+}
+
+// ---------------------------------------------------------------- charge and coast (use the lag)
+
+/**
+ * Charge and coast (Morty, 2026-11-17): instead of fighting the 30-40 s lag between effort and
+ * heart rate, make it the skill. Well below the zone and not climbing: a ~30 s all-out CHARGE
+ * (a wall-ball round, or battle ropes). Then COAST: light moves while your heart rate keeps rising
+ * on its own, and the game scores the LANDING: did it settle inside your zone? Like landing a plane:
+ * it also stops the sprint -> overshoot -> crash cycle.
+ */
+export const CHARGE = Object.freeze({ chargeSeconds: 30, coastMin: 15, coastMax: 45, firstAfter: 60, cooldown: 150, belowBy: 10 });
+/** Should a charge start now? (training only, well below the zone, heart rate not already on its way up) */
+export function chargeWanted({ phase, status, bpm, target, climbing = false, trainingT, now, readyAt }) {
+  return phase === 'Training' && status === 'Below' && !climbing && trainingT >= CHARGE.firstAfter && now >= readyAt
+    && bpm > 0 && target - bpm >= CHARGE.belowBy;
+}
+/**
+ * Where heart rate should peak after a charge: now + whatever the last ~12 s of effort still has to
+ * add (the learner's projection), or the current climb rate carried ~15 s, whichever says more.
+ * Never more than 35 BPM above now.
+ */
+export function predictPeak(bpm, projectedRise = 0, trend = 0) {
+  return bpm + clamp(Math.max(projectedRise || 0, (trend || 0) * 15), 0, 35);
+}
+/** Is the coast over? Heart rate has stopped climbing (after coastMin), or coastMax has passed, or it went over. */
+export function coastOver({ secs, trend, status }) {
+  if (status === 'Above' || status === 'SafetyBrake') return true;
+  if (secs >= CHARGE.coastMax) return true;
+  return secs >= CHARGE.coastMin && trend < 0.05;
+}
+/** Landing verdict and bonus: inside the zone = perfect; within 3 BPM of it = nearly. */
+export function landingVerdict(bpm, target, half = 5) {
+  const off = bpm - target;
+  if (Math.abs(off) <= half) return { verdict: 'perfect', points: 300 };
+  if (Math.abs(off) <= half + 3) return { verdict: 'nearly', points: 100 };
+  return { verdict: off > 0 ? 'over' : 'short', points: 0 };
 }
 
 // ---------------------------------------------------------------- learning what raises YOUR heart rate

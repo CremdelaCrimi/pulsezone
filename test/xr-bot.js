@@ -250,7 +250,9 @@ export async function runChecks() {
   await step('sled', 'test-sled', 10, (reps) => ({ sledReps: reps, sledPushes: stats.sledPushes }));
   await step('ropes', 'test-ropes', 8, () => ({ ropeTiersBySegment: stats.ropeTiers.slice() }));
   await step('combo', 'test-combo', 9);
-  for (const k of ['knee', 'press', 'chop', 'tiptoe', 'knee', 'chop']) await step(k, `test-${k}`, 17);
+  for (const k of ['knee', 'press', 'chop', 'tiptoe', 'knee', 'chop']) await step(k, `test-${k}`, k === 'press' ? 38 : 17); // a wall-ball round lasts 20-30 s
+  // Charge & coast: the charge (a wall-ball round) then the coast and the landing call.
+  await step('charge', 'test-charge', 80, () => ({ events: pz.peek().keyEvents }));
   report.total = snap();
   report.clashes = stats.clashes || 0; // a station and a burst at the same time
   report.done = true;
