@@ -10,6 +10,8 @@ import {
   STATIONS, STATION_STOP, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
   stationHold, wallBallBeat, wallBallGoal, WALLBALL, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
 } from '../js/core.js';
+import { readFileSync } from 'node:fs';
+import { chargeStep, simulateChargeCoast } from './hr-sim.mjs';
 
 const DT = 0.05;
 let failures = 0;
@@ -551,6 +553,91 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(landingVerdict(122, 120).verdict === 'perfect' && landingVerdict(127, 120).verdict === 'nearly' && landingVerdict(130, 120).verdict === 'over' && landingVerdict(108, 120).verdict === 'short', 'landing verdicts');
   const v = (x, y, z) => ({ x, y, z });
   check(tiptoeReached(v(0.1, 2.15, 0), v(0.1, 2.35, 0), 1.64, 1.6) && !tiptoeReached(v(0.1, 2.1, 0), v(0.1, 2.35, 0), 1.64, 1.6), 'star reach: 22 cm catch radius');
+}
+
+{
+  console.log('\n== Charge & coast: edge cases');
+  // The charge state machine lives in game.js (updateCharge); test/hr-sim.mjs mirrors it as chargeStep().
+  // First make sure the mirror still matches the game code it copies.
+  const game = readFileSync(new URL('../js/game.js', import.meta.url), 'utf8');
+  const copied = [
+    "if (!settings.moves.charge || phoneFallback || sensorFlat || burstActive() || pendingBurst || stations.length) return;",
+    'const bpm = src.hasReading && c.status !== Zone.NoSignal ? src.currentBpm : 0;',
+    'const over = c.status === Zone.Above || c.status === Zone.SafetyBrake;',
+    'if (over || (secs >= CHARGE.chargeSeconds && !roundOn) || secs >= CHARGE.chargeSeconds + 15) {',
+    "charge = { ...charge, stage: 'coast', since: gameTime, peak: predictPeak(bpm, attribution.projectedRise(), c.bpmTrend), coastIntensity: c.intensity };",
+    'if (coastOver({ secs, trend: c.bpmTrend, status: c.status })) {',
+    'const { verdict, points } = landingVerdict(bpm, c.currentSetpoint, c.s.zoneHalfWidth);',
+    'c.intensity = c.integral = Math.min(c.intensity, charge.coastIntensity ?? c.intensity);',
+    'chargeReadyAt = gameTime + CHARGE.cooldown;',
+    "if (charge) { say('Already charging or coasting', 2); return; }",
+  ];
+  const missing = copied.filter((line) => !game.includes(line));
+  check(!missing.length, `test/hr-sim.mjs chargeStep() still mirrors updateCharge() in game.js${missing.length ? ` (changed: ${missing[0]})` : ''}`);
+
+  const base = { phase: 'Training', status: 'Below', bpm: 110, target: 120, trainingT: 120, now: 200, readyAt: 0 };
+  check(chargeWanted(base) && !chargeWanted({ ...base, bpm: 110.1 }), 'charge starts at exactly 10 BPM below the target, not at 9.9');
+  check(chargeWanted({ ...base, trainingT: CHARGE.firstAfter }) && !chargeWanted({ ...base, trainingT: CHARGE.firstAfter - 0.1 }), 'first charge allowed from exactly 60 s into training');
+  check(chargeWanted({ ...base, now: 300, readyAt: 300 }) && !chargeWanted({ ...base, now: 299.9, readyAt: 300 }), 'cooldown ends exactly at readyAt');
+  check(!chargeWanted({ ...base, bpm: 0 }) && !chargeWanted({ ...base, status: 'NoSignal' }) && !chargeWanted({ ...base, phase: 'CoolDown' }),
+    'no charge without a heart-rate reading, with no signal, or in the cool-down');
+
+  // A charge in the middle of a session, driven through the mirror.
+  const io = { phase: 'Training', status: 'Below', bpm: 100, target: 120, half: 5, trend: 0, projectedRise: 0, climbing: false, trainingT: 120, readyAt: 0, intensity: 0.5 };
+  const start = chargeStep(null, { ...io, now: 100 });
+  check(start.event?.type === 'charge' && start.charge.stage === 'charge' && start.charge.startBpm === 100, 'mirror: a charge starts when the core says so');
+  check(chargeStep(null, { ...io, now: 100, stationsBusy: true }).charge === null && chargeStep(null, { ...io, now: 100, blocked: true }).charge === null,
+    'no charge while a station is in the lane, or while the phone is asleep / the sensor is flat / a burst is on');
+  const at = (secs, extra = {}) => chargeStep(start.charge, { ...io, now: 100 + secs, ...extra });
+  check(at(12, { status: 'Above', bpm: 126 }).event?.type === 'coast' && at(12, { status: 'Above', bpm: 126 }).event.over,
+    'charge ends early if heart rate goes over the zone mid-charge (straight to coast)');
+  check(at(29.9).event === null && at(30).event?.type === 'coast', 'charge lasts 30 s when no wall-ball round is running (a wall delayed it)');
+  check(at(30, { roundOn: true }).event === null && at(38, { roundOn: false }).event?.type === 'coast', 'a round still running at 30 s holds the charge open until it ends');
+  check(at(44.9, { roundOn: true }).event === null && at(45, { roundOn: true }).event?.type === 'coast', 'a round still running at 45 s is cut off: the coast starts anyway');
+  const coast = at(30, { bpm: 115, projectedRise: 8, trend: 0.4 });
+  check(coast.charge.stage === 'coast' && coast.charge.peak === 123 && coast.charge.coastIntensity === 0.5, 'coast starts with a predicted peak and remembers the effort level');
+  const c0 = coast.charge.since;
+  check(chargeStep(coast.charge, { ...io, now: c0 + 5, phase: 'CoolDown' }).charge === null && chargeStep(coast.charge, { ...io, now: c0 + 5, phase: 'CoolDown' }).event === null,
+    'leaving training mid-coast cancels the charge without a landing');
+  // A second charge can't start while coasting, even if the core would want one.
+  const again = chargeStep(coast.charge, { ...io, now: c0 + 5, bpm: 100, trend: 0.3 });
+  check(again.charge?.stage === 'coast' && again.event === null, 'no second charge while still coasting');
+  // Going all out during the coast: lands once as OVERSHOT, no double scoring.
+  let ch = coast.charge, rdy = 0;
+  const landings = [];
+  for (let t = c0; t < c0 + 60; t += 0.5) {
+    const r = chargeStep(ch, { ...io, now: t, readyAt: rdy, status: t - c0 >= 6 ? 'Above' : 'InZone', bpm: t - c0 >= 6 ? 130 : 123, trend: 1 });
+    if (r.event?.type === 'landing') landings.push(r.event);
+    ch = r.charge; rdy = r.readyAt;
+  }
+  check(landings.length === 1 && landings[0].verdict === 'over' && landings[0].points === 0, 'all out during the coast: one OVERSHOT landing, no points, scored once');
+  check(rdy === landings[0].t + CHARGE.cooldown, 'the next charge waits the full 150 s after a landing');
+  check(!chargeWanted({ ...base, bpm: 100, now: rdy - 0.1, readyAt: rdy }) && chargeWanted({ ...base, bpm: 100, now: rdy, readyAt: rdy }), 'a new charge is allowed again right at the end of the cooldown');
+  check(landings[0].resumeIntensity === 0.5, 'after landing the controller resumes from the effort that got you there');
+
+  // Landing on the zone edges (verdict uses the raw reading against the current target).
+  const vd = (b, tg = 120, h = 5) => landingVerdict(b, tg, h).verdict;
+  check(vd(125) === 'perfect' && vd(115) === 'perfect' && vd(125.5) === 'nearly' && vd(114.5) === 'nearly', 'exactly on the zone edge is a perfect landing');
+  check(vd(128) === 'nearly' && vd(112) === 'nearly' && vd(128.5) === 'over' && vd(111.5) === 'short', 'nearly = within 3 BPM of the zone, past that over / short');
+  check(vd(122.4, 117.4) === 'perfect' && vd(122.5, 117.4) === 'nearly' && vd(124, 120, 3) === 'nearly', 'shaped workouts: judged against the moving target and zone width');
+  check(landingVerdict(0, 120).points === 0 && landingVerdict(130, 120).points === 0, 'no points without a reading or for an overshoot');
+  // Predicted peak: overshoot / undershoot / exactly on the edge.
+  check(predictPeak(115, 10, 0) === 125 && vd(predictPeak(115, 10, 0)) === 'perfect', 'a peak predicted exactly on the zone edge reads as a perfect landing');
+  check(predictPeak(118, 20, 0.2) === 138 && predictPeak(100, 3, 0.1) === 103, 'overshoot and undershoot predictions');
+  check(predictPeak(110, NaN, NaN) === 110 && predictPeak(110, -4, 0.6) === 119 && predictPeak(100, 35, 3) === 135, 'bad inputs fall back to now; a rising trend beats a falling projection; +35 cap is exact');
+  // Coast end conditions.
+  check(!coastOver({ secs: 14.99, trend: 0, status: 'InZone' }) && coastOver({ secs: 15, trend: 0.049, status: 'InZone' }) && !coastOver({ secs: 15, trend: 0.05, status: 'InZone' }),
+    'coast: levelled off means trend under 0.05 BPM/s, and only from 15 s');
+  check(coastOver({ secs: 15, trend: -0.5, status: 'Below' }) && !coastOver({ secs: 30, trend: 0.3, status: 'InZone' }),
+    'coast: heart rate already falling at 15 s lands it; still climbing in the zone keeps waiting for the peak');
+  check(coastOver({ secs: 0, trend: 0, status: 'SafetyBrake' }) && !coastOver({ secs: 44.9, trend: 0.3, status: 'NoSignal' }) && coastOver({ secs: 45, trend: 0.3, status: 'NoSignal' }),
+    'coast: the safety brake ends it at once; with no signal it waits for the 45 s limit');
+  // Planned recovery isn't punished: the challenge boost can't build while charging or coasting.
+  const b = new ChallengeBoost();
+  for (let t = 0; t < 60; t += 0.5) b.update(0.5, { status: 'Below', intensity: 0.5, bpmTrend: -0.3, hold: true });
+  check(b.value === 0 && b.stuckSeconds === 0, 'a heart-rate dip during the coast does not build the challenge boost');
+  for (let t = 0; t < 15; t += 0.5) b.update(0.5, { status: 'Below', intensity: 0.5, bpmTrend: -0.3 });
+  check(b.value === 0, 'and after landing it still waits 15 s of being stuck before building');
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
