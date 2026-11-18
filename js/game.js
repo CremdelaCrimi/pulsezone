@@ -380,7 +380,7 @@ function startWorkout() {
   waveState = 0;
   audio.dropIn(); // never start a workout with the song still thinned out
   spotlight = null; spotlightStarted = null;
-  charge = null; chargeReadyAt = 0;
+  charge = null; chargeReadyAt = 0; verdictShow = null;
   acts = settings.moves.acts ? actPlan(settings.trainingMinutes * 60) : []; actIdx = -1;
   lastPick = lastReason = ''; forceShiftNext = false; testQueued = false; comboReadyAt = 0;
   Object.assign(tstat, { slams: 0, slamHits: 0, aboveSec: 0, flatSec: 0, notes: [], landings: [] }); pendingNote = '';
@@ -810,7 +810,8 @@ const pressBallGeo = new THREE.SphereGeometry(0.13, 24, 16);
 const ceilingRingGeo = new THREE.RingGeometry(0.17, 0.21, 40).rotateX(Math.PI / 2);
 const chopOrbGeo = new THREE.SphereGeometry(0.11, 20, 14);
 const hipRingGeo = new THREE.RingGeometry(0.12, 0.16, 32);
-const tipStarGeo = new THREE.OctahedronGeometry(0.1, 0); // bigger since v54: Morty found the old one too easy to miss
+const tipStarGeo = new THREE.OctahedronGeometry(0.13, 0); // bigger again in v55 (Morty: still looked small)
+const tipHaloGeo = new THREE.RingGeometry(0.17, 0.22, 32);
 /** A straight guide like the hook arrows: a tube, an arrowhead at `to` and a ghost dot sliding along it. */
 function stationGuide(from, to, mat) {
   const group = new THREE.Group();
@@ -883,7 +884,7 @@ function spawnStation(head, standing, key) {
     group.add(p.orb, p.hip);
   } else {
     const h = tiptoeHeight(reachUp);
-    p.stars = [-1, 1].map((sx) => { const m = new THREE.Mesh(tipStarGeo, stationMat); m.position.set(sx * 0.14, base + h, 0); group.add(m); return m; });
+    p.stars = [-1, 1].map((sx) => { const m = new THREE.Mesh(tipStarGeo, stationMat); m.position.set(sx * 0.14, base + h, 0); m.add(new THREE.Mesh(tipHaloGeo, glow())); group.add(m); return m; });
     p.next = Math.random() < 0.5 ? 0 : 1;
     p.stars[1 - p.next].visible = false; // one star at a time, alternating hands
     // An arrow from shoulder height up to the lit star, so the reach has somewhere to go (v54).
@@ -975,7 +976,7 @@ function stationStep(s, xr, head) {
       } else if (late) { gaveUp(); p.bar.position.copy(p.home); s.stage = 0; stationNag(s, 'Pull the bar right down to your waist!'); }
     }
   } else if (s.key === 'press') {
-    if (s.stage === 0 && pressLoaded(hy, standing)) { grabbed(); say('Now PRESS it up!', 2); }
+    if (s.stage === 0 && pressLoaded(hy, standing)) { grabbed(); if (!s.round) say('Now PRESS it up!', 2); } // rounds: the label + coach are the one cue
     p.guides[0].group.visible = s.stage === 1;
     if (s.stage === 1) {
       p.ball.position.lerp(stMid, 0.35); // the ball rides up with your hands
@@ -1057,10 +1058,12 @@ function updateStations(dt, xr, head) {
     s.label.lookAt(camera.getWorldPosition(sledTmp));
     let what = { knee: s.stage ? 'PULL DOWN + KNEE UP!' : 'GRAB THE BAR', press: s.stage ? 'PRESS IT UP!' : 'SQUAT LOW',
       chop: s.stage ? 'CHOP TO THE HIP!' : 'BOTH HANDS ON IT', tiptoe: 'TIPTOE + TOUCH THE STAR' }[s.key];
-    if (s.round) what += `  ·  ${Math.ceil(Math.max(0, s.duration - s.held))}s`;
+    // Rounds: one cue, the coach's, which flips with the beat (Morty: "SQUAT LOW" and "DRIVE UP + PRESS" fought).
+    if (s.round) what = `${(s.coach?.text || what).replace('DRIVE UP + PRESS', 'DRIVE UP + PRESS!')}  ·  ${Math.ceil(Math.max(0, s.duration - s.held))}s`;
     if (!renderer.xr.isPresenting) what += '  ·  click = rep'; // desktop: say what the input is (Morty)
     const left = s.arrived ? Math.max(0, s.duration - s.held) : s.duration;
-    drawBurstLabel(s, `${s.reps}/${s.need}`, what, left / s.duration, s.stage ? '#7cffb0' : '#6dffd8');
+    const beatFlash = s.round && s.arrived && gameTime - s.beatAt < 0.18; // the beat has a face: the label flashes white
+    drawBurstLabel(s, `${s.reps}/${s.need}`, what, left / s.duration, beatFlash ? '#ffffff' : s.stage ? '#7cffb0' : '#6dffd8');
   }
 }
 function removeStation(s) {
@@ -2637,6 +2640,7 @@ const actSkyTarget = new THREE.Color(), actSkyNow = new THREE.Color(0x0b0d18);
 // ------------------------------------------------------------------ charge and coast (see CHARGE in core.js)
 
 let charge = null;      // { stage: 'charge' | 'coast', since, startBpm, peak, coastIntensity }
+let verdictShow = null; // { text, color, until }: the landing verdict's banner
 let chargeReadyAt = 0;  // gameTime when the next charge may start
 function startCharge(test = false) {
   const c = controller, bpm = source().hasReading ? source().currentBpm : 0;
@@ -2681,9 +2685,17 @@ function updateCharge() {
   if (coastOver({ secs, trend: c.bpmTrend, status: c.status })) {
     const { verdict, points } = landingVerdict(bpm, c.currentSetpoint, c.s.zoneHalfWidth);
     score.score += points;
-    say({ perfect: `PERFECT LANDING! ${bpm} BPM  +${points}`, nearly: `NEARLY! ${bpm} BPM, just off your zone  +${points}`,
-      over: `OVERSHOT: ${bpm} BPM - charge a bit softer next time`, short: `SHORT: ${bpm} BPM - charge harder next time` }[verdict], 1);
-    if (verdict === 'perfect') { audio.sfx('streak', { level: 4 }); pulseBoth(1, 160); }
+    // Its own banner for 6 s (Morty, v54: the verdict "pays out silently" - call-outs get replaced in 1.8 s).
+    const lo = Math.round(c.currentSetpoint - c.s.zoneHalfWidth), hi = Math.round(c.currentSetpoint + c.s.zoneHalfWidth);
+    verdictShow = {
+      text: { perfect: `PERFECT LANDING!  ${bpm} BPM in ${lo}-${hi}  +${points}`, nearly: `NEARLY!  ${bpm} BPM, just off ${lo}-${hi}  +${points}`,
+        over: `OVERSHOT: ${bpm} BPM (zone ${lo}-${hi}) - charge softer next time`, short: `SHORT: ${bpm} BPM (zone ${lo}-${hi}) - charge harder next time` }[verdict],
+      color: { perfect: '#ffd34d', nearly: '#7cffb0', over: '#ff9933', short: '#59b3ff' }[verdict], until: gameTime + 6,
+    };
+    say({ perfect: 'PERFECT LANDING!', nearly: 'NEARLY!', over: 'OVERSHOT', short: 'SHORT' }[verdict], 1);
+    pendingNote = pendingNote ? `${pendingNote}; landing ${verdict}` : `landing ${verdict}`; // in the workout CSV too
+    if (verdict === 'perfect' || verdict === 'nearly') { audio.sfx('streak', { level: verdict === 'perfect' ? 4 : 2 }); pulseBoth(verdict === 'perfect' ? 1 : 0.6, 160); }
+    else audio.sfx('zone');
     logEvent('landing', { verdict, bpm, target: Math.round(c.currentSetpoint), points, from: charge.startBpm });
     tstat.landings = [...(tstat.landings || []), verdict];
     // Pick up from the effort that got you here, not whatever the controller wound up to while it waited.
@@ -3068,7 +3080,7 @@ function drawHud(xr) {
   const key = [bpmText, c.status, c.phase, Math.floor(remaining), Math.round(c.intensity * 100), score.score, score.combo,
     fresh ? lastEvent : '', statusLine, sourceKind, phoneFallback, workloadMode, link.code, xr, Math.round(c.currentSetpoint), c.s.targetBpm,
     Math.round(boostPct / 5), options.open, trendShown, settings.diag && `${lastPick}|${lastReason}|${projSmooth == null ? '' : Math.round(projSmooth)}`, Math.floor(zoneStreak), !!breathCue, spotlight && spotlight.key,
-    spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds), chargeLine(), actIdx, workoutShape].join('|');
+    spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds), chargeLine(), actIdx, workoutShape, verdictShow && gameTime < verdictShow.until ? verdictShow.text : ''].join('|');
   if (key === hudKey) return;
   hudKey = key;
 
@@ -3138,7 +3150,10 @@ function drawHud(xr) {
     g.fillText(weekLine() || bestsLine(), W / 2, 400, W - 60);
   }
 
-  if (charge && !breathCue && c.phase === Phase.Training) { // charge / coast takes the line over a spotlight
+  if (verdictShow && gameTime < verdictShow.until && c.phase !== Phase.Finished) { // the landing verdict beats everything for 6 s
+    g.fillStyle = verdictShow.color; g.font = '700 38px system-ui, sans-serif';
+    g.fillText(verdictShow.text, W / 2, 455, W - 50);
+  } else if (charge && !breathCue && c.phase === Phase.Training) { // charge / coast takes the line over a spotlight
     g.fillStyle = charge.stage === 'charge' ? '#ff7a45' : '#7cffb0'; g.font = '600 32px system-ui, sans-serif';
     g.fillText(chargeLine(), W / 2, 455, W - 60);
   } else if (spotlight && !breathCue && c.phase === Phase.Training) {

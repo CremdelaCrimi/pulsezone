@@ -106,6 +106,7 @@ async function chooseDevice(showAll) {
       ? { acceptAllDevices: true, optionalServices: ['heart_rate'] }
       : { filters: [{ services: ['heart_rate'] }], optionalServices: ['heart_rate'] };
     const picked = await navigator.bluetooth.requestDevice(options);
+    try { localStorage.setItem(DEV_KEY, picked.id || picked.name || ''); } catch { /* private mode */ }
     if (device && device !== picked) device.gatt?.disconnect();
     if (device !== picked) picked.addEventListener('gattserverdisconnected', onDisconnected);
     device = picked;
@@ -160,6 +161,26 @@ function scheduleReconnect() {
   setTimeout(connectGatt, reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 2, 15000);
 }
+
+// Less setup each session (v55): reconnect the monitor you picked last time without the chooser,
+// where the browser allows it (Web Bluetooth getDevices). Otherwise tap the button as before.
+const DEV_KEY = 'pulsezone.bridge.device';
+async function autoReconnect() {
+  if (!navigator.bluetooth?.getDevices || device) return;
+  try {
+    const want = localStorage.getItem(DEV_KEY);
+    const list = await navigator.bluetooth.getDevices();
+    const d = list.find((x) => want && (x.id === want || x.name === want)) || (list.length === 1 ? list[0] : null);
+    if (!d || device) return;
+    device = d;
+    d.addEventListener('gattserverdisconnected', onDisconnected);
+    wantConnected = true;
+    reconnectDelay = 1000;
+    setBle('warn', `Reconnecting to ${d.name || 'your heart-rate monitor'} from last time...`);
+    await connectGatt();
+  } catch { /* not allowed here: the Connect button still works */ }
+}
+autoReconnect();
 
 ui.bleBtn.addEventListener('click', () => chooseDevice(false));
 ui.bleAllBtn.addEventListener('click', () => chooseDevice(true));
