@@ -640,5 +640,36 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(b.value === 0, 'and after landing it still waits 15 s of being stuck before building');
 }
 
+{
+  console.log('\n== Wall-ball tempo ladder: edge cases');
+  // v54's ladder is time-based: it speeds up across each round from 3.2 s to 2.2 s per rep. It does
+  // not read heart rate at all (so it can't ladder up on a stale reading), and it doesn't step down
+  // or reset after missed reps (see docs/OVERNIGHT_REPORT_2026-11-18.md, questions for Gio).
+  let mono = true, prev = Infinity;
+  for (let f = 0; f <= 1.0001; f += 0.01) { const b = wallBallBeat(f); if (b > prev + 1e-12) mono = false; prev = b; }
+  check(mono, 'the beat only ever gets faster through a round (never steps back down mid-round)');
+  check(wallBallBeat(-0.5) === WALLBALL.slowBeat && wallBallBeat(1.5) === WALLBALL.fastBeat && wallBallBeat(9) === WALLBALL.fastBeat,
+    'max tempo cap: never faster than one rep per 2.2 s, even if the round runs over; never slower than 3.2 s');
+  let goalsMono = true, beatsMatch = true, fits = true;
+  for (let secs = 20; secs <= 30; secs += 0.5) {
+    const need = wallBallGoal(secs);
+    if (need < wallBallGoal(secs - 0.5)) goalsMono = false;
+    // The game's beat clock (updateStations): first beat one slow beat after arrival, then
+    // nextBeatAt += wallBallBeat(held / duration) at each beat. Count the beats inside the round.
+    let next = wallBallBeat(0), ticks = 0;
+    while (next <= secs + 1e-9) { ticks++; next += wallBallBeat(next / secs); }
+    if (ticks !== need) beatsMatch = false;
+    if (need * WALLBALL.fastBeat > secs) fits = false;
+  }
+  check(goalsMono, 'a longer round never asks for fewer reps');
+  check(beatsMatch, 'reps asked for = beats that actually tick during the round (20-30 s)');
+  check(fits, 'the goal always fits even at the fastest tempo');
+  check(WALLBALL.onBeat * 2 < WALLBALL.fastBeat, 'the ON THE BEAT window (0.6 s each side) never covers two beats, even at the top tempo');
+  check(wallBallGoal(0) === 0 && wallBallGoal(-3) === 0 && wallBallGoal(NaN) === 0 && wallBallGoal(Infinity) === 0,
+    'zero / negative / NaN / endless round asks for 0 reps (0, NaN and Infinity used to hang the page)');
+  check(stationHold('press', NaN) === 25 && stationHold('press', undefined) === 25 && stationHold('press', -1) === 20 && stationHold('press', 7) === 30,
+    'a bad intensity still gives a 20-30 s round (NaN used to make it endless)');
+}
+
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

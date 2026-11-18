@@ -872,11 +872,13 @@ export const STATIONS = Object.freeze({
  */
 export const WALLBALL = Object.freeze({ minSeconds: 20, maxSeconds: 30, slowBeat: 3.2, fastBeat: 2.2, onBeat: 0.6 });
 /** Seconds a station waits once stopped (the wall-ball round scales with intensity). */
-export const stationHold = (key, intensity = 0.5) => (key === 'press' ? lerp(WALLBALL.minSeconds, WALLBALL.maxSeconds, clamp01(intensity)) : STATIONS[key].hold);
+// A non-number intensity (NaN) counts as the default 0.5, so a round always has a finite length.
+export const stationHold = (key, intensity = 0.5) => (key === 'press' ? lerp(WALLBALL.minSeconds, WALLBALL.maxSeconds, clamp01(Number.isFinite(intensity) ? intensity : 0.5)) : STATIONS[key].hold);
 /** Seconds between wall-ball beats, `frac` (0..1) of the way through the round. */
 export const wallBallBeat = (frac) => lerp(WALLBALL.slowBeat, WALLBALL.fastBeat, clamp01(frac));
 /** How many beats (reps asked for) fit in a round of `seconds`. */
 export function wallBallGoal(seconds) {
+  if (!(seconds > 0) || !Number.isFinite(seconds)) return 0; // 0 / NaN / Infinity used to loop forever (0/0 = NaN beat)
   let t = 0, n = 0;
   for (;;) { const b = wallBallBeat(t / seconds); if (t + b > seconds + 1e-6) return n; t += b; n++; }
 }
