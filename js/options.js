@@ -102,8 +102,8 @@ export class OptionsPanel {
     const warm = s.warmUp === 0 ? 'Off' : s.warmUp < 60 ? `${s.warmUp} s` : `${+(s.warmUp / 60).toFixed(1)} min`;
     label('Warm-up'); button('warmup-', '−', 520, 100); value(warm, 630, 230); button('warmup+', '+', 870, 100); y += R;
     label('Workout length'); button('minutes-', '−', 520, 100); value(`${s.minutes} min`, 630, 230); button('minutes+', '+', 870, 100); y += R;
-    label('Workout shape'); button('shape-steady', 'Steady', 430, 170, s.profile === 'steady'); button('shape-waves', 'Waves', 615, 170, s.profile === 'waves');
-    button('shape-build', 'Build', 800, 170, s.profile === 'build'); y += R;
+    label('Workout shape'); button('shape-plan', 'Week plan', 300, 170, s.moves.program); button('shape-steady', 'Steady', 480, 150, !s.moves.program && s.profile === 'steady');
+    button('shape-waves', 'Waves', 640, 150, !s.moves.program && s.profile === 'waves'); button('shape-build', 'Build', 800, 150, !s.moves.program && s.profile === 'build'); y += R;
     label('Heart rate from'); button('src-phone', 'Phone', 520, 215, s.source === 'phone'); button('src-sim', 'Simulator', 755, 215, s.source === 'sim'); y += R;
     label('Game type'); button('mode-punch', 'Punch', 520, 215, s.gameType === 'punch'); button('mode-touch', 'Touch', 755, 215, s.gameType === 'touch'); y += R;
     // Moveset: tap to switch each move on/off (highlighted = on).
@@ -111,7 +111,7 @@ export class OptionsPanel {
     button('move-swing', 'Hook/upper', 445, 190, s.moves.swing && s.gameType === 'punch'); button('move-hammer', 'Hammer', 645, 160, s.moves.hammer && s.gameType === 'punch');
     button('move-trace', 'Rope', 815, 160, s.moves.trace); y += R;
     label('More'); button('move-power', 'Power', 175, 165, s.moves.power && s.gameType === 'punch'); button('move-pair', 'Squat+punch', 350, 230, s.moves.pair);
-    button('move-sweep', '2 ropes', 590, 215, s.moves.sweep); y += R;
+    button('move-sweep', '2 ropes', 590, 215, s.moves.sweep); button('move-acts', 'Acts', 815, 160, s.moves.acts); y += R;
     label('Body'); button('move-knee', 'Knee', 175, 150, s.moves.knee); button('move-press', 'Press', 335, 150, s.moves.press);
     button('move-chop', 'Chop', 495, 150, s.moves.chop); button('move-tiptoe', 'Tiptoe', 655, 150, s.moves.tiptoe); button('move-charge', 'Charge', 815, 160, s.moves.charge); y += R;
     label('Bursts'); button('move-bag', 'Speed', 175, 150, s.moves.bag); button('move-ropes', 'Ropes', 335, 150, s.moves.ropes);

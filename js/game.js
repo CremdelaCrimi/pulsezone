@@ -11,15 +11,15 @@ import {
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   STATIONS, STATION_STOP, STATION_WINDOW, HAMMER_GAP, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
-  stationHold, wallBallBeat, wallBallGoal, WALLBALL, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
+  stationHold, wallBallBeat, wallBallGoal, WALLBALL, ACTS, actPlan, actAt, actWeights, weekSummary, weekDots, PLAN_SHAPES, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v54';
+} from './core.js?v55';
 import { HostLink } from './link.js?v9';
-import { AudioEngine } from './audio.js?v54';
+import { AudioEngine } from './audio.js?v55';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v54';
-import { loadTuning, createDevPanel } from './dev.js?v54';
+import { OptionsPanel } from './options.js?v55';
+import { loadTuning, createDevPanel } from './dev.js?v55';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -78,6 +78,8 @@ const settings = {
     jab: true, low: true, swing: true, power: true, pair: true, guard: false, trace: true, sweep: true, hammer: true,
     knee: true, press: true, chop: true, tiptoe: true, // whole-body stations
     charge: true, // charge and coast: an all-out 30 s, then land in your zone
+    acts: true,    // the workout in themed chapters of ~4 min (v55)
+    program: true, // weekly plan: 3 workouts a week, Steady -> Waves -> Build (picks the shape)
     bag: true, ropes: true, heavy: true, sled: true, barrage: true, duck: true, squatSide: true, lean: true, pillar: true,
     shift: false, // side shifts (stepping off your centre line) are off by default: safer to stay centred
   },
@@ -98,6 +100,7 @@ const MOVE_LABELS = {
   duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar', shift: 'Side shifts (step left/right)',
   knee: 'Pull-down knee drive', press: 'Wall-ball rounds', chop: 'Woodchopper', tiptoe: 'Tiptoe reach',
   charge: 'Charge & coast (all out, then land in your zone)',
+  acts: 'Acts (the workout in ~4-minute chapters)', program: 'Weekly plan (3 a week: Steady, Waves, Build)',
 };
 /** Which activities the moveset allows right now (forSpawn: also respect burst cooldowns). */
 const enabledActivities = (forSpawn = false) => ({
@@ -210,7 +213,7 @@ document.addEventListener('keydown', unlockAudio, true);
 // ------------------------------------------------------------------ fists (colour = hand)
 
 const HAND_COLOR = { left: 0x3fa9ff, right: 0xff7a3d };
-const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v54
+const VERSION = new URL(import.meta.url).search.slice(1) || 'dev'; // e.g. 'v48', from game.js?v55
 { const el = document.getElementById('version'); if (el) el.textContent = VERSION; }
 const HAND_CSS = { left: '#7cc4ff', right: '#ffa070' };
 const FIST_R = 0.055;
@@ -356,7 +359,7 @@ function startWorkout() {
     kp: tuning.controller.kp * ch.kp,
     ki: tuning.controller.ki * ch.ki,
     targetBpm: settings.targetBpm,
-    profile: settings.profile,
+    profile: (week = weekSummary(loadWeek()), workoutShape = settings.moves.program ? week.nextShape : settings.profile),
     safetyCeilingBpm: Math.min(maxBpm * 0.9, settings.targetBpm + 35),
     warmUpSeconds: settings.warmUpSeconds,
     trainingSeconds: settings.trainingMinutes * 60,
@@ -378,6 +381,7 @@ function startWorkout() {
   audio.dropIn(); // never start a workout with the song still thinned out
   spotlight = null; spotlightStarted = null;
   charge = null; chargeReadyAt = 0;
+  acts = settings.moves.acts ? actPlan(settings.trainingMinutes * 60) : []; actIdx = -1;
   lastPick = lastReason = ''; forceShiftNext = false; testQueued = false; comboReadyAt = 0;
   Object.assign(tstat, { slams: 0, slamHits: 0, aboveSec: 0, flatSec: 0, notes: [], landings: [] }); pendingNote = '';
   zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
@@ -426,6 +430,8 @@ function setProfile(p) {
   if (!PROFILES.includes(p)) return;
   settings.profile = p;
   controller.s.profile = p;
+  workoutShape = p;
+  if (settings.moves.program) { settings.moves.program = false; syncMovesUI(); say('Weekly plan off: you picked the shape', 2); }
   waveState = 0; // start the call-outs fresh for the new shape
   document.querySelectorAll('input[name=profile]').forEach((r) => { r.checked = r.value === p; });
   saveSettings();
@@ -2587,6 +2593,47 @@ function updateSpotlight() {
     audio.sfx('burst');
   }
 }
+// ------------------------------------------------------------------ acts and the weekly plan (see ACTS / weekSummary in core.js)
+
+let acts = [], actIdx = -1;       // this workout's chapters, and which one is on
+let week = null, workoutShape = 'steady';
+const WEEK_KEY = 'pulsezone.week'; // a light log of finished workouts (date, % in zone, shape), last 120
+function loadWeek() { try { return JSON.parse(localStorage.getItem(WEEK_KEY) || '[]'); } catch { return []; } }
+function logWeek(w) {
+  if (!w.real) return; // only real-heart-rate workouts count toward the plan (not simulator test runs)
+  const log = [...loadWeek(), { date: new Date(Date.now() - gameTime * 1000).toISOString(), pct: w.pct, inZoneSec: w.inZoneSeconds, trainingSec: w.trainingSeconds, profile: workoutShape, landings: (tstat.landings || []).length }].slice(-120);
+  try { localStorage.setItem(WEEK_KEY, JSON.stringify(log)); } catch { /* full */ }
+}
+const SHAPE_NAME = { steady: 'STEADY', waves: 'WAVES', build: 'BUILD & PEAK' };
+function setProgram(on) {
+  settings.moves.program = on;
+  saveSettings(); syncMovesUI();
+  if (on && controller && controller.phase === Phase.WarmUp) { workoutShape = week.nextShape; controller.s.profile = workoutShape; }
+  say(on ? `Weekly plan on: today is ${SHAPE_NAME[week?.nextShape || 'steady']}` : 'Weekly plan off', 2);
+}
+/** The warm-up line: where you are in the week, today's shape, and what to beat. */
+function weekLine() {
+  if (!week) return '';
+  const beat = week.toBeat ? `  ·  beat ${week.toBeat.pct}% in zone${week.toBeat.profile === workoutShape ? ` (last ${SHAPE_NAME[workoutShape]})` : ''}` : '';
+  if (!settings.moves.program) return week.done || week.toBeat ? `This week ${weekDots(week.done)}${beat}` : '';
+  return `This week ${weekDots(week.done)}  ·  today: ${SHAPE_NAME[workoutShape]}${beat}`;
+}
+/** Act changes: a call-out, a chime, a new sky tint and a new mix. */
+function updateActs() {
+  const c = controller;
+  if (c.phase !== Phase.Training || !acts.length) { if (c.phase !== Phase.Training) actIdx = -1; return; }
+  const i = actAt(acts, c.phaseElapsedSeconds);
+  if (i === actIdx) return;
+  actIdx = i;
+  const a = ACTS[acts[i].key];
+  say(`ACT ${i + 1}/${acts.length}: ${a.name} - ${a.blurb}`, 1);
+  audio.sfx('streak', { level: i + 2 });
+  audio.dropIn();
+  logEvent('act', { act: acts[i].key, n: i + 1 });
+}
+const actNow = () => (actIdx >= 0 && acts[actIdx] ? acts[actIdx].key : null);
+const actSkyTarget = new THREE.Color(), actSkyNow = new THREE.Color(0x0b0d18);
+
 // ------------------------------------------------------------------ charge and coast (see CHARGE in core.js)
 
 let charge = null;      // { stage: 'charge' | 'coast', since, startBpm, peak, coastIntensity }
@@ -2611,6 +2658,7 @@ function updateCharge() {
   if (c.phase !== Phase.Training) { charge = null; return; }
   if (!charge) {
     if (!settings.moves.charge || phoneFallback || sensorFlat || burstActive() || pendingBurst || stations.length) return;
+    if (actNow() && !ACTS[actNow()].charge) return; // not in the opening act: find your groove first
     if (chargeWanted({ phase: c.phase, status: c.status, bpm, target: c.currentSetpoint, climbing: trendShown === 'climbing',
       trainingT: c.phaseElapsedSeconds, now: gameTime, readyAt: chargeReadyAt })) startCharge();
     return;
@@ -2656,9 +2704,10 @@ function chargeLine() {
 
 /** The activity mix's base weights, with the spotlight move boosted while a round is on. */
 function spawnWeights() {
-  if (!spotlight) return tuning.weights;
+  const base = actNow() ? actWeights(actNow(), attribution.w, tuning.weights) : tuning.weights;
+  if (!spotlight) return base;
   const a = ACTIVITIES.find((x) => x.key === spotlight.key);
-  return { ...(tuning.weights || {}), [spotlight.key]: ((tuning.weights || {})[spotlight.key] ?? a.base) * SPOTLIGHT.boost };
+  return { ...(base || {}), [spotlight.key]: ((base || {})[spotlight.key] ?? a.base) * SPOTLIGHT.boost };
 }
 
 // Floating text at a hit point (per-hit points, combo clears). A pool of 3, oldest reused.
@@ -2836,6 +2885,11 @@ function finishWorkout() {
     bests = r.bests; records = r.records;
     try { localStorage.setItem(BESTS_KEY, JSON.stringify(bests)); } catch { /* ignore */ }
   }
+  w.profile = workoutShape;
+  logWeek(w);
+  const before = week;
+  week = weekSummary(loadWeek());
+  w.weekText = weekEndLine(w, before);
   lastSummary = { w, records };
   archiveWorkout(w);
   clearObstacles(); // nothing left hanging in front of the board
@@ -2919,10 +2973,16 @@ function drawSummary(w, records) {
     ? `Test: slams ${tstat.slamHits}/${tstat.slams} · guards ${score.blocks}/${score.blocks + score.guardsMissed} · walls hit ${score.wallHits}/${score.wallHits + score.dodges} · bombs hit ${score.bombHits}/${score.bombHits + score.bombDodges} · above zone ${mmss(tstat.aboveSec)} · stuck sensor ${mmss(tstat.flatSec)} · notes ${tstat.notes.length}`
     : '';
   const bestLine = report ? '' : bests ? `Bests: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points · ${bests.workouts} workout${bests.workouts === 1 ? '' : 's'}` : '';
-  g.fillText(report || [bestLine, short].filter(Boolean).join('  ·  '), W / 2, 600, W - 60);
+  g.fillText(report || [w.weekText || bestLine, short].filter(Boolean).join('  ·  '), W / 2, 600, W - 60);
   sumTex.needsUpdate = true;
 }
 
+/** End-board line: the week's dots, the streak, and how this one compared with the last of its shape. */
+function weekEndLine(w, before) {
+  if (!w.real) return '';
+  const vs = before?.toBeat ? `  ·  ${w.pct - before.toBeat.pct >= 0 ? '+' : ''}${w.pct - before.toBeat.pct}% in zone vs last ${before.toBeat.profile === w.profile ? SHAPE_NAME[w.profile] : 'workout'}` : '';
+  return `This week ${weekDots(week.done)} ${week.done >= week.goal ? 'DONE!' : `${week.done} of ${week.goal}`}${week.streak ? `  ·  week streak ${week.streak}` : ''}${vs}`;
+}
 /** A line for the scoreboard during warm-up: what to beat today. */
 function bestsLine() {
   if (!bests || !bests.pct) return '';
@@ -3008,7 +3068,7 @@ function drawHud(xr) {
   const key = [bpmText, c.status, c.phase, Math.floor(remaining), Math.round(c.intensity * 100), score.score, score.combo,
     fresh ? lastEvent : '', statusLine, sourceKind, phoneFallback, workloadMode, link.code, xr, Math.round(c.currentSetpoint), c.s.targetBpm,
     Math.round(boostPct / 5), options.open, trendShown, settings.diag && `${lastPick}|${lastReason}|${projSmooth == null ? '' : Math.round(projSmooth)}`, Math.floor(zoneStreak), !!breathCue, spotlight && spotlight.key,
-    spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds), chargeLine()].join('|');
+    spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds), chargeLine(), actIdx, workoutShape].join('|');
   if (key === hudKey) return;
   hudKey = key;
 
@@ -3049,7 +3109,7 @@ function drawHud(xr) {
   const boostText = ''; // the challenge boost shows as the red glow past the intensity bar
   g.fillText(c.phase === Phase.Finished ? 'WORKOUT COMPLETE'
     : options.open ? 'PAUSED - options open'
-      : `${PHASE_LABEL[c.phase]} ${mmss(remaining)}  ·  intensity ${Math.round(c.intensity * 100)}%${boostText}  ·  ${srcName}`, W / 2, 290);
+      : `${c.phase === Phase.Training && actNow() ? `ACT ${actIdx + 1}/${acts.length} ${ACTS[actNow()].name}` : PHASE_LABEL[c.phase]} ${mmss(remaining)}  ·  intensity ${Math.round(c.intensity * 100)}%${boostText}  ·  ${srcName}`, W / 2, 290);
 
   const bx = 212, by = 325, bw = 600, bh = 22;
   g.fillStyle = '#262a38'; g.beginPath(); g.roundRect(bx, by, bw, bh, 11); g.fill();
@@ -3073,9 +3133,9 @@ function drawHud(xr) {
     g.fillText(xr ? 'Press A to go again' : 'Press R to go again', W / 2, 480);
   } else if (fresh) {
     g.fillText(lastEvent, W / 2, 400, W - 60);
-  } else if (c.phase === Phase.WarmUp && bestsLine()) {
+  } else if (c.phase === Phase.WarmUp && (weekLine() || bestsLine())) {
     g.fillStyle = '#ffc04d'; g.font = '600 32px system-ui, sans-serif';
-    g.fillText(bestsLine(), W / 2, 400);
+    g.fillText(weekLine() || bestsLine(), W / 2, 400, W - 60);
   }
 
   if (charge && !breathCue && c.phase === Phase.Training) { // charge / coast takes the line over a spotlight
@@ -3148,6 +3208,7 @@ const options = new OptionsPanel({
       case 'target-': nudgeTarget(-5); break;
       case 'target+': nudgeTarget(5); break;
       case 'shape-steady': case 'shape-waves': case 'shape-build': setProfile(id.slice(6)); break;
+      case 'shape-plan': setProgram(!settings.moves.program); break;
       case 'warmup-': setWarmUp(stepWarmUp(settings.warmUpSeconds, -1)); break;
       case 'warmup+': setWarmUp(stepWarmUp(settings.warmUpSeconds, 1)); break;
       case 'minutes-': settings.trainingMinutes = Math.max(1, settings.trainingMinutes - (settings.trainingMinutes > 5 ? 5 : 1)); controller.s.trainingSeconds = settings.trainingMinutes * 60; saveSettings(); break;
@@ -3221,6 +3282,7 @@ function buildMovesUI() {
       <label><input type="radio" name="profile" value="build"> Build &amp; peak (start easy, finish hard)</label>
     </div>
     ${group('Orbs', ['jab', 'low', 'swing', 'hammer', 'power', 'pair', 'guard', 'trace', 'sweep'])}
+    ${group('Workout plan', ['program', 'acts'])}
     ${group('Whole-body moves', ['knee', 'press', 'chop', 'tiptoe', 'charge'])}
     ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes', 'heavy', 'sled', 'barrage'])}
     ${group('Walls & footwork', ['duck', 'squatSide', 'lean', 'pillar', 'shift'])}
@@ -3742,6 +3804,7 @@ function frame(time) {
     updateStreak(gdt);
     updateWaves();
     updateSpotlight();
+    updateActs();
     updateCharge();
     if (gameTime - gainsSavedAt > 30) { gainsSavedAt = gameTime; saveGains(); }
     logTimer += gdt;
@@ -3789,7 +3852,8 @@ function frame(time) {
         intensity: difficulty.intensity, gains: attribution.w,
         status: charge ? (charge.stage === 'charge' ? Zone.Below : Zone.Above) : controller.status, // coasting = light moves
         boost: charge?.stage === 'charge' ? 1 : boost.value,
-        baseWeights: spawnWeights(), enabled: charge?.stage === 'charge' ? { ...enabledActivities(true), tiptoe: false } : enabledActivities(true), // no light reaches mid-charge
+        baseWeights: spawnWeights(), enabled: { ...enabledActivities(true), ...(charge?.stage === 'charge' ? { tiptoe: false } : {}), // no light reaches mid-charge
+          ...(controller.phase !== Phase.Training ? { press: false } : {}) }, // wall-ball rounds are training only (not in the warm-up)
       });
       // A plain punch sometimes becomes a combo; like other solo moves it waits for a free lane slot.
       let pick = activity;
@@ -3911,7 +3975,9 @@ function frame(time) {
   const inZoneNow = controller.status === Zone.InZone && controller.phase !== Phase.Finished;
   updateZoneWorld(rawDt, inZoneNow, paused, head);
   updateReactor(gdt, rawDt, controller.phase === Phase.Finished ? 'NoSignal' : controller.status, !paused && controller.phase !== Phase.Finished && controller.phase !== Phase.WarmUp);
-  const zc = skyTmp.set(ZONE_COLOR[controller.phase === Phase.Finished ? 'NoSignal' : controller.status]).multiplyScalar(0.03 * (1 - 0.5 * zoneAmt)).add(skyBase).lerp(zoneSky, 0.5 * zoneAmt);
+  actSkyTarget.set(actNow() && controller.phase === Phase.Training ? ACTS[actNow()].sky : 0x0b0d18);
+  actSkyNow.lerp(actSkyTarget, 1 - Math.exp(-rawDt / 3)); // ~3 s fade into each act's sky
+  const zc = skyTmp.set(ZONE_COLOR[controller.phase === Phase.Finished ? 'NoSignal' : controller.status]).multiplyScalar(0.03 * (1 - 0.5 * zoneAmt)).add(actSkyNow).lerp(zoneSky, 0.5 * zoneAmt);
   scene.background.lerp(zc, 1 - Math.exp(-rawDt * 2));
   if (hitFlash > 0) { scene.background.lerp(HIT_RED, hitFlash * 0.6); hitFlash = Math.max(0, hitFlash - rawDt * 3); }
   scene.fog.color.copy(scene.background);
@@ -3998,7 +4064,7 @@ window.pz = {
   peek() {
     const v = (p) => [+p.x.toFixed(3), +p.y.toFixed(3), +p.z.toFixed(3)];
     return {
-      t: gameTime, head: v(head), standing, centerX, paused: options.open, phase: controller.phase, events: workoutEvents.slice(-12), keyEvents: workoutEvents.filter((e) => ['charge', 'coast', 'landing', 'round'].includes(e.type)).slice(-8), charge: charge && { stage: charge.stage, peak: charge.peak && Math.round(charge.peak) }, coach: stations[0]?.coach?.text || null, presenting: renderer.xr.isPresenting,
+      t: gameTime, head: v(head), standing, centerX, paused: options.open, phase: controller.phase, events: workoutEvents.slice(-12), keyEvents: workoutEvents.filter((e) => ['charge', 'coast', 'landing', 'round'].includes(e.type)).slice(-8), charge: charge && { stage: charge.stage, peak: charge.peak && Math.round(charge.peak) }, act: actNow(), actIdx, acts: acts.map((a) => a.key), week, workoutShape, coach: stations[0]?.coach?.text || null, presenting: renderer.xr.isPresenting,
       fists: fists.map((f) => ({ hand: f.hand, at: v(f.world), speed: +f.speed.toFixed(2) })),
       orbs: orbs.filter((o) => !o.dying).map((o) => ({ at: v(o.group.position), r: o.r, hand: o.hand, swing: o.swing || null, activity: o.activity, power: !!o.power, speed: o.speed })),
       walls: walls.map((w) => ({ type: w.type, z: w.mesh.position.z, depth: w.depth, speed: w.speed, hit: w.hit, poly: w.poly })),

@@ -8,7 +8,7 @@ import {
   GUARD_ZONES, GUARD_SEQ_GAP, guardZonesFor, guardCovers, kcalPerMinute,
   ropeTier, ROPE_TIER_MULT, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX,
   STATIONS, STATION_STOP, kneeGrab, kneePulled, pressLoaded, pressDone, chopGrab, chopDone, tiptoeReached, tiptoeHeight,
-  stationHold, wallBallBeat, wallBallGoal, WALLBALL, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
+  stationHold, wallBallBeat, wallBallGoal, WALLBALL, ACTS, actPlan, actAt, actWeights, weekStart, weekSummary, weekDots, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
 } from '../js/core.js';
 import { readFileSync } from 'node:fs';
 import { chargeStep, simulateChargeCoast } from './hr-sim.mjs';
@@ -669,6 +669,42 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     'zero / negative / NaN / endless round asks for 0 reps (0, NaN and Infinity used to hang the page)');
   check(stationHold('press', NaN) === 25 && stationHold('press', undefined) === 25 && stationHold('press', -1) === 20 && stationHold('press', 7) === 30,
     'a bad intensity still gives a 20-30 s round (NaN used to make it endless)');
+}
+
+{
+  console.log('\n== v55: acts and the weekly plan');
+  check(actPlan(300).length === 0, 'no acts under 6 minutes');
+  const p15 = actPlan(900);
+  check(p15.length === 4 && p15.map((a) => a.key).join() === 'groove,burn,fight,finale' && p15[3].end === 900, `15 min = 4 acts: ${p15.map((a) => a.key).join(' > ')}`);
+  check(actPlan(480).map((a) => a.key).join() === 'groove,finale' && actPlan(600).map((a) => a.key).join() === 'groove,burn,finale', '8 min = 2 acts, 10 min = 3; the last is always the finale');
+  check(actPlan(3600).length === 4, 'never more than 4 acts');
+  check(actAt(p15, 0) === 0 && actAt(p15, 220) === 0 && actAt(p15, 230) === 1 && actAt(p15, 899) === 3 && actAt(p15, 2000) === 3 && actAt([], 10) === -1, 'which act is on');
+  const wb = actWeights('burn'), wg = actWeights('groove');
+  check(wb.press > wg.press && wg.press === 0 && wb.squatSide > wg.squatSide && wg.trace > wb.trace, 'the burn leans on squats and wall balls; the groove on punches and ropes (no wall balls)');
+  const gains = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, k === 'squatSide' ? 5 : 1]));
+  const wf = actWeights('finale', gains);
+  const wf0 = actWeights('finale');
+  check(wf.squatSide > wf0.squatSide && wf.jab < wf0.jab, 'the finale sends more of what raises YOUR heart rate');
+  check(!ACTS.groove.charge && ACTS.burn.charge && ACTS.finale.charge, 'no charges in the opening act');
+  // Weekly plan. Wed 19 Nov 2025, local time.
+  const D = (y, m, d, h = 12) => new Date(y, m - 1, d, h).getTime();
+  const now = D(2025, 11, 19);
+  check(new Date(weekStart(now)).getDay() === 1 && weekStart(D(2025, 11, 23, 23)) === weekStart(now) && weekStart(D(2025, 11, 24, 1)) !== weekStart(now), 'weeks run Monday to Sunday');
+  const w = (d, pct = 60, profile = 'steady', trainingSec = 600) => ({ date: new Date(d).toISOString(), pct, profile, trainingSec });
+  let ws = weekSummary([], now);
+  check(ws.done === 0 && ws.nextShape === 'steady' && ws.streak === 0 && ws.toBeat === null, 'empty week: today is Steady, nothing to beat yet');
+  ws = weekSummary([w(D(2025, 11, 17), 70, 'steady')], now);
+  check(ws.done === 1 && ws.nextShape === 'waves' && ws.toBeat.pct === 70, 'after one workout: Waves next, beat the last one');
+  ws = weekSummary([w(D(2025, 11, 10), 50, 'waves'), w(D(2025, 11, 17), 70, 'steady')], now);
+  check(ws.toBeat.pct === 50 && ws.toBeat.profile === 'waves', 'the one to beat is the last workout of the same shape');
+  ws = weekSummary([w(D(2025, 11, 17), 70), w(D(2025, 11, 18), 70, 'steady', 100)], now);
+  check(ws.done === 1, 'workouts under 3 min of training do not count');
+  const full = (mon) => [w(mon), w(mon + 86400000), w(mon + 2 * 86400000)];
+  ws = weekSummary([...full(D(2025, 11, 3)), ...full(D(2025, 11, 10)), w(D(2025, 11, 17))], now);
+  check(ws.streak === 2, `two full weeks in a row before this one = streak 2 (${ws.streak})`);
+  ws = weekSummary([...full(D(2025, 10, 27)), ...full(D(2025, 11, 10)), ...full(D(2025, 11, 17))], now);
+  check(ws.streak === 2 && ws.done === 3 && ws.nextShape === 'steady', 'a missed week breaks the streak; this week counts once it is full; a 4th workout starts the cycle again');
+  check(weekDots(1) === '●○○' && weekDots(4) === '●●●●', 'week dots');
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);

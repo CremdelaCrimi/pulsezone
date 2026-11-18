@@ -1011,6 +1011,111 @@ export function boostDifficulty(d, boost) {
   };
 }
 
+// ---------------------------------------------------------------- acts (a workout in chapters)
+
+/**
+ * Acts (v55; Morty: "the orb core feels samey by minute 6 - variety arrives in bursts, not acts").
+ * Training is split into themed chapters of about 4 minutes. Each act re-weights the activity mix
+ * (multipliers on the base weights; the heart-rate learner and the zone controller still decide on
+ * top) and has its own sky tint. Charges (charge & coast) wait until after the first act.
+ * The last act is always THE FINALE: everything you've unlocked, leaning on what raises YOUR heart
+ * rate most.
+ */
+export const ACTS = Object.freeze({
+  groove: {
+    name: 'GROOVE', blurb: 'punches, combos and ropes - find your rhythm', sky: 0x0b1120, charge: false,
+    weights: { jab: 1.6, swing: 1.3, hammer: 1.3, trace: 1.6, sweep: 1.2, power: 0.9, low: 0.8, pair: 0.6, duck: 0.7, lateral: 0.8, squatSide: 0.3, knee: 0.4, press: 0, chop: 0.6, tiptoe: 0.8, bag: 1.2, ropes: 0.5, heavy: 0.8, sled: 0.2, barrage: 0.5 },
+  },
+  burn: {
+    name: 'THE BURN', blurb: 'squats, wall balls and the sled - the big engines', sky: 0x140b0a, charge: true,
+    weights: { jab: 0.5, swing: 0.7, hammer: 0.9, trace: 0.5, sweep: 1.2, power: 1.0, low: 1.7, pair: 1.7, duck: 1.4, lateral: 0.6, squatSide: 1.9, knee: 1.7, press: 2.5, chop: 1.4, tiptoe: 0.3, bag: 0.4, ropes: 1.6, heavy: 0.6, sled: 1.8, barrage: 0.7 },
+  },
+  fight: {
+    name: 'THE FIGHT', blurb: 'combos, the heavy bag and missiles - box your way through', sky: 0x120a18, charge: true,
+    weights: { jab: 1.5, swing: 1.8, hammer: 1.5, trace: 0.4, sweep: 0.6, power: 1.6, low: 1.1, pair: 0.9, duck: 1.1, lateral: 1.2, squatSide: 0.7, knee: 0.8, press: 0.6, chop: 1.2, tiptoe: 0.3, bag: 1.4, ropes: 0.8, heavy: 2.2, sled: 0.5, barrage: 1.8 },
+  },
+  finale: {
+    name: 'THE FINALE', blurb: 'everything you have - your best heart-raisers come more often', sky: 0x09130f, charge: true, learned: true,
+    weights: {},
+  },
+});
+export const ACT_SECONDS = 240; // about 4 minutes each
+/**
+ * The acts for a training block of `seconds`: about one per 4 minutes, at most 4, none for under
+ * 6 minutes (too short to feel like chapters). The last is always the finale.
+ */
+export function actPlan(seconds) {
+  if (!(seconds >= 360)) return [];
+  const n = Math.max(2, Math.min(4, Math.round(seconds / ACT_SECONDS)));
+  const keys = [...['groove', 'burn', 'fight'].slice(0, n - 1), 'finale'];
+  const len = seconds / n;
+  return keys.map((key, i) => ({ key, start: i * len, end: (i + 1) * len }));
+}
+/** Which act (index into the plan) is on at `t` seconds into training; -1 if none. */
+export function actAt(plan, t) {
+  if (!plan.length) return -1;
+  for (let i = 0; i < plan.length; i++) if (t < plan[i].end) return i;
+  return plan.length - 1;
+}
+/**
+ * Base weights for the activity mix in an act: each move's base x the act's multiplier. The finale
+ * scales by what raises your heart rate (learned gain / mean, 0.6x..2x).
+ */
+export function actWeights(actKey, gains = null, base = null) {
+  const act = ACTS[actKey];
+  if (!act) return base;
+  const out = {};
+  const mean = gains ? ACTIVITIES.reduce((s, a) => s + (gains[a.key] ?? a.prior), 0) / ACTIVITIES.length : 1;
+  for (const a of ACTIVITIES) {
+    const b = base?.[a.key] ?? a.base;
+    let m = act.weights[a.key] ?? 1;
+    if (act.learned && gains) m = clamp((gains[a.key] ?? a.prior) / Math.max(mean, 0.05), 0.6, 2);
+    out[a.key] = b * m;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- the weekly plan
+
+/**
+ * Weekly plan (v55; Morty: "no across-week pull"; Gemini: weekly program + beat your last).
+ * Three workouts a week (Monday to Sunday), each a different shape: Steady, then Waves, then
+ * Build & peak. Extra workouts that week repeat the cycle. A week streak counts weeks in a row with
+ * all three done. `log` is a light list of past workouts ({ date, pct, trainingSec, profile, real }).
+ * Workouts under 3 minutes of training don't count.
+ */
+export const WEEK_GOAL = 3;
+export const PLAN_SHAPES = Object.freeze(['steady', 'waves', 'build']);
+const DAY = 86400000;
+/** Monday 00:00 (local time) of the week `date` falls in, as a timestamp. */
+export function weekStart(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() - ((d.getDay() + 6) % 7) * DAY;
+}
+const counts = (w) => w && w.trainingSec >= 180;
+export function weekSummary(log, now = Date.now()) {
+  const list = (log || []).filter(counts);
+  const thisWeek = weekStart(now);
+  const done = list.filter((w) => weekStart(w.date) === thisWeek);
+  const nextShape = PLAN_SHAPES[done.length % PLAN_SHAPES.length];
+  // Weeks in a row with the goal met, counting back from last week (this week joins once it's met).
+  let streak = 0;
+  const perWeek = new Map();
+  for (const w of list) { const k = weekStart(w.date); perWeek.set(k, (perWeek.get(k) || 0) + 1); }
+  const full = (k) => (perWeek.get(k) || 0) >= WEEK_GOAL;
+  let k = thisWeek;
+  if (full(k)) streak++;
+  // Step back a week at a time (7 days back from Monday noon, then snap: safe across DST changes).
+  for (k = weekStart(thisWeek - 3.5 * DAY); full(k); k = weekStart(k - 3.5 * DAY)) streak++;
+  // The last workout of the same shape: the one to beat.
+  const sameShape = [...list].reverse().find((w) => w.profile === nextShape) || null;
+  const last = list.length ? list[list.length - 1] : null;
+  return { done: done.length, goal: WEEK_GOAL, nextShape, streak, toBeat: sameShape || last, last };
+}
+/** Dots for the scoreboard: filled for done, hollow for to go (extra workouts show as extra dots). */
+export const weekDots = (done, goal = WEEK_GOAL) => '●'.repeat(done) + '○'.repeat(Math.max(0, goal - done));
+
 // ---------------------------------------------------------------- charge and coast (use the lag)
 
 /**
