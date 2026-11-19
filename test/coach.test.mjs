@@ -26,6 +26,19 @@ const total = fs.readdirSync(dir).reduce((n, f) => n + fs.statSync(path.join(dir
 check('voice folder under 4 MB', total < 4e6, `${Math.round(total / 1024)} KB`);
 check('cue ids do not collide', new Set(CUES.map(cueId)).size === CUES.length);
 
+console.log('== ElevenLabs pack (v59, placeholder)');
+const edir = path.join(root, 'assets/voice-eleven');
+const eman = JSON.parse(fs.readFileSync(path.join(edir, 'manifest.json'), 'utf8'));
+const eids = Object.keys(eman.clips);
+check('pack has most lines', eids.length >= 140, `${eids.length} clips`);
+check('every pack id is a real line', eids.every((id) => man.clips[id]));
+check('pack texts match the base bank', eids.every((id) => eman.clips[id].text === man.clips[id].text));
+const esmall = eids.filter((id) => { const p = path.join(edir, eman.clips[id].file); return !fs.existsSync(p) || fs.statSync(p).size < 1024; });
+check('every pack clip exists and is over 1 KB', !esmall.length, esmall.slice(0, 5).join(', '));
+check('missing list = base ids not in the pack', JSON.stringify(eman.missing) === JSON.stringify(ids.filter((id) => !eman.clips[id])));
+const etotal = fs.readdirSync(edir).reduce((n, x) => n + fs.statSync(path.join(edir, x)).size, 0);
+check('pack folder under 4 MB', etotal < 4e6, `${Math.round(etotal / 1024)} KB`);
+
 console.log('== player rules (fake audio)');
 const started = [];
 const ctx = {
@@ -33,9 +46,10 @@ const ctx = {
   createBufferSource() { const s = { connect() {}, start() { started.push(s); }, stop() { s.stopped = true; }, set buffer(b) { s.buf = b; }, get buffer() { return s.buf; } }; return s; },
   decodeAudioData(b, ok) { const buf = { duration: 1.5 }; ok(buf); return Promise.resolve(buf); },
 };
-globalThis.fetch = async (url) => (String(url).endsWith('manifest.json')
-  ? { ok: true, json: async () => man }
-  : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+const fetched = [];
+globalThis.fetch = async (url) => { fetched.push(String(url)); return (String(url).endsWith('manifest.json')
+  ? { ok: true, json: async () => (String(url).includes('voice-eleven') ? eman : man) }
+  : { ok: true, arrayBuffer: async () => new ArrayBuffer(8) }); };
 const { VoiceCoach } = await import('../js/coach.js');
 const c = new VoiceCoach();
 check('imports cleanly in Node; no voice before load', c.mode === 'none');
@@ -54,6 +68,20 @@ check('never the same variant twice in a row', c.lastIdx.zoneIn !== first);
 check('a cue not decoded yet is skipped (and starts loading)', c.say('Coach voice on.', 1, 400) === false || started.length > 0);
 c.setEnabled(false);
 check('disabled = silent', c.line('zoneIn', 1, 500) === false);
+c.setEnabled(true);
+
+console.log('== voice packs');
+check('starts on the base bank', c.pack === 'zira' && c.urlFor('zoneIn.0') === 'assets/voice/zoneIn.0.mp3');
+check('switching to the pack loads its list', (await c.setPack('eleven')) === true && c.packLabel === 'Jerry');
+check('a line the pack has plays from the pack', c.urlFor('zoneIn.0') === 'assets/voice-eleven/zoneIn.0.mp3');
+check('a line the pack lacks falls back to the base bank', c.urlFor(eman.missing[0]) === `assets/voice/${eman.missing[0]}.mp3`);
+await new Promise((r) => setTimeout(r, 20));
+check('the pack preloads its clips', fetched.some((u) => u === 'assets/voice-eleven/zoneIn.0.mp3'));
+const n0 = started.length;
+check('a pack clip plays', c.line('zoneIn', 1, 1000) === true && started.length === n0 + 1);
+check('an unknown pack = the base bank', (await c.setPack('nope')) === true && c.pack === 'zira' && c.urlFor('zoneIn.0').startsWith('assets/voice/'));
+const slow = c.setPack('eleven'); c.setPack('zira');
+check('a slow switch cannot override a newer one', (await slow) === false && c.pack === 'zira' && !c.overlay);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) { console.log('SOME CHECKS FAILED'); process.exit(1); }

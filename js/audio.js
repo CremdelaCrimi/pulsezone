@@ -6,7 +6,7 @@
 //
 // The synth plays one of several music sets (MUSIC_SETS), so different days sound different.
 
-import { musicTempo, songTone, breakdownDue, BREAKDOWN_BARS, BREAKDOWN_EVERY } from './core.js?v58';
+import { musicTempo, songTone, breakdownDue, BREAKDOWN_BARS, BREAKDOWN_EVERY } from './core.js?v59';
 
 const deepFreeze = (o) => {
   Object.values(o).forEach((v) => { if (v && typeof v === 'object') deepFreeze(v); });

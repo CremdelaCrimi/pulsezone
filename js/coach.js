@@ -4,11 +4,19 @@
 // assets/voice (tools/make-voice.ps1) played through the game's own Web Audio. Browser speech is
 // only the fallback for text with no clip (lines built from numbers or names). Never talks over
 // itself; tier 1 (do this now) may interrupt.
-import { PHRASES, CUES, cueId, PRELOAD } from './coach-lines.js?v58';
+// Voice packs (v59): a second clip bank (assets/voice-eleven, ElevenLabs placeholder takes) layered
+// over the Windows one. A line the pack doesn't have plays from the Windows bank, so a pack can be
+// partial. Board: Sound row -> voice name.
+import { PHRASES, CUES, cueId, PRELOAD } from './coach-lines.js?v59';
 
 const GAP = { 1: 1.0, 2: 3.5, 3: 6 }; // seconds between lines by tier (1 = do this now, 2 = news, 3 = praise)
 const CUE_SET = new Set(CUES);
 const hasWindow = typeof window !== 'undefined';
+/** Clip banks. 'zira' is the full Windows bank (the base); others sit on top of it. */
+export const VOICE_PACKS = Object.freeze({
+  zira: Object.freeze({ dir: 'assets/voice/', label: 'Zira' }),
+  eleven: Object.freeze({ dir: 'assets/voice-eleven/', label: 'Jerry' }), // ElevenLabs placeholder takes (2026-11-19)
+});
 
 export class VoiceCoach {
   constructor() {
@@ -20,7 +28,8 @@ export class VoiceCoach {
     this.spoken = 0;
     this.ctx = null; this.dest = null;
     this.manifest = null; this.base = 'assets/voice/';
-    this.buffers = new Map(); // clip id -> AudioBuffer | Promise (loading) | null (failed)
+    this.buffers = new Map(); // clip URL -> AudioBuffer | Promise (loading) | null (failed)
+    this.pack = 'zira'; this.overlay = null; this.packToken = 0; // the chosen voice pack's manifest, over the base bank
     this.playing = null;      // the clip's source node, so tier 1 can cut it off
     this.playingUntil = 0;
     this.onSpeak = null;      // callback(seconds): the game ducks the music under the coach
@@ -57,20 +66,44 @@ export class VoiceCoach {
       return !!this.manifest;
     } catch { return false; }
   }
+  /** Pick a voice pack (falls back to the base bank line by line). Resolves true once its clip list loaded. */
+  async setPack(name) {
+    const key = VOICE_PACKS[name] ? name : 'zira';
+    const token = ++this.packToken;
+    this.pack = key; this.overlay = null;
+    if (key === 'zira') { this.preload(); return true; }
+    try {
+      const dir = VOICE_PACKS[key].dir;
+      const r = await fetch(`${dir}manifest.json`);
+      const m = r.ok ? await r.json() : null;
+      if (token !== this.packToken) return false; // switched again meanwhile
+      this.overlay = m && m.clips ? { dir, clips: m.clips } : null;
+      this.preload();
+      return !!this.overlay;
+    } catch { return false; }
+  }
+  get packLabel() { return VOICE_PACKS[this.pack].label; }
+  /** Where a clip lives: the chosen pack if it has it, else the base bank. */
+  urlFor(id) {
+    const o = this.overlay?.clips[id];
+    if (o) return this.overlay.dir + o.file;
+    const c = this.manifest?.clips[id];
+    return c ? this.base + c.file : null;
+  }
   preload() {
     if (!this.manifest || !this.ctx) return;
     for (const k of PRELOAD.keys) for (let i = 0; this.manifest.clips[`${k}.${i}`]; i++) this.fetchClip(`${k}.${i}`);
     for (const c of PRELOAD.cues) this.fetchClip(cueId(c));
   }
   fetchClip(id) {
-    if (this.buffers.has(id)) return this.buffers.get(id);
-    const clip = this.manifest?.clips[id];
-    if (!clip || !this.ctx) return null;
-    const p = fetch(this.base + clip.file).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status))))
+    const url = this.urlFor(id);
+    if (!url || !this.ctx) return null;
+    if (this.buffers.has(url)) return this.buffers.get(url);
+    const p = fetch(url).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status))))
       .then((b) => new Promise((res, rej) => { const q = this.ctx.decodeAudioData(b, res, rej); if (q && q.then) q.then(res, rej); }))
-      .then((buf) => { this.buffers.set(id, buf); return buf; })
-      .catch(() => { this.buffers.set(id, null); return null; });
-    this.buffers.set(id, p);
+      .then((buf) => { this.buffers.set(url, buf); return buf; })
+      .catch(() => { this.buffers.set(url, null); return null; });
+    this.buffers.set(url, p);
     return p;
   }
 
@@ -105,9 +138,9 @@ export class VoiceCoach {
     if (!this.enabled) return false;
     if (now - this.lastAt < GAP[tier] && !(tier === 1 && tier < this.lastTier)) return false;
     if (this.busy(now)) { if (tier === 1) this.stop(); else return false; }
-    const clip = id && this.manifest?.clips[id];
-    if (clip && this.ctx) {
-      const buf = this.buffers.get(id);
+    const url = id && this.urlFor(id);
+    if (url && this.ctx) {
+      const buf = this.buffers.get(url);
       // Not decoded yet: start loading and skip this one. A cue a second late is worse than none.
       if (!(buf && typeof buf.duration === 'number')) { if (buf === undefined) this.fetchClip(id); return false; }
       try {

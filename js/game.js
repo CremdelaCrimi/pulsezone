@@ -15,17 +15,17 @@ import {
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
   hitTier, HEAVY_BONUS, posePoints, poseHeld, POSE_RING_R, POSE_HOLD,
-} from './core.js?v58';
-import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v58';
-import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v58';
-import { BossView } from './bossview.js?v58';
-import { WorldView } from './worlds.js?v58';
-import { VoiceCoach } from './coach.js?v58';
+} from './core.js?v59';
+import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v59';
+import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v59';
+import { BossView } from './bossview.js?v59';
+import { WorldView } from './worlds.js?v59';
+import { VoiceCoach, VOICE_PACKS } from './coach.js?v59';
 import { HostLink } from './link.js?v9';
-import { AudioEngine } from './audio.js?v58';
+import { AudioEngine } from './audio.js?v59';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v58';
-import { loadTuning, createDevPanel } from './dev.js?v58';
+import { OptionsPanel } from './options.js?v59';
+import { loadTuning, createDevPanel } from './dev.js?v59';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -77,6 +77,7 @@ const settings = {
   targetBpm: 120, age: 30, weightLb: 165, sex: '', trainingMinutes: 15, warmUpSeconds: 30, coolDownMinutes: 2, sound: true, volume: 0.8, challenge: 'normal',
   gameType: 'punch',   // 'punch' = hit hard enough; 'touch' = just hold your hand where the orb arrives
   voice: true,         // voice coach (v57): short spoken cues from the browser's own speech
+  voicePack: 'eleven', // v59: coach clips: 'eleven' (ElevenLabs placeholder, falls back to Zira per line) | 'zira'
   musicStyle: 'song',
   diag: false,         // show the diagnostics line (what the game is doing) on the scoreboard
   profile: 'steady',   // workout shape: 'steady' | 'waves' (target rolls +/-5 BPM) | 'build' (climbs to a peak)  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
@@ -606,6 +607,7 @@ const coach = new VoiceCoach(); // v57: spoken cues (browser speech); 'Coach voi
 coach.setEnabled(settings.voice !== false);
 coach.onSpeak = (seconds) => audio.duck(0.5, Math.min(5, seconds + 0.3)); // the music dips under the coach
 coach.load(); // v58: the pre-rendered clip bank (assets/voice); silent failure = browser speech, as in v57
+coach.setPack(settings.voicePack); // v59: the chosen voice on top of it (lines it lacks stay Zira)
 const SAY_HOLD = { 1: 1.8, 2: 1.8, 3: 0.9 };
 function say(text, tier = 2) {
   const t = now();
@@ -3635,7 +3637,7 @@ const options = new OptionsPanel({
     target: settings.targetBpm, minutes: settings.trainingMinutes, warmUp: settings.warmUpSeconds, profile: settings.profile, diag: settings.diag, source: sourceKind, sound: settings.sound,
     volume: Math.round(settings.volume * 10), challenge: settings.challenge,
     gameType: settings.gameType, moves: { ...settings.moves }, phase: controller.phase,
-    musicStyle: settings.musicStyle, songAvailable, voice: settings.voice !== false, voiceOk: coach.available,
+    musicStyle: settings.musicStyle, songAvailable, voice: settings.voice !== false, voiceOk: coach.available, voicePack: VOICE_PACKS[settings.voicePack]?.label || 'Zira',
     ranking: attribution.ranking().map((r) => ({ ...r, bpmPer10: Math.round(r.bpmPer10) })),
   }),
   act: (id) => {
@@ -3653,6 +3655,12 @@ const options = new OptionsPanel({
       case 'src-sim': setSource('sim'); break;
       case 'sound': setSound(!settings.sound); break;
       case 'voice': settings.voice = !settings.voice; coach.setEnabled(settings.voice); saveSettings(); if (settings.voice) coach.say(coach.available ? 'Coach voice on.' : '', 1); say(settings.voice ? (coach.available ? 'Coach voice on' : 'Coach voice: no voices in this browser') : 'Coach voice off', 2); break;
+      case 'voice-pack': { // v59: switch the coach's voice and let it say so
+        const keys = Object.keys(VOICE_PACKS);
+        settings.voicePack = keys[(keys.indexOf(settings.voicePack) + 1) % keys.length]; saveSettings();
+        coach.setPack(settings.voicePack).then(() => coach.fetchClip('cue.coach-voice-on')).then(() => { if (settings.voice) coach.say('Coach voice on.', 1); });
+        say(`Coach voice: ${VOICE_PACKS[settings.voicePack].label}`, 2); break;
+      }
       case 'vol-': settings.volume = Math.max(0.1, settings.volume - 0.1); audio.setVolume(settings.volume); saveSettings(); break;
       case 'vol+': settings.volume = Math.min(1, settings.volume + 0.1); audio.setVolume(settings.volume); saveSettings(); break;
       case 'ch-gentle': case 'ch-normal': case 'ch-hard': {
@@ -4561,10 +4569,10 @@ window.pz = {
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
       boss: boss && { state: boss.state, shield: +boss.shield.toFixed(1), core: +boss.core.toFixed(1), defeatedAt: boss.defeatedAt, left: !!boss.left, test: !!boss.test, shown: bossView.visible },
       today: today && { id: today.id, name: today.name, shape: today.shape, boss: today.boss, restart: today.restart, minutes: today.minutes, feature: today.feature }, workoutMinutes,
-      ghost: ghost && { name: ghost.name, pct: ghost.pct, now: ghostNow() }, level: levelFor(bests?.totalZoneSeconds || 0), progress: lastSummary?.progress || null,
+      ghost: ghost && { name: ghost.name, pct: ghost.pct, now: ghostNow() }, voice: { mode: coach.mode, pack: coach.pack, packLoaded: !!coach.overlay, spoken: coach.spoken }, level: levelFor(bests?.totalZoneSeconds || 0), progress: lastSummary?.progress || null,
     };
   },
-  toggleSource, startWorkout, nudgeTarget, options, audio,
+  toggleSource, startWorkout, nudgeTarget, options, audio, coach, // coach: v59, to check the voice pack
   xr: xrDevice, // the emulated headset (only with ?emulate)
   /** Test helper (read-only): where everything is right now, for the scripted VR checks (test/xr-bot.js). */
   peek() {

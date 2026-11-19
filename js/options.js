@@ -121,7 +121,8 @@ export class OptionsPanel {
     button('move-lean', 'Lean', 475, 110, s.moves.lean); button('move-pillar', 'Pillar', 595, 120, s.moves.pillar);
     button('move-pose', 'Pose', 725, 120, s.moves.pose); button('move-shift', 'Shift', 855, 120, s.moves.shift); y += R; // Pose (v57) had no board button until v58
     label('Sound'); button('sound', s.sound ? 'On' : 'Off', 175, 120, s.sound); button('vol-', 'Vol −', 305, 140); button('vol+', 'Vol +', 455, 140);
-    button('voice', s.voice ? (s.voiceOk ? 'Coach voice on' : 'Voice (none here)') : 'Coach voice off', 610, 360, s.voice && s.voiceOk); y += R;
+    button('voice', s.voice ? (s.voiceOk ? 'Coach on' : 'Voice (none here)') : 'Coach off', 610, 200, s.voice && s.voiceOk);
+    button('voice-pack', s.voicePack || 'Zira', 825, 150); y += R; // v59: which voice the coach uses (tap to switch)
     label(s.songAvailable ? 'Music style' : 'Music style (no song file yet)');
     button('music-song', 'Song', 520, 130, s.musicStyle === 'song' && s.songAvailable); button('music-synth', 'Synth', 660, 130, s.musicStyle === 'synth' || (!s.songAvailable && s.musicStyle !== 'daily'));
     button('music-daily', 'By workout', 800, 175, s.musicStyle === 'daily'); y += R; // v58: each named workout has its own synth set

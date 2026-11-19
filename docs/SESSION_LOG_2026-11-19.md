@@ -46,3 +46,17 @@ Tests: core, progress (151), boss, coach (15), audio, card, tcx all pass. Emulat
 2. Is the Guardian visible and readable at the far end of the lane, and does it block anything?
 3. Are the worlds dark enough that orbs still pop?
 4. Do the Harbour / Furnace / Storm music sets sound right (Music style -> By workout)?
+## v59: ElevenLabs placeholder voice (built in the evening, not yet pushed, untried in the headset)
+
+Gio: "you can add the audio for fun for now as placeholders and wiring". The voice choice stays Gio's; this only wires a second voice in.
+
+- **Voice packs** (js/coach.js `VOICE_PACKS`, `setPack`, `urlFor`): a pack's clips sit on top of the Windows bank (assets/voice); any line the pack lacks plays in Zira, so a pack can be partial. Setting `voicePack`, default `'eleven'`. Board: Sound row -> "Coach on" + the voice name (Jerry / Zira, tap to switch; it says "Coach voice on." in the new voice).
+- **assets/voice-eleven/** (1.4 MB): 147 of the 159 lines in ElevenLabs "Jerry B." (Multilingual v2), cut from the two long takes in FitBit Game/voice-takes. The 12 left out (listed in its manifest's `missing`) couldn't be placed for certain: powerPraise.1-2, levelUp.2, badge.0, and the rope + step cues. Some workout names came out without "Today:" ("Night Shift.").
+- How it was cut: tools/voice-transcode.ps1 (MP3 -> WAV, Windows' own decoder; only its default 48 kHz stereo profile works for MP3 input), tools/voice-split.cjs (pieces at 0.9 s pauses), Windows speech recognition with the lines as a grammar to anchor which piece is which line, then tools/voice-cut.cjs (explicit piece -> line map). Take 1's piece count matched the line count yet hid a split line and two merged pairs, so a matching count alone isn't proof.
+- `pz.coach` and `pz.state.voice` for checks. Cache tags -> `?v59`.
+
+Tests: coach 29 checks (new: pack files, fallback for each line, switching, a slow switch can't override a newer one); all 7 suites pass. Browser: the pack loads, all 147 clips decode, a pack line and a fallback line both play, the board button switches and saves.
+
+### Headset questions for v59
+1. Is the Jerry voice clear over the music in the Quest? Does the switch between Jerry and the odd Zira line jar?
+2. Any clip that says the wrong thing for its moment? (Placeholder cutting; tell me the line and I'll drop it to Zira.)
