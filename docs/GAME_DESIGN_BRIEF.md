@@ -32,6 +32,21 @@ It is a fitness game where the "difficulty slider" is driven by the body, not by
 - Safety ceiling: estimated max heart rate = 208 − 0.7 × age. If heart rate gets close to it, a safety brake cuts intensity hard. (Not a medical device.)
 - If the heart signal is lost, intensity holds rather than spiking.
 
+### 3b. Named daily workouts, levels, badges and the ghost (v58, all local)
+- **Named workouts:** with the weekly plan on, every workout has a name from a bank of 12 (4 per shape: e.g. Harbour Lights, Tide Runner, Summit Push), on weekly rotation. A named workout has its own colour, world, music set, act titles and a **featured move** (sent 1.6x as often). The plan still picks the shape (Steady, then Waves, then Build). The scoreboard shows "TODAY: HARBOUR LIGHTS" in warm-up, and the end board says what's next.
+- **Restart session:** after 7 or more days away, today is "Fresh Start": Steady, 60% of the usual length (at least 6 min), no boss. No guilt, no catching up.
+- **Levels:** fed by minutes in the zone (never score): 4(L-1) + 1.5(L-1)^2 cumulative minutes for level L, so early levels come every workout and later ones about weekly. Titles: Spark, Ember, Flame, Blaze, Furnace, Reactor, Star. Levels 3, 6, 10 and 15 unlock new colours for the in-zone embers.
+- **Badges** (19) for real behaviours: first workout, 50% / 80% in zone, 2- and 5-minute zone streaks, a perfect landing (and three in one workout), three workouts in a week, 2- and 4-week streaks, a Waves and a Build finished, the Guardian beaten, 25 heavy hits, 10 pose holds, a 20-BPM recovery, a comeback, 10 workouts, an hour in the zone.
+- **Ghost of your last run:** the last real workout of each shape is saved as seconds-in-zone every 10 s. During training the scoreboard shows how far ahead or behind you are ("in zone 3:12 +0:12"), the coach mentions it a few seconds into each new act, and the end board shows the final difference.
+- Only workouts driven by real heart rate earn levels, badges and ghosts (same rule as personal bests).
+- **Progress board:** at the end, to the right of the summary: today's workout, level and bar, new badges (or the next one to earn), the ghost result, what the recovery number means ("best this month"), the Guardian's result, and what's next.
+
+### 3c. The Guardian: a heart-rate boss (v58)
+- On the week's last planned workout (the Build day), THE GUARDIAN stands at the far end of the lane with a shield ring round its core. It adds no moves: it changes what the existing ones mean.
+- **Your scored reps only hurt it while you're in your zone.** Below the zone the shield stalls, and after 20 s below (and not climbing) creeps back 1% every 3 s. Above the zone it overheats and asks you to breathe; the safety brake stuns it. It never rewards going harder above the zone.
+- Damage is time-based (each rep credits the time since your last one, up to 3 s, scaled 0.7 / 1 / 1.3 by tap / solid / heavy), sized so ~70% of training in the zone, hitting steadily, breaks the shield at ~60% of the workout and finishes the core near the end. A PERFECT LANDING knocks 25% off the shield, NEARLY 10%.
+- Beaten: +500 points and a badge. Not beaten: "The Guardian got away. It will be back." Board: More row -> Guardian (needs the week plan); Test row -> Guardian sends one in any workout.
+
 ## 4. The difficulty engine
 
 ### 4.1 Zone controller (PID)

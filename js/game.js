@@ -15,13 +15,17 @@ import {
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
   hitTier, HEAVY_BONUS, posePoints, poseHeld, POSE_RING_R, POSE_HOLD,
-} from './core.js?v57';
-import { VoiceCoach } from './coach.js?v57';
+} from './core.js?v58';
+import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v58';
+import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v58';
+import { BossView } from './bossview.js?v58';
+import { WorldView } from './worlds.js?v58';
+import { VoiceCoach } from './coach.js?v58';
 import { HostLink } from './link.js?v9';
-import { AudioEngine } from './audio.js?v57';
+import { AudioEngine } from './audio.js?v58';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v57';
-import { loadTuning, createDevPanel } from './dev.js?v57';
+import { OptionsPanel } from './options.js?v58';
+import { loadTuning, createDevPanel } from './dev.js?v58';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -83,6 +87,7 @@ const settings = {
     charge: true, // charge and coast: an all-out 30 s, then land in your zone
     acts: true,    // the workout in themed chapters of ~4 min (v55)
     program: true, // weekly plan: 3 workouts a week, Steady -> Waves -> Build (picks the shape)
+    boss: true,    // the Guardian (v58): a heart-rate boss on the week's last planned workout
     bag: true, ropes: true, heavy: true, sled: true, barrage: true, duck: true, squatSide: true, lean: true, pillar: true,
     pose: true,   // pose walls (v57): hold a Y / T / squat-press shape while a body-shaped wall slides past
     shift: false, // side shifts (stepping off your centre line) are off by default: safer to stay centred
@@ -104,7 +109,8 @@ const MOVE_LABELS = {
   duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar', shift: 'Side shifts (step left/right)', pose: 'Pose walls (hold a Y, a T, or a squat + press)',
   knee: 'Pull-down knee drive', press: 'Wall-ball rounds', chop: 'Woodchopper', tiptoe: 'Tiptoe reach',
   charge: 'Charge & coast (all out, then land in your zone)',
-  acts: 'Acts (the workout in ~4-minute chapters)', program: 'Weekly plan (3 a week: Steady, Waves, Build)',
+  acts: 'Acts (the workout in ~4-minute chapters)', program: 'Weekly plan (3 a week: Steady, Waves, Build; each day has a name)',
+  boss: 'The Guardian (a boss on the last workout of the week: your hits only count in your zone)',
 };
 /** Which activities the moveset allows right now (forSpawn: also respect burst cooldowns). */
 const enabledActivities = (forSpawn = false) => ({
@@ -190,6 +196,10 @@ for (let i = 0; i < 14; i++) {
   stripes.push(s);
 }
 
+// Worlds (v58; both research lists: "worlds that change by day"): each named workout has its own
+// palette and a little horizon scenery. 'grid' is the look the game has always had.
+const world = new WorldView(scene, { floorMat: floor.material, railMat, stripeMat, sun });
+
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -208,9 +218,21 @@ let songAvailable = false;
 fetch(SONG.url, { method: 'HEAD' }).then((r) => {
   songAvailable = r.ok;
   if (songAvailable) audio.setSong(SONG.url, SONG.bpm, SONG.loopStart, SONG.loopEnd);
-  audio.setMusicMode(songAvailable && settings.musicStyle === 'song' ? 'song' : 'synth');
+  applyMusic();
 }).catch(() => { /* offline: synth only */ });
-const unlockAudio = () => { audio.unlock(); coach.warm(); };
+/**
+ * Music style: 'song' = the recorded track, 'synth' = the live synth, 'daily' (v58) = the live synth
+ * playing today's own set, so Tuesday doesn't sound like Thursday.
+ */
+function applyMusic() {
+  audio.setMusicSet(settings.musicStyle === 'daily' ? (today?.music || 'night') : 'night');
+  audio.setMusicMode(songAvailable && settings.musicStyle === 'song' ? 'song' : 'synth');
+}
+let coachWired = false;
+const unlockAudio = () => {
+  audio.unlock(); coach.warm();
+  if (audio.ctx && audio.master && !coachWired) { coachWired = true; coach.attach(audio.ctx, audio.master); } // v58: coach clips share the game's volume
+};
 let songWarned = false;
 document.addEventListener('pointerdown', unlockAudio, true);
 document.addEventListener('keydown', unlockAudio, true);
@@ -316,7 +338,12 @@ const saveGains = () => {
     localStorage.setItem(LEARN_N_KEY, String(attribution.experience + attribution.updates));
   } catch { /* ignore */ }
 };
-const newAttribution = () => new HeartRateAttribution({ weights: loadGains(), experience: loadExperience() });
+const newAttribution = () => {
+  const a = new HeartRateAttribution({ weights: loadGains(), experience: loadExperience() });
+  const record = a.record.bind(a);
+  a.record = (key, t) => { record(key, t); bossRep(repQuality); repQuality = 1; }; // v58: every real rep also reaches the Guardian
+  return a;
+};
 let attribution = newAttribution();
 let gainsSavedAt = 0;
 
@@ -360,15 +387,21 @@ function startWorkout() {
   settings.targetBpm = Math.max(80, Math.min(settings.targetBpm, Math.round(maxBpm * 0.85)));
   const ch = CHALLENGE[settings.challenge] || CHALLENGE.normal;
   sim = new SimulatedHeart({ restingBpm: 65, maxBpm, seed: (Math.random() * 2 ** 31) | 0 });
+  // Today's workout (v58): with the weekly plan on it has a name, a featured move, act titles and a
+  // length (a restart session after a week away is shorter); the plan still picks the shape.
+  week = weekSummary(loadWeek());
+  today = planToday();
+  workoutShape = today ? today.shape : settings.profile;
+  workoutMinutes = today ? today.minutes : settings.trainingMinutes;
   controller = new ZoneController({
     ...tuning.controller,
     kp: tuning.controller.kp * ch.kp,
     ki: tuning.controller.ki * ch.ki,
     targetBpm: settings.targetBpm,
-    profile: (week = weekSummary(loadWeek()), workoutShape = settings.moves.program ? week.nextShape : settings.profile),
+    profile: workoutShape,
     safetyCeilingBpm: Math.min(maxBpm * 0.9, settings.targetBpm + 35),
     warmUpSeconds: settings.warmUpSeconds,
-    trainingSeconds: settings.trainingMinutes * 60,
+    trainingSeconds: workoutMinutes * 60,
     coolDownSeconds: settings.coolDownMinutes * 60,
   });
   boost = new ChallengeBoost({ riseSeconds: tuning.boostRiseSeconds * ch.rise });
@@ -387,7 +420,14 @@ function startWorkout() {
   audio.dropIn(); // never start a workout with the song still thinned out
   spotlight = null; spotlightStarted = null;
   charge = null; chargeReadyAt = 0; verdictShow = null;
-  acts = settings.moves.acts ? actPlan(settings.trainingMinutes * 60) : []; actIdx = -1;
+  acts = settings.moves.acts ? actPlan(workoutMinutes * 60) : []; actIdx = -1;
+  ghost = loadGhosts()[workoutShape] || null; ghostSayAt = 0; // your last real run of this shape, to race
+  boss = null; bossView.hide(true); repQuality = 1; bossRetreatSayAt = 0;
+  world.set(today?.world || 'grid'); applyMusic();
+  tierLog.length = 0; formSaidAt = -99;
+  lastPhase = null; statusSince = 0; voicedStatus = null; coolDownAt = null; recoveryVoiced = false; last30Voiced = false; // (v57 never reset these: the last-30 and recovery lines only spoke in the first workout)
+  progressBoard.visible = false;
+  applyEmberColour();
   lastPick = lastReason = ''; forceShiftNext = false; testQueued = false; comboReadyAt = 0;
   Object.assign(tstat, { slams: 0, slamHits: 0, aboveSec: 0, flatSec: 0, notes: [], landings: [] }); pendingNote = '';
   zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
@@ -458,6 +498,11 @@ function testMove(key) {
     if (charge) { say('Already charging or coasting', 2); return; }
     queuedActivity = null; queuedFor = 0; queuedCombo = null; if (pendingBurst && !pendingBurstTest) pendingBurst = null;
     startCharge(true); return;
+  }
+  if (key === 'boss') {
+    if (controller.phase !== Phase.Training) { say('The Guardian only comes in training (after the warm-up)', 2); return; }
+    if (boss && !boss.left) { say('Already here', 2); return; }
+    startBoss(true); return;
   }
   if (key === 'wall') { // one of the wall shapes you have switched on
     const on = [settings.moves.duck && 'duck', (settings.moves.lean || settings.moves.pillar) && 'lateral', settings.moves.squatSide && 'squatSide', settings.moves.pose && 'pose'].filter(Boolean);
@@ -559,6 +604,8 @@ const now = () => performance.now() / 1000;
  */
 const coach = new VoiceCoach(); // v57: spoken cues (browser speech); 'Coach voice' on the board
 coach.setEnabled(settings.voice !== false);
+coach.onSpeak = (seconds) => audio.duck(0.5, Math.min(5, seconds + 0.3)); // the music dips under the coach
+coach.load(); // v58: the pre-rendered clip bank (assets/voice); silent failure = browser speech, as in v57
 const SAY_HOLD = { 1: 1.8, 2: 1.8, 3: 0.9 };
 function say(text, tier = 2) {
   const t = now();
@@ -1522,7 +1569,7 @@ const trails = fists.map((f) => {
   scene.add(mesh);
   return { f, mesh, mat };
 });
-const railBase = new THREE.Color(0x1a3d80), railZone = new THREE.Color(0xff7a1f);
+const railZone = new THREE.Color(0xff7a1f);
 const zoneSky = new THREE.Color(0x1a0e14); // warm dark sky while you're in the zone
 const trailDummy = new THREE.Object3D();
 function updateZoneWorld(rawDt, inZone, paused, head) {
@@ -1562,7 +1609,7 @@ function updateZoneWorld(rawDt, inZone, paused, head) {
     t.mesh.instanceMatrix.needsUpdate = true;
     t.mat.opacity = 0.75 * zoneAmt;
   }
-  railMat.emissive.copy(railBase).lerp(railZone, zoneAmt);
+  railMat.emissive.copy(world.railGlow).lerp(railZone, zoneAmt);
   streakFlash = Math.max(0, streakFlash - rawDt * 1.5);
   railMat.emissiveIntensity = 1 + 2.5 * streakFlash;
 }
@@ -2686,27 +2733,51 @@ function updateSpotlight() {
 
 let acts = [], actIdx = -1;       // this workout's chapters, and which one is on
 let week = null, workoutShape = 'steady';
+// Named daily workouts (v58; Morty's #1: "a named workout every day"): same engine, but today has a
+// name, a colour, act titles and a featured move, from a bank on weekly rotation (progress.js).
+let today = null;                 // today's named workout, or null with the weekly plan off
+let workoutMinutes = 15;          // this workout's training length (a restart session is shorter)
+const FEATURE_BOOST = 1.6;        // how much more often today's featured move is sent
+const planToday = () => (settings.moves.program
+  ? todayWorkout({ log: loadWeek(), minutes: settings.trainingMinutes, bossOn: settings.moves.boss !== false }) : null);
 const WEEK_KEY = 'pulsezone.week'; // a light log of finished workouts (date, % in zone, shape), last 120
 function loadWeek() { try { return JSON.parse(localStorage.getItem(WEEK_KEY) || '[]'); } catch { return []; } }
 function logWeek(w) {
   if (!w.real) return; // only real-heart-rate workouts count toward the plan (not simulator test runs)
-  const log = [...loadWeek(), { date: new Date(Date.now() - gameTime * 1000).toISOString(), pct: w.pct, inZoneSec: w.inZoneSeconds, trainingSec: w.trainingSeconds, profile: workoutShape, landings: (tstat.landings || []).length }].slice(-120);
+  const log = [...loadWeek(), { date: new Date(Date.now() - gameTime * 1000).toISOString(), pct: w.pct, inZoneSec: w.inZoneSeconds, trainingSec: w.trainingSeconds, profile: workoutShape, landings: (tstat.landings || []).length,
+    name: today?.name || '', id: today?.id || '', recovery: w.recovery ?? null }].slice(-120);
   try { localStorage.setItem(WEEK_KEY, JSON.stringify(log)); } catch { /* full */ }
 }
 const SHAPE_NAME = { steady: 'STEADY', waves: 'WAVES', build: 'BUILD & PEAK' };
+const SHAPE_TITLE = { steady: 'Steady', waves: 'Waves', build: 'Build & peak' };
 function setProgram(on) {
   settings.moves.program = on;
   saveSettings(); syncMovesUI();
-  if (on && controller && controller.phase === Phase.WarmUp) { workoutShape = week.nextShape; controller.s.profile = workoutShape; }
-  say(on ? `Weekly plan on: today is ${SHAPE_NAME[week?.nextShape || 'steady']}` : 'Weekly plan off', 2);
+  today = planToday();
+  if (on && controller && controller.phase === Phase.WarmUp) { // still warming up: today's shape and length can apply now
+    workoutShape = today.shape; controller.s.profile = workoutShape;
+    workoutMinutes = today.minutes; controller.s.trainingSeconds = workoutMinutes * 60;
+    acts = settings.moves.acts ? actPlan(workoutMinutes * 60) : [];
+  }
+  say(on ? `Weekly plan on: today is ${today.name.toUpperCase()} (${SHAPE_NAME[today.shape]})` : 'Weekly plan off', 2);
+  hudKey = '';
 }
 /** The warm-up line: where you are in the week, today's shape, and what to beat. */
 function weekLine() {
   if (!week) return '';
   const beat = week.toBeat ? `  ·  beat ${week.toBeat.pct}% in zone${week.toBeat.profile === workoutShape ? ` (last ${SHAPE_NAME[workoutShape]})` : ''}` : '';
   if (!settings.moves.program) return week.done || week.toBeat ? `This week ${weekDots(week.done)}${beat}` : '';
+  if (today) return `${SHAPE_TITLE[workoutShape]} ${workoutMinutes} min  ·  this week ${weekDots(week.done)}${beat}`;
   return `This week ${weekDots(week.done)}  ·  today: ${SHAPE_NAME[workoutShape]}${beat}`;
 }
+/** The headline above it: today's named workout (v58). */
+function todayLine() {
+  if (!today) return '';
+  if (today.restart) return `WELCOME BACK: ${today.name.toUpperCase()}  ·  short and easy today`;
+  return `TODAY: ${today.name.toUpperCase()}${today.boss ? '  ·  GUARDIAN DAY' : ''}`;
+}
+/** This act's title: the named workout's own (v58), or the act's standard name. */
+const actTitle = (i) => (today && actTitles(today, acts.length)[i]?.toUpperCase()) || ACTS[acts[i].key].name;
 /** Act changes: a call-out, a chime, a new sky tint and a new mix. */
 function updateActs() {
   const c = controller;
@@ -2715,14 +2786,117 @@ function updateActs() {
   if (i === actIdx) return;
   actIdx = i;
   const a = ACTS[acts[i].key];
-  say(`ACT ${i + 1}/${acts.length}: ${a.name} - ${a.blurb}`, 1);
-  if (i === acts.length - 1 && acts.length > 1) coach.line('finale', 1); else coach.say(`Act ${i + 1}. ${a.name}.`, 1);
+  say(`ACT ${i + 1}/${acts.length}: ${actTitle(i)} - ${a.blurb}`, 1);
+  if (i === acts.length - 1 && acts.length > 1) coach.line('finale', 1);
+  else if (!coach.line(`act${i + 1}`, 1)) coach.say(`Act ${i + 1}. ${actTitle(i)}.`, 1);
   audio.sfx('streak', { level: i + 2 });
   audio.dropIn();
-  logEvent('act', { act: acts[i].key, n: i + 1 });
+  logEvent('act', { act: acts[i].key, n: i + 1, title: actTitle(i) });
+  if (i > 0 && ghost) ghostSayAt = gameTime + 8; // a few seconds later: how you're doing against your last run
 }
 const actNow = () => (actIdx >= 0 && acts[actIdx] ? acts[actIdx].key : null);
+
+// ------------------------------------------------------------------ progress: levels, badges, the ghost of your last run (v58)
+
+/**
+ * From the VR fitness research (Morty's #4 and #6, Gemini's #8 and #9): a level that grows with
+ * MINUTES IN YOUR ZONE (never score), badges for real behaviours, and "last Tuesday's you" to race.
+ * All local, and only real-heart-rate workouts count, like the personal bests.
+ */
+const PROGRESS_KEY = 'pulsezone.progress'; // { badges: { id: ISO date } }
+const GHOSTS_KEY = 'pulsezone.ghosts';     // the last real workout of each shape: { [shape]: { date, name, pct, trace } }
+function loadProgress() { try { return { badges: {}, ...(JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}') || {}) }; } catch { return { badges: {} }; } }
+function loadGhosts() { try { return JSON.parse(localStorage.getItem(GHOSTS_KEY) || '{}') || {}; } catch { return {}; } }
+let ghost = null, ghostSayAt = 0;
+let boss = null; // the Guardian (v58, boss.js): only on the week's last planned workout, or from its Test button
+/** Seconds in the zone you are ahead of (+) or behind (-) your last run of this shape, at this point in training. */
+const ghostNow = () => (ghost && controller && controller.phase === Phase.Training ? ghostDelta(ghost.trace, controller.phaseElapsedSeconds, controller.secondsInZone) : null);
+function updateGhost() {
+  if (!ghostSayAt || gameTime < ghostSayAt) return;
+  ghostSayAt = 0;
+  const d = ghostNow();
+  if (d == null || Math.abs(d) < 10 || charge) return; // too close to call (or mid-charge: stay out of the way)
+  say(d > 0 ? `Ahead of your last ${SHAPE_NAME[workoutShape]} by ${ghostLabel(d).slice(1)}` : `Your last ${SHAPE_NAME[workoutShape]} is ${ghostLabel(d).slice(1)} ahead`, 2);
+  coach.line(d > 0 ? 'ghostAhead' : 'ghostBehind', 3);
+}
 const actSkyTarget = new THREE.Color(), actSkyNow = new THREE.Color(0x0b0d18);
+
+// ------------------------------------------------------------------ the Guardian: a heart-rate boss (v58, see boss.js)
+
+/**
+ * The Guardian (Morty's #3, docs/BOSS_SPEC_DRAFT.md): the zone controller with a face. A figure at
+ * the far end of the lane with a shield ring round its core. Your scored reps only hurt it while
+ * you're IN YOUR ZONE; below the zone the shield stalls (and creeps back after 20 s), above it the
+ * Guardian overheats and asks you to breathe. It adds no moves. One per workout, on the week's last
+ * planned workout (or from its Test button); it leaves when the cool-down starts.
+ */
+const bossView = new BossView(scene);
+const BOSS_POINTS = 500;
+const BOSS_LINES = { // [on-screen, coach phrase] once a state has settled
+  exposed: ['GUARDIAN OPEN: hit it now', 'bossExposed'],
+  guarded: ['Shield up: get back in your zone', 'bossGuarded'],
+  overheating: ['It is overheating: ease off and breathe', 'bossOverheat'],
+};
+let repQuality = 1; // how hard the rep being recorded was (punches set it from their power tier; 1 otherwise)
+let bossSaid = '', bossStateSince = 0, bossSaidAt = -99, bossLeaveAt = 0, bossRetreatSayAt = 0;
+function startBoss(test = false) {
+  const c = controller, inTraining = c.phase === Phase.Training;
+  const left = Math.max(120, c.s.trainingSeconds - (inTraining ? c.phaseElapsedSeconds : 0)); // sized to the training time it has
+  boss = newBoss(left);
+  boss.test = test;
+  bossSaid = ''; bossStateSince = gameTime; bossSaidAt = gameTime; bossLeaveAt = 0; bossRetreatSayAt = 0;
+  bossView.show();
+  say('THE GUARDIAN: your hits only count while you are in your zone', 1);
+  coach.line('bossArrive', 1);
+  audio.sfx('streak', { level: 5 });
+  logEvent('boss', { stage: 'arrive', seconds: Math.round(left), test: test || undefined });
+}
+/** A scored rep (every attribution.record): chips the shield, then the core, while it's exposed. */
+function bossRep(quality) {
+  if (!boss || boss.left || boss.defeatedAt != null || controller.phase !== Phase.Training) return;
+  const r = bossHit(boss, { now: controller.phaseElapsedSeconds, quality });
+  if (r) bossStruck(r, 'hit');
+}
+function bossStruck(r, kind) {
+  bossView.flash(r.defeated ? 'defeated' : r.broke ? 'broke' : kind);
+  if (r.broke && !r.defeated) {
+    say('SHIELD DOWN! Now the core', 1); coach.line('bossBroke', 1);
+    audio.sfx('streak', { level: 6 }); pulseBoth(0.8, 140);
+    logEvent('boss', { stage: 'broke' });
+  }
+  if (r.defeated) {
+    score.score += BOSS_POINTS;
+    say(`GUARDIAN DOWN!  +${BOSS_POINTS}`, 1); coach.line('bossDefeated', 1);
+    audio.sfx('streak', { level: 8 }); pulseBoth(1, 260);
+    logEvent('boss', { stage: 'defeated' });
+    bossLeaveAt = gameTime + 6; // let its finale play, then it's gone
+  }
+}
+function updateBoss(gdt) {
+  if (!boss || boss.left) return;
+  const c = controller;
+  if (c.phase !== Phase.Training) { if (c.phase !== Phase.WarmUp) endBoss(); return; }
+  const prev = boss.state;
+  bossTick(boss, { status: c.status, climbing: trendShown === 'climbing', dt: gdt, now: c.phaseElapsedSeconds });
+  if (boss.state !== prev) bossStateSince = gameTime;
+  if (bossLeaveAt && gameTime >= bossLeaveAt) { bossLeaveAt = 0; boss.left = true; bossView.hide(); return; }
+  // Call-outs only once a state has settled (heart rate wobbles at the zone's edge), and not too often.
+  if (boss.defeatedAt == null && boss.state !== bossSaid && BOSS_LINES[boss.state] && gameTime - bossStateSince > 4 && gameTime - bossSaidAt > 20 && !charge) {
+    bossSaid = boss.state; bossSaidAt = gameTime;
+    say(BOSS_LINES[boss.state][0], 2); coach.line(BOSS_LINES[boss.state][1], 2);
+  }
+}
+/** Cool-down: the Guardian leaves. Not beaten = it got away, said plainly, no blame. */
+function endBoss() {
+  if (!boss || boss.left) return;
+  boss.left = true;
+  if (boss.defeatedAt == null) {
+    say('The Guardian got away. It will be back.', 2);
+    bossRetreatSayAt = gameTime + 8; // spoken after the cool-down guidance, not over it
+    logEvent('boss', { stage: 'retreat', shield: Math.round(boss.shield), core: Math.round(boss.core) });
+  }
+  bossView.hide();
+}
 
 // ------------------------------------------------------------------ charge and coast (see CHARGE in core.js)
 
@@ -2757,6 +2931,9 @@ function updateCharge() {
   const secs = gameTime - charge.since;
   const over = c.status === Zone.Above || c.status === Zone.SafetyBrake;
   if (charge.stage === 'charge') {
+    // v58: the coach counts the charge down (halfway, last five seconds).
+    if (!charge.saidHalf && secs >= CHARGE.chargeSeconds / 2) { charge.saidHalf = true; coach.line('chargeHalf', 2); }
+    if (!charge.saidLast && secs >= CHARGE.chargeSeconds - 5 && secs < CHARGE.chargeSeconds) { charge.saidLast = true; coach.line('chargeLast5', 1); }
     if (charge.wantPress && !stations.length && !burstActive() && secs < 12) { charge.wantPress = false; queuedActivity = 'press'; queuedFor = 0; testQueued = false; }
     const roundOn = stations.some((x) => x.round && x.arrived && !x.done);
     if (over || (secs >= CHARGE.chargeSeconds && !roundOn) || secs >= CHARGE.chargeSeconds + 15) {
@@ -2769,6 +2946,7 @@ function updateCharge() {
     return;
   }
   // Coasting: keep re-predicting; land when it stops climbing (or goes over).
+  if (!charge.saidHold && secs >= 8) { charge.saidHold = true; coach.line('coastHold', 2); } // "hold... let it rise... land it"
   charge.peak = predictPeak(bpm, attribution.projectedRise(), c.bpmTrend);
   if (coastOver({ secs, trend: c.bpmTrend, status: c.status })) {
     const { verdict, points } = landingVerdict(bpm, c.currentSetpoint, c.s.zoneHalfWidth);
@@ -2787,6 +2965,7 @@ function updateCharge() {
     else audio.sfx('zone');
     logEvent('landing', { verdict, bpm, target: Math.round(c.currentSetpoint), points, from: charge.startBpm });
     tstat.landings = [...(tstat.landings || []), verdict];
+    if (boss && !boss.left && boss.defeatedAt == null) { const r = bossLanding(boss, verdict, c.phaseElapsedSeconds); if (r) bossStruck(r, 'landing'); } // a PERFECT LANDING knocks 25% off the shield
     // Pick up from the effort that got you here, not whatever the controller wound up to while it waited.
     c.intensity = c.integral = Math.min(c.intensity, charge.coastIntensity ?? c.intensity);
     charge = null;
@@ -2805,7 +2984,9 @@ function chargeLine() {
 
 /** The activity mix's base weights, with the spotlight move boosted while a round is on. */
 function spawnWeights() {
-  const base = actNow() ? actWeights(actNow(), attribution.w, tuning.weights) : tuning.weights;
+  let base = actNow() ? actWeights(actNow(), attribution.w, tuning.weights) : tuning.weights;
+  const feat = today && ACTIVITIES.find((x) => x.key === today.feature); // today's featured move comes up more often
+  if (feat) base = { ...(base || {}), [feat.key]: ((base || {})[feat.key] ?? feat.base) * FEATURE_BOOST };
   if (!spotlight) return base;
   const a = ACTIVITIES.find((x) => x.key === spotlight.key);
   return { ...(base || {}), [spotlight.key]: ((base || {})[spotlight.key] ?? a.base) * SPOTLIGHT.boost };
@@ -2861,6 +3042,21 @@ function removeOrb(orb) {
  * `hand` says which hand was used and swing direction isn't judged.
  * Swing orbs are forgiving: any good punch counts; following the curve doubles the points.
  */
+/**
+ * Form cue (v58; Morty's #7: grade the punch, then say something true about it). Mostly flicks
+ * lately WHILE you're below your zone: one nudge a minute to punch through. Mostly heavy hits: the
+ * odd word of praise. In the zone, light punches are fine and nobody nags.
+ */
+const tierLog = [];
+let formSaidAt = -99;
+function formCue(tier) {
+  tierLog.push(tier);
+  if (tierLog.length > 8) tierLog.shift();
+  if (tierLog.length < 8 || gameTime - formSaidAt < 60 || charge) return;
+  const count = (t) => tierLog.filter((x) => x === t).length;
+  if (count('tap') >= 6 && controller.status === Zone.Below) { formSaidAt = gameTime; say('Those are flicks: punch through the target', 2); coach.line('flick', 2); }
+  else if (count('heavy') >= 5) { formSaidAt = gameTime + 60; coach.line('powerPraise', 3); }
+}
 function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
   const t = now();
   if (orb.dying || t < orb.immuneUntil) return false;
@@ -2927,6 +3123,8 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
   pulse(fist, 0.35 + 0.65 * power, 30 + 60 * power);
   popText(score.hit(bonus, label), orb.group.position, label ? '#ffffff' : HAND_CSS[orb.hand]);
   audio.sfx(orb.power ? 'power' : bonus > 1 && tier !== 'heavy' ? 'perfect' : 'hit', { hand, power: tier === 'heavy' ? Math.max(power, 0.85) : power });
+  repQuality = tier ? BOSS.quality[tier] ?? 1 : 1;
+  if (tier) formCue(tier);
   attribution.record(orb.activity, gameTime);
   if (orb.combo) comboResult(orb, true);
   // Hit feel: the orb freezes and flashes white for a split second, then shatters along your punch.
@@ -2985,6 +3183,7 @@ function finishWorkout() {
   Object.assign(w, { score: score.score, streak: Math.min(Math.floor(longestStreak), w.inZoneSeconds), reactor: reactor.level, combo: score.best, kcal: Math.round(kcal) });
   // Personal bests only count workouts driven mostly by your real heart rate (not the simulator).
   w.real = w.trainingSeconds > 0 && realHrSeconds >= 0.5 * w.trainingSeconds;
+  const zoneBefore = bests?.totalZoneSeconds || 0; // minutes in zone so far = your level before this workout
   let records = [];
   if (w.real) {
     const r = updateBests(bests, w);
@@ -2992,15 +3191,123 @@ function finishWorkout() {
     try { localStorage.setItem(BESTS_KEY, JSON.stringify(bests)); } catch { /* ignore */ }
   }
   w.profile = workoutShape;
+  w.name = today?.name || ''; w.restart = !!today?.restart;
+  const story = recoveryStory(loadWeek(), w.recovery); // against the month BEFORE this workout joins the log
+  if (boss) w.boss = bossSummary(boss);
   logWeek(w);
   const before = week;
   week = weekSummary(loadWeek());
   w.weekText = weekEndLine(w, before);
-  lastSummary = { w, records };
+  const progress = tallyProgress(w, zoneBefore, story);
+  w.level = { level: progress.lvl.level, title: progress.lvl.title }; w.badges = progress.earned;
+  lastSummary = { w, records, progress };
   archiveWorkout(w);
   clearObstacles(); // nothing left hanging in front of the board
   drawSummary(w, records);
-  summaryBoard.visible = true;
+  drawProgress(w, progress);
+  summaryBoard.visible = true; progressBoard.visible = true;
+  applyEmberColour();
+  // A few seconds after "workout done": the level-up or the new badge, spoken once.
+  if (progress.up || progress.earned.length) setTimeout(() => coach.line(progress.up ? 'levelUp' : 'badge', 2), 4500);
+}
+
+/** Level, badges and the ghost for the workout that just ended (and save them; real heart rate only). */
+function tallyProgress(w, zoneBefore, story) {
+  const zoneAfter = w.real ? (bests?.totalZoneSeconds || 0) : zoneBefore;
+  const lvl = levelFor(zoneAfter);
+  const up = w.real ? levelUp(zoneBefore, zoneAfter) : null;
+  const store = loadProgress();
+  let earned = [];
+  if (w.real) {
+    earned = newBadges({ w, landings: tstat.landings || [], week, bests, heavy: score.heavy, poses: score.poses, bossWon: !!(boss && boss.defeatedAt != null), restart: w.restart }, store.badges);
+    if (earned.length) {
+      const at = new Date().toISOString();
+      for (const b of earned) store.badges[b.id] = at;
+      try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(store)); } catch { /* full */ }
+    }
+  }
+  const vsGhost = ghost ? ghostDelta(ghost.trace, w.trainingSeconds, w.inZoneSeconds) : null;
+  if (w.real && w.trainingSeconds >= MIN_RECORD_SECONDS) { // this run becomes the one to race next time
+    const ghosts = { ...loadGhosts(), [workoutShape]: { date: new Date(Date.now() - gameTime * 1000).toISOString(), name: w.name, pct: w.pct, trace: ghostTrace(sessionLog) } };
+    try { localStorage.setItem(GHOSTS_KEY, JSON.stringify(ghosts)); } catch { /* full */ }
+  }
+  return {
+    lvl, up, ember: up ? trailUnlocked(up.from, up.to) : null, earned, have: Object.keys(store.badges).length, total: BADGES.length,
+    hint: BADGES.find((b) => !store.badges[b.id]) || null, vsGhost, story, next: planToday(),
+  };
+}
+/** Your level's ember colour (v58: higher levels unlock new colours for the in-zone embers). */
+function applyEmberColour() { emberMat.color.setHex(trailFor(levelFor(bests?.totalZoneSeconds || 0).level).colour); }
+
+/**
+ * The progress board (v58): to the right of the summary, angled toward you. Today's named workout,
+ * your level and the minutes in zone to the next one, new badges (or the next one to earn), how you
+ * did against your last run of this shape, what the recovery number means, and what's next.
+ */
+const progCanvas = document.createElement('canvas');
+progCanvas.width = 512; progCanvas.height = 640;
+const progTex = new THREE.CanvasTexture(progCanvas);
+progTex.colorSpace = THREE.SRGBColorSpace;
+const progressBoard = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.125), new THREE.MeshBasicMaterial({ map: progTex, transparent: true }));
+progressBoard.rotation.order = 'YXZ';
+progressBoard.visible = false;
+scene.add(progressBoard);
+function drawProgress(w, p) {
+  const g = progCanvas.getContext('2d'), W = progCanvas.width, H = progCanvas.height;
+  const x = 34, mw = W - 68;
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = 'rgba(8,10,18,0.82)';
+  g.beginPath(); g.roundRect(6, 6, W - 12, H - 12, 24); g.fill();
+  g.textBaseline = 'middle'; g.textAlign = 'left';
+  g.fillStyle = today?.colour || '#e6e9ef'; g.font = '700 34px system-ui, sans-serif';
+  g.fillText(today ? today.name.toUpperCase() : 'YOUR PROGRESS', x, 46, mw);
+  g.fillStyle = '#8d95a5'; g.font = '22px system-ui, sans-serif';
+  g.fillText(`${SHAPE_TITLE[workoutShape]}  ·  this week ${weekDots(week.done)}`, x, 82, mw);
+
+  g.fillStyle = '#ffffff'; g.font = '700 44px system-ui, sans-serif';
+  g.fillText(`LEVEL ${p.lvl.level}`, x, 134);
+  g.textAlign = 'right'; g.fillStyle = '#ffc04d'; g.font = '700 26px system-ui, sans-serif';
+  g.fillText(p.up ? 'LEVEL UP!' : p.lvl.title.toUpperCase(), W - x, 138, 200);
+  g.textAlign = 'left';
+  g.fillStyle = '#262a38'; g.beginPath(); g.roundRect(x, 164, mw, 16, 8); g.fill();
+  g.fillStyle = '#ffc04d'; g.beginPath(); g.roundRect(x, 164, Math.max(16, mw * Math.min(1, p.lvl.frac)), 16, 8); g.fill();
+  g.fillStyle = '#8d95a5'; g.font = '20px system-ui, sans-serif';
+  g.fillText(!w.real ? 'Estimated heart rate: progress not saved'
+    : p.ember ? `New: ${p.ember.name} while you're in the zone`
+      : `${mmss(p.lvl.intoSec)} of ${mmss(p.lvl.needSec)} in zone to level ${p.lvl.level + 1}`, x, 202, mw);
+
+  g.fillStyle = '#8d95a5'; g.font = '600 22px system-ui, sans-serif';
+  g.fillText(`BADGES  ${p.have} / ${p.total}`, x, 250);
+  if (p.earned.length) {
+    g.fillStyle = '#ffc04d'; g.font = '700 26px system-ui, sans-serif';
+    p.earned.slice(0, 3).forEach((b, i) => g.fillText(`★ ${b.name}`, x, 288 + i * 34, mw));
+    if (p.earned.length > 3) { g.fillStyle = '#c9ced8'; g.font = '20px system-ui, sans-serif'; g.fillText(`and ${p.earned.length - 3} more`, x, 390, mw); }
+  } else if (p.hint) {
+    g.fillStyle = '#c9ced8'; g.font = '22px system-ui, sans-serif';
+    wrapText(g, `Next: ${p.hint.name} (${p.hint.hint})`, x, 288, mw, 30);
+  }
+
+  if (p.vsGhost != null) {
+    g.fillStyle = '#8d95a5'; g.font = '22px system-ui, sans-serif';
+    g.fillText(`vs your last ${SHAPE_NAME[workoutShape]}`, x, 420, mw);
+    g.fillStyle = p.vsGhost >= 0 ? '#4dff73' : '#ff8a6b'; g.font = '700 30px system-ui, sans-serif';
+    g.fillText(`${ghostLabel(p.vsGhost)} in zone`, x, 454, mw);
+  }
+  if (w.recovery != null && p.story) {
+    g.fillStyle = '#7fd8ff'; g.font = '600 22px system-ui, sans-serif';
+    g.fillText(`1-min recovery -${w.recovery} BPM: ${p.story}`, x, 492, mw);
+  }
+  if (w.boss) {
+    g.fillStyle = w.boss.defeated ? '#ffc04d' : '#c9ced8'; g.font = '600 22px system-ui, sans-serif';
+    g.fillText(w.boss.text, x, 526, mw);
+  }
+  if (p.next) {
+    g.fillStyle = '#8d95a5'; g.font = '22px system-ui, sans-serif';
+    g.fillText('Next up', x, 568, mw);
+    g.fillStyle = p.next.colour || '#ffffff'; g.font = '700 26px system-ui, sans-serif';
+    g.fillText(`${p.next.name.toUpperCase()} (${SHAPE_TITLE[p.next.shape]})${p.next.boss ? ' + GUARDIAN' : ''}`, x, 602, mw);
+  }
+  progTex.needsUpdate = true;
 }
 
 function drawSummary(w, records) {
@@ -3178,7 +3485,8 @@ function drawHud(xr) {
   const key = [bpmText, c.status, c.phase, Math.floor(remaining), Math.round(c.intensity * 100), score.score, score.combo,
     fresh ? lastEvent : '', statusLine, sourceKind, phoneFallback, workloadMode, link.code, xr, Math.round(c.currentSetpoint), c.s.targetBpm,
     Math.round(boostPct / 5), options.open, trendShown, settings.diag && `${lastPick}|${lastReason}|${projSmooth == null ? '' : Math.round(projSmooth)}`, Math.floor(zoneStreak), !!breathCue, spotlight && spotlight.key,
-    spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds), chargeLine(), actIdx, workoutShape, verdictShow && gameTime < verdictShow.until ? verdictShow.text : '', compact].join('|');
+    spotlight && Math.ceil(spotlight.until - c.phaseElapsedSeconds), chargeLine(), actIdx, workoutShape, verdictShow && gameTime < verdictShow.until ? verdictShow.text : '', compact,
+    today && today.id, workoutMinutes].join('|');
   if (key === hudKey) return;
   hudKey = key;
 
@@ -3218,8 +3526,8 @@ function drawHud(xr) {
   const boostText = ''; // the challenge boost shows as the red glow past the intensity bar
   g.fillText(c.phase === Phase.Finished ? 'WORKOUT COMPLETE'
     : options.open ? 'PAUSED - options open'
-      : compact ? (c.phase === Phase.Training && actNow() ? `ACT ${actIdx + 1}/${acts.length}  ${ACTS[actNow()].name}` : PHASE_LABEL[c.phase])
-        : `${c.phase === Phase.Training && actNow() ? `ACT ${actIdx + 1}/${acts.length} ${ACTS[actNow()].name}` : PHASE_LABEL[c.phase]} ${mmss(remaining)}  ·  intensity ${Math.round(c.intensity * 100)}%${boostText}  ·  ${srcName}`, W / 2, 290);
+      : compact ? (c.phase === Phase.Training && actNow() ? `ACT ${actIdx + 1}/${acts.length}  ${actTitle(actIdx)}` : PHASE_LABEL[c.phase])
+        : `${c.phase === Phase.Training && actNow() ? `ACT ${actIdx + 1}/${acts.length} ${actTitle(actIdx)}` : PHASE_LABEL[c.phase]} ${mmss(remaining)}  ·  intensity ${Math.round(c.intensity * 100)}%${boostText}  ·  ${srcName}`, W / 2, 290);
 
   const bx = 212, by = 325, bw = 600, bh = 22;
   if (!compact) {
@@ -3245,6 +3553,11 @@ function drawHud(xr) {
     g.fillText(xr ? 'Press A to go again' : 'Press R to go again', W / 2, 480);
   } else if (fresh) {
     g.fillText(lastEvent, W / 2, 400, W - 60);
+  } else if (c.phase === Phase.WarmUp && todayLine()) { // v58: today's named workout, then the week underneath
+    g.fillStyle = today.colour || '#ffc04d'; g.font = '700 38px system-ui, sans-serif';
+    g.fillText(todayLine(), W / 2, 394, W - 60);
+    g.fillStyle = '#ffc04d'; g.font = '600 28px system-ui, sans-serif';
+    g.fillText(weekLine(), W / 2, 440, W - 60);
   } else if (c.phase === Phase.WarmUp && (weekLine() || bestsLine())) {
     g.fillStyle = '#ffc04d'; g.font = '600 32px system-ui, sans-serif';
     g.fillText(weekLine() || bestsLine(), W / 2, 400, W - 60);
@@ -3287,7 +3600,15 @@ function drawHud(xr) {
   g.fillText(`SCORE ${score.score}`, 760, 60);
   g.font = '26px system-ui, sans-serif'; g.fillStyle = '#c9ced8';
   g.fillText(`combo ${score.combo} (best ${score.best})`, 760, 100);
-  g.fillText(`in zone ${mmss(c.phase === Phase.Finished && lastSummary ? lastSummary.w.inZoneSeconds : c.secondsInZone)}`, 760, 136);
+  const zoneText = `in zone ${mmss(c.phase === Phase.Finished && lastSummary ? lastSummary.w.inZoneSeconds : c.secondsInZone)}`;
+  const zoneW = g.measureText(`${zoneText}  `).width;
+  g.fillText(zoneText, 760, 136);
+  const gd = ghostNow(); // v58: ahead of / behind your last run of this shape, right after the time in zone
+  if (gd != null && c.phaseElapsedSeconds >= 30) {
+    g.fillStyle = gd >= 0 ? '#4dff73' : '#ff8a6b'; g.font = '600 24px system-ui, sans-serif';
+    g.fillText(ghostLabel(gd), 760 + zoneW, 136);
+    g.font = '26px system-ui, sans-serif'; g.fillStyle = '#c9ced8';
+  }
   if (zoneStreak >= ZONE_STREAK_STEP && c.phase !== Phase.Finished) {
     g.fillStyle = '#ffc04d'; g.fillText(`streak ${mmss(zoneStreak)}`, 760, 172);
   }
@@ -3344,9 +3665,9 @@ const options = new OptionsPanel({
         break;
       }
       case 'mode-punch': case 'mode-touch': setGameType(id.slice(5)); break;
-      case 'music-song': case 'music-synth':
+      case 'music-song': case 'music-synth': case 'music-daily':
         settings.musicStyle = id.slice(6);
-        audio.setMusicMode(songAvailable && settings.musicStyle === 'song' ? 'song' : 'synth');
+        applyMusic();
         saveSettings();
         break;
       default:
@@ -3357,7 +3678,7 @@ const options = new OptionsPanel({
       case 'note-slam': case 'note-guard': case 'note-fast': case 'note-great': addNote(NOTE_LABEL[id]); options.toggle(false); break;
       case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift': case 'test-hammer':
       case 'test-heavy': case 'test-sled': case 'test-barrage': case 'test-bag': case 'test-ropes': case 'test-wall':
-      case 'test-knee': case 'test-press': case 'test-chop': case 'test-tiptoe': case 'test-charge': testMove(id.slice(5)); options.toggle(false); break;
+      case 'test-knee': case 'test-press': case 'test-chop': case 'test-tiptoe': case 'test-charge': case 'test-boss': testMove(id.slice(5)); options.toggle(false); break;
       case 'end': endPressed(); options.toggle(false); break;
       case 'save': saveWorkoutData(); break;
       case 'close': options.toggle(false); break;
@@ -3398,7 +3719,7 @@ function buildMovesUI() {
       <label><input type="radio" name="profile" value="build"> Build &amp; peak (start easy, finish hard)</label>
     </div>
     ${group('Orbs', ['jab', 'low', 'swing', 'hammer', 'power', 'pair', 'guard', 'trace', 'sweep'])}
-    ${group('Workout plan', ['program', 'acts'])}
+    ${group('Workout plan', ['program', 'acts', 'boss'])}
     ${group('Whole-body moves', ['knee', 'press', 'chop', 'tiptoe', 'charge'])}
     ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes', 'heavy', 'sled', 'barrage'])}
     ${group('Walls & footwork', ['duck', 'squatSide', 'pose', 'lean', 'pillar', 'shift'])}
@@ -3479,6 +3800,7 @@ function workoutRecord(summary) {
   const cols = sessionLog.length ? Object.keys(sessionLog[0]) : [];
   return {
     date: new Date(Date.now() - gameTime * 1000).toISOString(), version: VERSION, summary,
+    name: summary?.name || today?.name || '', shape: workoutShape, level: summary?.level || null, badges: summary?.badges || [], // v58: for the phone's summary card
     settings: { targetBpm: settings.targetBpm, minutes: settings.trainingMinutes, warmUp: settings.warmUpSeconds, profile: settings.profile,
       challenge: settings.challenge, gameType: settings.gameType, moves: { ...settings.moves } },
     cols, rows: sessionLog.map((r) => cols.map((c) => r[c])), events: workoutEvents.slice(),
@@ -3940,6 +4262,8 @@ function frame(time) {
     updateWaves();
     updateSpotlight();
     updateActs();
+    updateGhost();
+    updateBoss(gdt);
     updateCharge();
     if (gameTime - gainsSavedAt > 30) { gainsSavedAt = gameTime; saveGains(); }
     logTimer += gdt;
@@ -3954,18 +4278,24 @@ function frame(time) {
   if (controller.status === Zone.InZone && lastStatus !== Zone.InZone && controller.phase !== Phase.Finished) audio.sfx('zone');
   // Voice coach (v57): zone news, spoken a few seconds after the status settles (heart rate wobbles at the edge).
   if (controller.status !== lastStatus) statusSince = gameTime;
-  if (!paused && controller.phase === Phase.Training && !charge && controller.status !== voicedStatus && gameTime - statusSince > 4) {
+  // (v58: "below" waits 12 s as intended; v57 marked it as said at 4 s, so it was almost never spoken. And the
+  // line now says roughly how far off you are: Morty's "you're 8 below, bigger swings".)
+  if (!paused && controller.phase === Phase.Training && !charge && controller.status !== voicedStatus && gameTime - statusSince > (controller.status === Zone.Below ? 12 : 4) && !(boss && !boss.left && boss.defeatedAt == null)) { // (on Guardian days its own lines carry the zone news)
     voicedStatus = controller.status;
+    const off = src.hasReading ? Math.abs(controller.currentSetpoint - src.currentBpm) : 0;
     if (voicedStatus === Zone.InZone) coach.line('zoneIn', 2);
-    else if (voicedStatus === Zone.Below && gameTime - statusSince > 12) coach.line(trendShown === 'climbing' ? 'climbing' : 'below', 2);
-    else if (voicedStatus === Zone.Above) coach.line('above', 2);
+    else if (voicedStatus === Zone.Below) { if (trendShown === 'climbing') coach.line('climbing', 2); else if (!coach.line(off >= 15 ? 'below15' : off >= 10 ? 'below10' : 'below5', 2)) coach.line('below', 2); }
+    else if (voicedStatus === Zone.Above) { if (!coach.line(off >= 10 ? 'above10' : 'above5', 2)) coach.line('above', 2); }
   }
   if (controller.phase !== lastPhase) {
     if (controller.phase === Phase.CoolDown) { coach.line('coolDown', 1); coolDownAt = gameTime; }
-    else if (controller.phase === Phase.Training && lastPhase === Phase.WarmUp) coach.line('training', 2);
-    else if (controller.phase === Phase.WarmUp) coach.line('warmUp', 2);
+    else if (controller.phase === Phase.Training) { if (today?.boss && settings.moves.boss !== false && !boss) startBoss(); else coach.line('training', 2); }
+    else if (controller.phase === Phase.WarmUp) { if (!(today && coach.line(today.restart ? 'restart' : `workout.${today.id}`, 2))) coach.line('warmUp', 2); } // v58: today's named workout
     lastPhase = controller.phase;
   }
+  if (bossRetreatSayAt && gameTime >= bossRetreatSayAt) { bossRetreatSayAt = 0; coach.line('bossRetreat', 2); }
+  if (boss && controller.phase !== Phase.Training && controller.phase !== Phase.WarmUp) endBoss();
+  if (boss && (!boss.left || bossView.visible)) { bossView.group.position.set(centerX, 0, -18); bossView.update(boss, { dt: rawDt, time: gameTime, beat: beatPhase }); }
   if (controller.phase === Phase.CoolDown && coolDownAt != null && gameTime - coolDownAt > 45 && !recoveryVoiced) { recoveryVoiced = true; coach.line('recovery', 2); }
   if (controller.phase === Phase.Training && !last30Voiced && controller.phaseDuration - controller.phaseElapsedSeconds <= 30 && controller.phaseDuration - controller.phaseElapsedSeconds > 20) { last30Voiced = true; coach.line('last30', 2); }
   lastStatus = controller.status;
@@ -4141,7 +4471,10 @@ function frame(time) {
   const inZoneNow = controller.status === Zone.InZone && controller.phase !== Phase.Finished;
   updateZoneWorld(rawDt, inZoneNow, paused, head);
   updateReactor(gdt, rawDt, controller.phase === Phase.Finished ? 'NoSignal' : controller.status, !paused && controller.phase !== Phase.Finished && controller.phase !== Phase.WarmUp);
-  actSkyTarget.set(actNow() && controller.phase === Phase.Training ? ACTS[actNow()].sky : 0x0b0d18);
+  world.update(rawDt);
+  // The act's tint over the world's own sky (in the classic grid world the act tint is the whole sky, as before).
+  if (actNow() && controller.phase === Phase.Training) actSkyTarget.set(ACTS[actNow()].sky).lerp(world.sky, world.key === 'grid' ? 0 : 0.6);
+  else actSkyTarget.copy(world.sky);
   actSkyNow.lerp(actSkyTarget, 1 - Math.exp(-rawDt / 3)); // ~3 s fade into each act's sky
   const zc = skyTmp.set(ZONE_COLOR[controller.phase === Phase.Finished ? 'NoSignal' : controller.status]).multiplyScalar(0.03 * (1 - 0.5 * zoneAmt)).add(actSkyNow).lerp(zoneSky, 0.5 * zoneAmt);
   scene.background.lerp(zc, 1 - Math.exp(-rawDt * 2));
@@ -4154,6 +4487,7 @@ function frame(time) {
   if (hudCompact()) { hud.position.set(centerX, standing + 1.0, head.z - 5.2); hud.scale.setScalar(1.45); }
   else { hud.position.set(centerX, standing + 0.35, head.z - 3.2); hud.scale.setScalar(1); }
   if (summaryBoard.visible) { summaryBoard.position.set(centerX, standing - 1.0, head.z - 2.5); summaryBoard.rotation.x = -0.35; }
+  if (progressBoard.visible) { progressBoard.position.set(centerX + 1.45, standing - 1.0, head.z - 2.25); progressBoard.rotation.set(-0.35, -0.55, 0); }
   thermo.mesh.position.set(centerX - 1.65, standing + 0.3, head.z - 3.1);
   reactor.group.position.set(centerX + 1.65, standing + 0.45, head.z - 3.1);
   options.tab.position.set(centerX - 1.65, standing - 0.85, head.z - 3.05);
@@ -4225,6 +4559,9 @@ window.pz = {
       reactor: { charge: +reactor.charge.toFixed(2), level: reactor.level, state: reactor.state }, zoneAmt: +zoneAmt.toFixed(2), slams: slams.length, heavy: !!heavy, sled: !!sled, bombs: bombs.length, tstat, shift: shiftPlan, drifting, breath: breathCue, spotlight, sensorFlat, combosSent: comboSeq, comboOrbs: orbs.filter((o) => o.combo).length, seen, ghosts: ghostFists.left.visible || ghostFists.right.visible, trend: trendShown, zoneStreak: Math.floor(zoneStreak), longestStreak: Math.floor(longestStreak), summary: lastSummary, bests, projected: projSmooth == null ? null : Math.round(projSmooth),
       thermo: Object.fromEntries(Object.entries(thermo.uniforms).map(([k, v]) => [k, +v.value.toFixed(2)])),
       audio: audio.ctx ? audio.ctx.state : 'locked', tempo: Math.round(audio.tempo), musicMode: audio.musicMode, songAvailable,
+      boss: boss && { state: boss.state, shield: +boss.shield.toFixed(1), core: +boss.core.toFixed(1), defeatedAt: boss.defeatedAt, left: !!boss.left, test: !!boss.test, shown: bossView.visible },
+      today: today && { id: today.id, name: today.name, shape: today.shape, boss: today.boss, restart: today.restart, minutes: today.minutes, feature: today.feature }, workoutMinutes,
+      ghost: ghost && { name: ghost.name, pct: ghost.pct, now: ghostNow() }, level: levelFor(bests?.totalZoneSeconds || 0), progress: lastSummary?.progress || null,
     };
   },
   toggleSource, startWorkout, nudgeTarget, options, audio,

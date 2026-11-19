@@ -66,4 +66,4 @@ Licensed music and photoreal locations; filmed human coaches; a subscription; ro
 - Voice coach (Gemini 2, Morty 2): browser speech, lines tied to zone / charge / coast / landing / acts / streaks / cool-down; "Coach voice" toggle on the board.
 - 1-minute heart-rate recovery on the end board and a spoken, guided cool-down (Gemini 10, Morty 10).
 - TCX export on the phone bridge page (Gemini 5).
-Not built yet: named daily workouts (Morty 1), boss (Morty 3), badges/levels (Morty 4, Gemini 8), ghost (6/9), music sets (Gemini 3, Morty 8), biomes (Gemini 4, Morty 9), quick-start without HR (Gemini 1, Morty 5).
+Built in v58 (see SESSION_LOG_2026-11-19.md): named daily workouts, the Guardian boss, levels/badges, ghost of your last run, music sets, worlds, PNG share card, voice clips that work without browser speech, a restart session after a week away. Still open: quick-start without HR (Gemini 1, Morty 5), 4-week tracks that raise the target (changes the zone: needs Gio), bring-your-own music.

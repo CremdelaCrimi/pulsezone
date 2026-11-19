@@ -110,19 +110,21 @@ export class OptionsPanel {
     label('Orbs'); button('move-jab', 'Punch', 175, 120, s.moves.jab); button('move-low', 'Squat', 305, 130, s.moves.low);
     button('move-swing', 'Hook/upper', 445, 190, s.moves.swing && s.gameType === 'punch'); button('move-hammer', 'Hammer', 645, 160, s.moves.hammer && s.gameType === 'punch');
     button('move-trace', 'Rope', 815, 160, s.moves.trace); y += R;
-    label('More'); button('move-power', 'Power', 175, 165, s.moves.power && s.gameType === 'punch'); button('move-pair', 'Squat+punch', 350, 230, s.moves.pair);
-    button('move-sweep', '2 ropes', 590, 215, s.moves.sweep); button('move-acts', 'Acts', 815, 160, s.moves.acts); y += R;
+    label('More'); button('move-power', 'Power', 175, 140, s.moves.power && s.gameType === 'punch'); button('move-pair', 'Squat+punch', 325, 200, s.moves.pair);
+    button('move-sweep', '2 ropes', 535, 140, s.moves.sweep); button('move-acts', 'Acts', 685, 130, s.moves.acts);
+    button('move-boss', 'Guardian', 825, 150, s.moves.boss && s.moves.program); y += R; // v58: the boss on the week's last workout (needs the week plan)
     label('Body'); button('move-knee', 'Knee', 175, 150, s.moves.knee); button('move-press', 'Press', 335, 150, s.moves.press);
     button('move-chop', 'Chop', 495, 150, s.moves.chop); button('move-tiptoe', 'Tiptoe', 655, 150, s.moves.tiptoe); button('move-charge', 'Charge', 815, 160, s.moves.charge); y += R;
     label('Bursts'); button('move-bag', 'Speed', 175, 150, s.moves.bag); button('move-ropes', 'Ropes', 335, 150, s.moves.ropes);
     button('move-heavy', 'Heavy', 495, 150, s.moves.heavy); button('move-sled', 'Sled', 655, 150, s.moves.sled); button('move-barrage', 'Missiles', 815, 160, s.moves.barrage); y += R;
-    label('Walls'); button('move-duck', 'Duck', 175, 140, s.moves.duck); button('move-squatSide', 'Side squat', 325, 200, s.moves.squatSide);
-    button('move-lean', 'Lean', 535, 130, s.moves.lean); button('move-pillar', 'Pillar', 675, 140, s.moves.pillar);
-    button('move-shift', 'Shift', 825, 150, s.moves.shift); y += R;
+    label('Walls'); button('move-duck', 'Duck', 175, 110, s.moves.duck); button('move-squatSide', 'Side squat', 295, 170, s.moves.squatSide);
+    button('move-lean', 'Lean', 475, 110, s.moves.lean); button('move-pillar', 'Pillar', 595, 120, s.moves.pillar);
+    button('move-pose', 'Pose', 725, 120, s.moves.pose); button('move-shift', 'Shift', 855, 120, s.moves.shift); y += R; // Pose (v57) had no board button until v58
     label('Sound'); button('sound', s.sound ? 'On' : 'Off', 175, 120, s.sound); button('vol-', 'Vol −', 305, 140); button('vol+', 'Vol +', 455, 140);
     button('voice', s.voice ? (s.voiceOk ? 'Coach voice on' : 'Voice (none here)') : 'Coach voice off', 610, 360, s.voice && s.voiceOk); y += R;
     label(s.songAvailable ? 'Music style' : 'Music style (no song file yet)');
-    button('music-song', 'Song', 520, 215, s.musicStyle === 'song' && s.songAvailable); button('music-synth', 'Synth', 755, 215, s.musicStyle === 'synth' || !s.songAvailable); y += R;
+    button('music-song', 'Song', 520, 130, s.musicStyle === 'song' && s.songAvailable); button('music-synth', 'Synth', 660, 130, s.musicStyle === 'synth' || (!s.songAvailable && s.musicStyle !== 'daily'));
+    button('music-daily', 'By workout', 800, 175, s.musicStyle === 'daily'); y += R; // v58: each named workout has its own synth set
     // Test tools for headset sessions: a diagnostics line on the scoreboard, and send-me-this-move buttons.
     // Test tools only show when Diag is on, so normal workouts get a tidy board.
     label('Test'); button('diag', s.diag ? 'Diag on' : 'Diag (test tools)', 175, s.diag ? 150 : 300, s.diag);
@@ -130,7 +132,7 @@ export class OptionsPanel {
       button('test-knee', 'Knee', 335, 150); button('test-sweep', '2 ropes', 495, 150); button('test-hammer', 'Hammer', 655, 150); button('test-combo', 'Combo', 815, 160); y += R;
       label('Test 2'); button('test-heavy', 'Heavy', 175, 126); button('test-sled', 'Sled', 309, 126); button('test-barrage', 'Missiles', 443, 126);
       button('test-bag', 'Speed', 577, 126); button('test-ropes', 'Ropes', 711, 126); button('test-wall', 'Walls', 845, 130); y += R;
-      label('Test 3'); button('test-press', 'Press', 175, 150); button('test-chop', 'Chop', 335, 150); button('test-tiptoe', 'Tiptoe', 495, 150); button('test-charge', 'Charge', 655, 160); y += R;
+      label('Test 3'); button('test-press', 'Press', 175, 150); button('test-chop', 'Chop', 335, 150); button('test-tiptoe', 'Tiptoe', 495, 150); button('test-charge', 'Charge', 655, 160); button('test-boss', 'Guardian', 825, 150); y += R;
       label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Rep missed', 385, 200, false);
       button('note-fast', 'Too fast', 595, 180, false); button('note-great', 'Felt great', 785, 190, false);
     }

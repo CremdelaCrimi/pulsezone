@@ -23,3 +23,26 @@ Morty's #1 named daily workouts, #3 HR boss as the weekly finale, #4 levels/badg
 2. Pose walls: are the rings reachable (Y rings 50 cm above head height, 42 cm out; T rings 72 cm out at shoulder height)? Is 55% of the pass fair?
 3. Do HEAVY hits land on real punches, or does everything read as a tap? (End board shows the average.)
 4. Did the end board show the 1-min recovery number after the 2-minute cool-down?
+
+## v58: the rest of the research list (built later the same day, not yet pushed, untried in the headset)
+
+Gio: "Work on 12 with what you can implement without me." Read as the 12 distinct ideas across Morty's and Gemini's lists; v57 built 5, v58 builds the rest that need no decision. Spec: docs/V58_BUILD_SPEC.md.
+
+- **Named daily workouts** (js/progress.js): 12 named workouts (4 per shape) on weekly rotation, each with a colour, world, music set, act titles and a featured move (sent 1.6x as often). "TODAY: NIGHT SHIFT" on the warm-up board, spoken too. After 7+ days away: "Fresh Start", a shorter Steady session with no boss.
+- **Levels, badges, embers**: levels from minutes in zone (never score), 19 badges for real behaviours, new ember colours at levels 3/6/10/15. Real heart rate only.
+- **Ghost of your last run**: seconds in zone every 10 s from the last real workout of the same shape; "+0:12" next to the time in zone, a spoken update after each act, the final difference on the end board.
+- **Progress board** to the right of the end board: workout, level, badges or next badge, ghost, recovery story ("best this month"), the Guardian's result, what's next.
+- **The Guardian** (js/boss.js, js/bossview.js; design from docs/BOSS_SPEC_DRAFT.md): on the week's last planned workout. Reps only hurt it while you're in the zone; below, its shield stalls then creeps back; above, it overheats and asks you to breathe. Perfect landing = 25% off the shield. +500 and a badge when beaten. Board: More -> Guardian; Test -> Guardian.
+- **Voice coach v2** (js/coach.js, js/coach-lines.js, assets/voice/): 159 pre-rendered clips (Windows "Microsoft Zira" for now, 1.9 MB) played through the game's audio, so the coach should speak in the Quest browser. Browser speech only for lines with numbers in them. New lines: how far off the zone you are, charge countdown, coast "hold... land it", a flick nudge (below the zone only), level-up, badge, ghost, Guardian, one per named workout. Music ducks under the coach. To re-render: `powershell -File tools/make-voice.ps1`. ElevenLabs clips can replace these file-for-file once its connector is linked.
+- **Worlds** (js/worlds.js): Grid (the old look), Harbour, Reactor Yard, Snowfield, Dojo: palette plus dark horizon silhouettes, cross-faded, at most 3 extra draw calls.
+- **Music sets** (js/audio.js): Night (the old synth, identical to v57 call for call: 23,991 Web Audio calls, test/audio.test.mjs), Harbour (D major, airy), Furnace (E minor, four-on-the-floor), Storm (D minor, broken beat). Board: Music style -> "By workout". Nobody has listened to the new sets yet.
+- **Share card** (js/card.js): "Save summary card (PNG)" on the phone bridge page.
+- Fixes found on the way: v57's last-30-seconds and recovery voice lines only spoke in the first workout after loading; the "dropping below" line almost never spoke; Pose walls had no board button.
+
+Tests: core, progress (151), boss, coach (15), audio, card, tcx all pass. Emulator smoke run: Night Shift loaded in the Reactor Yard world, the Guardian's shield broke at ~5 min, it retreated at cool-down, end + progress boards drew, no errors.
+
+### Headset questions for v58
+1. Does the coach speak now (clips, not browser speech)? Too chatty?
+2. Is the Guardian visible and readable at the far end of the lane, and does it block anything?
+3. Are the worlds dark enough that orbs still pop?
+4. Do the Harbour / Furnace / Storm music sets sound right (Music style -> By workout)?

@@ -1,85 +1,139 @@
-// Voice coach (v57). From the VR fitness research (Supernatural, Les Mills, FitXR, Litesport):
-// a voice is the strongest "someone is with me" signal a workout has, and our playtester's
-// top quit reason after setup friction was "no coach voice or music identity". This uses the
-// browser's own speech (Web Speech API) so it costs no audio files: short lines, tied to what the
-// heart rate is doing, never talking over itself. If the browser has no voices, it stays silent.
+// Voice coach (v57, clips in v58). From the VR fitness research (Supernatural, Les Mills, FitXR,
+// Litesport): a voice is the strongest "someone is with me" signal a workout has.
+// v58: the Quest browser has no speech voices, so every line is also a pre-rendered clip in
+// assets/voice (tools/make-voice.ps1) played through the game's own Web Audio. Browser speech is
+// only the fallback for text with no clip (lines built from numbers or names). Never talks over
+// itself; tier 1 (do this now) may interrupt.
+import { PHRASES, CUES, cueId, PRELOAD } from './coach-lines.js?v58';
 
-const PHRASES = {
-  zoneIn: ['In the zone. Hold this pace.', 'That\'s it, you\'re in. Keep it smooth.', 'Locked in. Stay right there.'],
-  below: ['Heart rate\'s dropping. Pick it up.', 'Bring it back up. Bigger moves.', 'Push a little harder.'],
-  above: ['Ease off. Let it settle.', 'Lighter now. Breathe.', 'Back it down a touch.'],
-  climbing: ['Heart rate\'s climbing. Keep going.', 'It\'s rising. Hold this.'],
-  charge: ['Charge! Thirty seconds, all out.', 'Everything you\'ve got. Thirty seconds.'],
-  coast: ['Coast. Light moves, let it rise.', 'Ease off and let your heart catch up.'],
-  landingPerfect: ['Perfect landing. Right in the zone.', 'Nailed it. Right where we wanted.'],
-  landingNearly: ['Nearly. Just outside the zone.'],
-  landingOver: ['Overshot. Breathe it back down.'],
-  landingShort: ['Short. Next charge, push harder.'],
-  streak30: ['Thirty seconds in the zone. Keep it rolling.'],
-  streak60: ['One full minute in the zone. Beautiful.'],
-  streak120: ['Two minutes in the zone. That\'s the workout.'],
-  heavy: ['Heavy hit!', 'Big one!', 'That\'s power.'],
-  pose: ['Hold the shape.', 'Hold it... hold it.'],
-  finale: ['Last act. Empty the tank.'],
-  last30: ['Thirty seconds left. Finish strong.'],
-  coolDown: ['Cool-down. Slow reaches overhead, and breathe. Four in, six out.', 'Easy now. Reach up slow, breathe out long.'],
-  recovery: ['Keep breathing. Let the heart rate come down.'],
-  finish: ['Workout done. Great work.', 'That\'s the session. Nice work today.'],
-  warmUp: ['Warm-up. Easy punches, get the blood moving.'],
-  training: ['Training starts now. Let\'s climb to your zone.'],
-};
 const GAP = { 1: 1.0, 2: 3.5, 3: 6 }; // seconds between lines by tier (1 = do this now, 2 = news, 3 = praise)
+const CUE_SET = new Set(CUES);
+const hasWindow = typeof window !== 'undefined';
 
 export class VoiceCoach {
   constructor() {
-    this.ok = typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+    this.speechOk = hasWindow && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
     this.enabled = true;
     this.lastAt = -99; this.lastTier = 3;
     this.voice = null;
     this.lastIdx = {};
     this.spoken = 0;
-    if (this.ok) {
+    this.ctx = null; this.dest = null;
+    this.manifest = null; this.base = 'assets/voice/';
+    this.buffers = new Map(); // clip id -> AudioBuffer | Promise (loading) | null (failed)
+    this.playing = null;      // the clip's source node, so tier 1 can cut it off
+    this.playingUntil = 0;
+    this.onSpeak = null;      // callback(seconds): the game ducks the music under the coach
+    if (this.speechOk) {
       this.pickVoice();
       try { window.speechSynthesis.addEventListener('voiceschanged', () => this.pickVoice()); } catch { /* ignore */ }
     }
   }
-  get available() { return this.ok && !!(this.voice || this.voices().length); }
+
+  get mode() { return this.manifest && this.ctx ? 'clips' : this.speechAvailable ? 'speech' : 'none'; }
+  get available() { return this.mode !== 'none' || !!this.manifest; }
+  get speechAvailable() { return this.speechOk && !!(this.voice || this.voices().length); }
   voices() { try { return window.speechSynthesis.getVoices() || []; } catch { return []; } }
   pickVoice() {
     const all = this.voices().filter((v) => /^en/i.test(v.lang));
     const score = (v) => (v.localService ? 2 : 0) + (/female|zira|samantha|karen|moira|google uk english female|libby|sonia/i.test(v.name) ? 3 : 0) + (/en-(gb|us|au)/i.test(v.lang) ? 1 : 0);
     this.voice = all.sort((a, b) => score(b) - score(a))[0] || null;
   }
+
+  /** Where clips play: the game's audio context and an output node (after a user gesture). */
+  attach(ctx, destination) {
+    this.ctx = ctx; this.dest = destination;
+    this.preload();
+  }
+  /** Fetch the clip list. Fails silently (offline, missing): the coach falls back to speech. */
+  async load(base = 'assets/voice/') {
+    this.base = base;
+    try {
+      const r = await fetch(`${base}manifest.json`);
+      if (!r.ok) return false;
+      const m = await r.json();
+      this.manifest = m && m.clips ? m : null;
+      this.preload();
+      return !!this.manifest;
+    } catch { return false; }
+  }
+  preload() {
+    if (!this.manifest || !this.ctx) return;
+    for (const k of PRELOAD.keys) for (let i = 0; this.manifest.clips[`${k}.${i}`]; i++) this.fetchClip(`${k}.${i}`);
+    for (const c of PRELOAD.cues) this.fetchClip(cueId(c));
+  }
+  fetchClip(id) {
+    if (this.buffers.has(id)) return this.buffers.get(id);
+    const clip = this.manifest?.clips[id];
+    if (!clip || !this.ctx) return null;
+    const p = fetch(this.base + clip.file).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status))))
+      .then((b) => new Promise((res, rej) => { const q = this.ctx.decodeAudioData(b, res, rej); if (q && q.then) q.then(res, rej); }))
+      .then((buf) => { this.buffers.set(id, buf); return buf; })
+      .catch(() => { this.buffers.set(id, null); return null; });
+    this.buffers.set(id, p);
+    return p;
+  }
+
   /** Call from a user gesture once: some browsers only allow speech after one. */
-  warm() { if (this.ok && !this.warmed) { this.warmed = true; try { window.speechSynthesis.cancel(); } catch { /* ignore */ } } }
+  warm() { if (this.speechOk && !this.warmed) { this.warmed = true; try { window.speechSynthesis.cancel(); } catch { /* ignore */ } } }
   setEnabled(on) { this.enabled = !!on; if (!on) this.stop(); }
-  stop() { if (this.ok) try { window.speechSynthesis.cancel(); } catch { /* ignore */ } }
+  stop() {
+    if (this.playing) { try { this.playing.stop(); } catch { /* already ended */ } this.playing = null; }
+    this.playingUntil = 0;
+    if (this.speechOk) try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+  }
+  busy(now) { return now < this.playingUntil || (this.speechOk && window.speechSynthesis.speaking); }
 
   /** Say one of the phrases for a key (never the same one twice in a row). */
-  line(key, tier = 2) {
+  line(key, tier = 2, now = performance.now() / 1000) {
     const list = PHRASES[key];
     if (!list) return false;
     let i = Math.floor(Math.random() * list.length);
     if (list.length > 1 && i === this.lastIdx[key]) i = (i + 1) % list.length;
     this.lastIdx[key] = i;
-    return this.say(list[i], tier);
+    return this.speak(`${key}.${i}`, list[i], tier, now);
   }
 
-  /** Speak text (tier 1 may interrupt; lower tiers wait their turn and are dropped if too soon). */
+  /** Speak a call-out: its clip when it's a known cue, otherwise browser speech. */
   say(text, tier = 2, now = performance.now() / 1000) {
-    if (!this.ok || !this.enabled || !text) return false;
-    const clean = String(text).replace(/\s*·\s*/g, ', ').replace(/->/g, ' to ').replace(/\bx(\d)\b/g, 'times $1').replace(/[+]\d+/g, '').replace(/\s+/g, ' ').trim();
-    if (!clean || clean.length > 90) return false;
-    const speaking = window.speechSynthesis.speaking;
+    if (!text) return false;
+    const t = String(text).trim();
+    return this.speak(CUE_SET.has(t) ? cueId(t) : null, t, tier, now);
+  }
+
+  speak(id, text, tier, now) {
+    if (!this.enabled) return false;
     if (now - this.lastAt < GAP[tier] && !(tier === 1 && tier < this.lastTier)) return false;
-    if (speaking) { if (tier === 1) this.stop(); else return false; }
+    if (this.busy(now)) { if (tier === 1) this.stop(); else return false; }
+    const clip = id && this.manifest?.clips[id];
+    if (clip && this.ctx) {
+      const buf = this.buffers.get(id);
+      // Not decoded yet: start loading and skip this one. A cue a second late is worse than none.
+      if (!(buf && typeof buf.duration === 'number')) { if (buf === undefined) this.fetchClip(id); return false; }
+      try {
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(this.dest || this.ctx.destination);
+        src.start();
+        src.onended = () => { if (this.playing === src) { this.playing = null; this.playingUntil = 0; } };
+        this.playing = src; this.playingUntil = now + buf.duration;
+      } catch { return false; }
+      return this.done(now, tier, buf.duration);
+    }
+    if (!this.speechAvailable) return false;
+    const clean = text.replace(/\s*·\s*/g, ', ').replace(/->/g, ' to ').replace(/\bx(\d)\b/g, 'times $1').replace(/[+]\d+/g, '').replace(/\s+/g, ' ').trim();
+    if (!clean || clean.length > 90) return false;
     try {
       const u = new SpeechSynthesisUtterance(clean);
       if (this.voice) u.voice = this.voice;
       u.rate = 1.06; u.pitch = 1.0; u.volume = 1;
       window.speechSynthesis.speak(u);
     } catch { return false; }
+    return this.done(now, tier, clean.length / 14);
+  }
+  done(now, tier, seconds) {
     this.lastAt = now; this.lastTier = tier; this.spoken++;
+    try { this.onSpeak?.(seconds); } catch { /* ignore */ }
     return true;
   }
 }

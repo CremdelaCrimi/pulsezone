@@ -258,8 +258,10 @@ export async function runChecks() {
   await step('ropes', 'test-ropes', 8, () => ({ ropeTiersBySegment: stats.ropeTiers.slice() }));
   await step('combo', 'test-combo', 9);
   for (const k of ['knee', 'press', 'chop', 'tiptoe', 'knee', 'chop']) await step(k, `test-${k}`, k === 'press' ? 38 : 17); // a wall-ball round lasts 20-30 s
+  // The Guardian (v58): it arrives, and the bot's hits chip its shield whenever the heart rate is in the zone.
+  await step('guardian', 'test-boss', 20, () => ({ boss: pz.state.boss, today: pz.state.today }));
   // Charge & coast: the charge (a wall-ball round) then the coast and the landing call.
-  await step('charge', 'test-charge', 80, () => ({ events: pz.peek().keyEvents }));
+  await step('charge', 'test-charge', 80, () => ({ events: pz.peek().keyEvents, boss: pz.state.boss }));
   report.total = snap();
   report.clashes = stats.clashes || 0; // a station and a burst at the same time
   report.done = true;
