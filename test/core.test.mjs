@@ -194,7 +194,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
   // Learning: a synthetic player whose heart responds strongly to side squats and barely to punches.
   // Generated with a slightly different lag than the learner assumes, plus noise.
-  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9, heavy: 0.8, sled: 1.6, barrage: 1.2, hammer: 0.9, knee: 1.4, press: 1.5, chop: 1.1, tiptoe: 0.5 };
+  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9, heavy: 0.8, sled: 1.6, barrage: 1.2, hammer: 0.9, knee: 1.4, press: 1.5, chop: 1.1, tiptoe: 0.5, pose: 1.1 };
   const att = new HeartRateAttribution({ weights: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 1.0])) });
   const rng = mulberry32(7);
   const tr = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
@@ -731,5 +731,30 @@ console.log('\n== v56: tree chop, slalom, duck-and-weave missiles');
   check(BOMB_VOLLEY.L.every((dx) => !bombHits(-0.22 - dx, 0)) && BOMB_VOLLEY.L.some((dx) => bombHits(0.22 - dx, 0)), "an L volley: leaning left clears it, leaning right doesn't");
 }
 
-console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
-process.exit(failures === 0 ? 0 : 1);
+
+// ---- v57: power-graded hits, pose walls, heart-rate recovery
+{
+  const { hitTier, HIT_TIERS, posePoints, poseHeld, pickPose, POSE_TYPES, recoveryDrop, summarizeWorkout: sw, wallTypeFor: wf, LOW_WALLS: low } = await import('../js/core.js');
+  console.log('\n== v57: hit tiers, pose walls, recovery');
+  check(hitTier(0.1) === 'tap' && hitTier(HIT_TIERS.solid) === 'solid' && hitTier(0.9) === 'heavy', 'hit tiers: tap / solid / heavy by punch power');
+  const standing = 1.6, pts = posePoints('poseY', standing);
+  check(pts && pts.rings.length === 2 && pts.rings[0][1] > standing, 'Y pose: two rings above head height');
+  check(poseHeld(pts, [0, standing], pts.rings.map(([x, y]) => [x + 0.05, y - 0.05])), 'Y pose held with both fists near the rings');
+  check(poseHeld(pts, [0, standing], [pts.rings[1], pts.rings[0]]), 'either fist may take either ring');
+  check(!poseHeld(pts, [0, standing], [pts.rings[0], [0, standing - 0.4]]), 'one fist down: not held');
+  check(!poseHeld(pts, [0.4, standing], pts.rings), 'head out of the hole: not held');
+  const lowPts = posePoints('poseLow', standing);
+  check(!poseHeld(lowPts, [0, standing], lowPts.rings) && poseHeld(lowPts, [0, standing - 0.32], lowPts.rings), 'squat pose needs the head down');
+  check(pickPose(0.3, () => 0.99) !== 'poseLow' && pickPose(0.6, () => 0.99) === 'poseLow', 'the squat pose unlocks later');
+  check(POSE_TYPES.every((t) => t === 'poseLow' ? low.includes(t) : !low.includes(t)), 'only the squat pose is followed by a stand-tall box');
+  check(POSE_TYPES.includes(wf('pose', () => 0.1, { intensity: 0.5 })), "wallTypeFor('pose') gives a pose wall");
+  { const seen = new Set(); for (let i = 0; i < 300; i++) seen.add(pickWallType(1)); check(!POSE_TYPES.some((t) => seen.has(t)), 'pose walls never come from the random wall picker'); }
+  const rows = [];
+  for (let t = 0; t < 300; t++) rows.push({ t, phase: 'Training', bpm: 140, status: 'InZone', target: 140 });
+  for (let t = 300; t < 420; t++) rows.push({ t, phase: 'CoolDown', bpm: Math.round(140 - 30 * Math.min(1, (t - 300) / 60)), status: 'Above', target: 140 });
+  check(recoveryDrop(rows) === 29 || recoveryDrop(rows) === 30, `one-minute recovery from the log (${recoveryDrop(rows)})`);
+  check(recoveryDrop(rows.slice(0, 330)) === null, 'no recovery number for a cool-down under a minute');
+  check(sw(rows).recovery === recoveryDrop(rows), 'summary carries the recovery');
+}
+console.log(failures ? `\n${failures} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
+process.exit(failures ? 1 : 0);

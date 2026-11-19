@@ -1,6 +1,7 @@
 // Phone bridge: Charge 6 (Web Bluetooth, via the Bluefy browser on iPhone) -> game on the Quest.
-import { parseHeartRateMeasurement } from './core.js?v56';
+import { parseHeartRateMeasurement } from './core.js?v57';
 import { BridgeLink, normalizeCode, codeFromInput } from './link.js?v9';
+import { workoutToTcx, latestRecord } from './tcx.js?v57';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -24,6 +25,7 @@ let lastWorkout = null;
 try { lastWorkout = JSON.parse(localStorage.getItem(WK_KEY) || 'null'); } catch { lastWorkout = null; }
 function showWorkout() {
   $('wkBox').hidden = !lastWorkout;
+  $('wkSave').disabled = $('wkTcx').disabled = !lastWorkout;
   if (lastWorkout) $('wkText').textContent = `Latest workout: ${lastWorkout.label}`;
 }
 function onGameData(msg) {
@@ -47,6 +49,23 @@ async function saveWorkout() {
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
 $('wkSave').addEventListener('click', saveWorkout);
+// Export (v57): the same workout as a Garmin TCX file for Strava / Garmin Connect / other apps.
+async function exportTcx() {
+  if (!lastWorkout) return;
+  let rec = null;
+  try { rec = latestRecord(JSON.parse(lastWorkout.text)); } catch { rec = null; }
+  const xml = rec ? workoutToTcx(rec) : '';
+  if (!xml) { $('wkText').textContent = 'This workout has no heart-rate data to export.'; return; }
+  const name = `pulsezone-${String(rec.date || '').slice(0, 16).replace(/[:T]/g, '-') || 'workout'}.tcx`;
+  const file = new File([xml], name, { type: 'application/vnd.garmin.tcx+xml' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'PulseZone workout (TCX)' }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = file.name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+$('wkTcx').addEventListener('click', exportTcx);
 showWorkout();
 const LINK_TEXT = {
   idle: ['', 'Type the code shown in the game'],

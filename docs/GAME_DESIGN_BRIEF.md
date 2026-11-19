@@ -2,7 +2,7 @@
 
 A brainstorming reference for PulseZone, a heart-rate-adaptive VR workout for Meta Quest.
 Live game: https://cremdelacrimi.github.io/pulsezone/ · iPhone bridge: https://cremdelacrimi.github.io/pulsezone/bridge.html
-Last updated: 2026-11-17 (v53, after five rounds of headset feedback).
+Last updated: 2026-11-19 (v57: pose walls, heavy hits, voice coach, heart-rate recovery, TCX export).
 
 ## 1. Core idea
 
@@ -76,6 +76,7 @@ Everything flies down one lane. Each thing books a time slot for when it reaches
 | Lean / pillar | Lean left/right, or step around a centre pillar | 0.25 | 1.0 |
 | Side squat | Squat and shift left or right through a gap | 0.4 | 1.6 |
 | Stand tall (auto) | After every duck/squat box: a low box you must stand fully up over | follows squats | — |
+| Pose walls (v57) | A wall with a body-shaped hole and two fist rings: hold a Y (arms up wide), a T (arms out) or a squat + press overhead while it slides past (~1.7 s); head in the hole, both fists in the rings for 55% of the pass | 0.3 (squat pose 0.45) | 1.1 |
 | Speed bag (burst) | 4–5 s of rapid alternating punches on a bag | 0.35, or early when stuck | 0.3 per punch |
 | Heavy bag (burst) | 6 s on a big bag; a lit patch (hand-coloured) shows left hook / right hook / uppercut / power; hard punches score more, the lit patch doubles it | 0.4, or early when stuck | 0.9 per strong punch |
 | Sled run (burst) | 8 s: squat into a tuck and double-pole (both fists down together); skis under your feet and a ghost coach to copy; tucked strokes 1.5x, tuck time scores | 0.45, or early when stuck | 1.5 per stroke |
@@ -115,7 +116,7 @@ The player chooses their moveset with checkboxes (game page and VR options board
 - Reactor (right of the HUD): charges while in the zone; level-ups give bonus points; shows overheat when above the zone and "stalled" below.
 
 ### 6.5 Scoring
-Points per hit, combo, best combo; double in the zone; perfect swings double again.
+Points per hit, combo, best combo; double in the zone; perfect swings double again. **Power-graded hits (v57):** every plain punch is a tap, a solid hit or HEAVY (from fist speed + travel); heavy = x1.5, a bigger boom and buzz. Average punch power shows on the end board.
 
 ## 7. Feedback, visuals and HUD
 - Heat gauge (thermometer) on the left: frosty below the zone, a lively flame in the zone, a hyper flame above.
@@ -131,6 +132,8 @@ Points per hit, combo, best combo; double in the zone; perfect swings double aga
 - **Zone streaks:** every 15 s in the zone: a rising bell chord, the rails flare, bonus points and reactor charge; the current streak is on the scoreboard.
 - **End-of-workout board:** heart-rate graph (coloured by zone) over the target band, time in zone %, average/peak, longest streak, score, reactor level, top heart-raising move.
 - **Personal bests** (time in zone %, streak, score, reactor) saved in the browser, gold NEW BEST tags, and a "To beat" line during warm-up.
+- **1-minute heart-rate recovery (v57):** the BPM drop in the first minute of cool-down, on the end board (a fitness number to watch over weeks).
+- **Voice coach (v57):** short spoken lines from the browser's own speech (no audio files): zone news, charge / coast / landing, act starts, streak milestones, last 30 s, a guided cool-down, and the do-this-now cues. Never talks over itself. Board: Sound row -> Coach voice.
 
 ## 8. Music and sound (pace-leading audio)
 - **Song mode:** "Hard-Knuckle Focus" (121 BPM), time-stretched 0.78×–1.25× with pitch preserved to lead the player's pace. On Quest it starts from a button press (enter VR / trigger); if blocked, the synth plays instead.

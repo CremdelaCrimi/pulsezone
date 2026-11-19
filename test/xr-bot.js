@@ -62,7 +62,7 @@ function safeHead(p, base) {
   const walls = p.walls.filter((w) => !w.hit && (hz - (w.z + w.depth)) / w.speed < 0.5 && w.z <= hz + 0.05);
   const bombs = p.bombs.filter((b) => { const t = (hz - b.at[2]) / b.speed; return b.locked && t > -0.1 && t < 0.7; });
   if (!walls.length && !bombs.length) return base;
-  const ok = (x, y) => walls.every((w) => !wallBlocks(w.poly, x - p.centerX, y))
+  const ok = (x, y) => walls.every((w) => !w.poly || !wallBlocks(w.poly, x - p.centerX, y))
     && bombs.every((b) => Math.hypot(x - b.at[0], y - b.at[1]) > 0.33);
   const spots = HEAD_SPOTS.map(([dx, dy]) => [p.centerX + dx, base[1] + dy]).filter(([x, y]) => ok(x, y));
   if (!spots.length) return base;
@@ -148,6 +148,13 @@ function tick(ts) {
     if (st.key === 'knee' && st.stage === 1) base[1] = STAND - 0.09;
     if (st.key === 'press') base[1] = st.stage === 0 ? STAND - 0.33 : STAND;
     if (st.key === 'tiptoe') base[1] = STAND + 0.05;
+  }
+  // Pose walls (v57): head in the hole, both fists in the rings while the box is close.
+  const pose = p.walls.find((w) => w.pose && !w.hit && (hz - (w.z + w.depth)) / w.speed < 0.6 && w.z <= hz + 0.05);
+  if (pose) {
+    base = [p.centerX + pose.pose.head[0], pose.pose.head[1], 0];
+    target.left = [p.centerX + pose.pose.rings[0][0], pose.pose.rings[0][1], hz - 0.3];
+    target.right = [p.centerX + pose.pose.rings[1][0], pose.pose.rings[1][1], hz - 0.3];
   }
   const head = safeHead(p, base);
   me.head = towards(me.head, head, 2.6 * dt);

@@ -427,9 +427,13 @@ export const WALL_TYPES = Object.freeze([
   // Follow-up only (never picked at random): a low box after every squat box, so you have to
   // stand all the way up instead of staying down for the next one.
   { type: 'rise', label: 'Stand tall!', from: 0, followUp: true },
+  // Pose walls (v57): sent by the 'pose' activity, never picked at random here.
+  { type: 'poseY', label: 'Arms up - make a Y!', from: 0.3, followUp: true, pose: true },
+  { type: 'poseT', label: 'Arms out - make a T!', from: 0.3, followUp: true, pose: true },
+  { type: 'poseLow', label: 'Squat + press up!', from: 0.45, followUp: true, pose: true },
 ]);
 /** Boxes you get under by squatting or ducking: each one is followed by a "Stand tall!" box. */
-export const LOW_WALLS = Object.freeze(['duck', 'squatLeft', 'squatRight']);
+export const LOW_WALLS = Object.freeze(['duck', 'squatLeft', 'squatRight', 'poseLow']);
 
 /** Which wall to send at this intensity (rng returns 0..1). Unlocked types are equally likely. */
 export function pickWallType(intensity, rng = Math.random) {
@@ -547,6 +551,8 @@ export const ACTIVITIES = Object.freeze([
   { key: 'duck', label: 'Ducks', kind: 'wall', from: 0.15, base: 0.3, prior: 1.2 },
   { key: 'lateral', label: 'Side steps', kind: 'wall', from: 0.25, base: 0.35, prior: 1.0 },
   { key: 'squatSide', label: 'Side squats', kind: 'wall', from: 0.4, base: 0.3, prior: 1.6 },
+  // Pose walls (v57): hold a Y / T / squat-press shape while a body-shaped wall slides past.
+  { key: 'pose', label: 'Pose holds', kind: 'wall', from: 0.3, base: 0.3, prior: 1.1 },
   { key: 'trace', label: 'Rope tracing', kind: 'orb', from: 0.2, base: 0.35, prior: 0.8 },
   // Two ropes side by side, one per hand, sweeping wide left/right and dipping low: whole-body.
   { key: 'sweep', label: 'Two-hand rope', kind: 'orb', from: 0.3, base: 0.25, prior: 1.2 },
@@ -630,6 +636,7 @@ export function wallTypeFor(activity, rng = Math.random, allow = { lean: true, p
   }
   if (activity === 'squatSide') return rng() < 0.5 ? 'squatLeft' : 'squatRight';
   if (activity === 'stand') return 'rise';
+  if (activity === 'pose') return pickPose(allow.intensity ?? 0.5, rng);
   return null;
 }
 
@@ -640,8 +647,47 @@ export function wallTypeFor(activity, rng = Math.random, allow = { lean: true, p
  */
 export const SLALOM = Object.freeze({ from: 0.4, chance: 0.5, hold: 0.45, period: 1.1, minN: 4, maxN: 6 });
 export const slalomCount = (intensity) => Math.round(SLALOM.minN + (SLALOM.maxN - SLALOM.minN) * clamp01((intensity - SLALOM.from) / (1 - SLALOM.from)));
-export const WALL_HOLD_SECONDS = Object.freeze({ rise: 0.6, duck: 1.2, squatLeft: 1.0, squatRight: 1.0, dodgeLeft: 0.8, dodgeRight: 0.8, pillar: 0.6 });
+export const WALL_HOLD_SECONDS = Object.freeze({ rise: 0.6, duck: 1.2, squatLeft: 1.0, squatRight: 1.0, dodgeLeft: 0.8, dodgeRight: 0.8, pillar: 0.6, poseY: 1.6, poseT: 1.6, poseLow: 1.8 });
 export const wallDepth = (type, speed) => Math.max(0.4, (WALL_HOLD_SECONDS[type] ?? 0.8) * speed);
+
+/**
+ * Pose walls (v57; OhShape / Hot Squat research: isometric holds spike heart rate without a step).
+ * A wall with a body-shaped hole: keep your head in the hole and BOTH fists in the two rings
+ * while it slides past (about 1.6-1.8 s). Everything on your centre line:
+ *   poseY   - arms up and wide (a Y), standing
+ *   poseT   - arms straight out to the sides (a T), standing
+ *   poseLow - squat with both fists pressed overhead (a goal-post squat)
+ * Positions are offsets from your standing head height (x right, y up, metres).
+ */
+export const POSE_TYPES = Object.freeze(['poseY', 'poseT', 'poseLow']);
+export const POSE_RING_R = 0.17;   // a fist counts inside a ring within this radius
+export const POSE_HEAD_R = 0.2;    // head must stay within this of the hole's centre
+export const POSE_HOLD = 0.55;     // fraction of the pass you must hold the pose for
+const POSES = Object.freeze({
+  poseY: { head: [0, 0], rings: [[-0.42, 0.5], [0.42, 0.5]], label: 'Arms up - make a Y!' },
+  poseT: { head: [0, 0], rings: [[-0.72, -0.2], [0.72, -0.2]], label: 'Arms out - make a T!' },
+  poseLow: { head: [0, -0.32], rings: [[-0.28, 0.12], [0.28, 0.12]], label: 'Squat + press up!' },
+});
+/** Where the head hole and the two fist rings are for a pose wall, in world metres (x from centre). */
+export function posePoints(type, standing) {
+  const p = POSES[type];
+  if (!p) return null;
+  return { head: [p.head[0], standing + p.head[1]], rings: p.rings.map(([x, y]) => [x, standing + y]), label: p.label };
+}
+/** Is the pose held right now? head [x, y] and fists [[x, y], [x, y]] relative to the lane centre. */
+export function poseHeld(points, head, fists) {
+  if (!points || !head || !fists || fists.length < 2) return false;
+  if (Math.hypot(head[0] - points.head[0], head[1] - points.head[1]) > POSE_HEAD_R) return false;
+  // Either fist may take either ring (left ring is meant for the left hand, but don't be picky).
+  const near = (f, r) => Math.hypot(f[0] - r[0], f[1] - r[1]) <= POSE_RING_R;
+  const [a, b] = points.rings;
+  return (near(fists[0], a) && near(fists[1], b)) || (near(fists[0], b) && near(fists[1], a));
+}
+/** Which pose wall to send: the squat pose only once the intensity is up. */
+export function pickPose(intensity, rng = Math.random) {
+  const open = intensity >= 0.45 ? POSE_TYPES : POSE_TYPES.slice(0, 2);
+  return open[Math.min(open.length - 1, Math.floor(rng() * open.length))];
+}
 
 // ---------------------------------------------------------------- tracing orbs (follow the string)
 
@@ -740,7 +786,7 @@ export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0,
       const arrive = now + (SPAWN_DISTANCE - STATION_STOP) / speed;
       return { kind: 'solo', start: arrive - 0.6, end: arrive + stationHold(activity, intensity) + 0.5 };
     }
-    case 'duck': case 'lateral': case 'squatSide': case 'stand': {
+    case 'duck': case 'lateral': case 'squatSide': case 'stand': case 'pose': {
       const ws = speed * 0.8;
       return { kind: 'solo', start: now + SPAWN_DISTANCE / ws - 0.7, end: now + (SPAWN_DISTANCE + depth) / ws + 0.6 };
     }
@@ -992,6 +1038,15 @@ export const minPunchTravel = (intensity, power = false) => (power ? 0.32 : lerp
 export const powerPunchSpeed = (minPunch) => Math.max(2.2, minPunch * 1.6);
 /** 0..1 "how strong was that punch" from fist speed and travel, used for points, sound and haptics. */
 export const punchPower = (speed, travel) => clamp01(0.55 * clamp01((speed - 1) / 3.5) + 0.45 * clamp01((travel - 0.1) / 0.35));
+/**
+ * Power-graded hits (v57, from the VR fitness research: Supernatural / Les Mills / Thrill of the
+ * Fight raise heart rate by rewarding how HARD you swing, not just that you hit). Every plain orb
+ * hit is a tap, a solid hit or a HEAVY hit: heavy ones score x1.5 with a bigger boom and buzz,
+ * so you throw from the shoulder to chase the feel. Power orbs keep their own grading.
+ */
+export const HIT_TIERS = Object.freeze({ solid: 0.35, heavy: 0.7 });
+export const hitTier = (power) => (power >= HIT_TIERS.heavy ? 'heavy' : power >= HIT_TIERS.solid ? 'solid' : 'tap');
+export const HEAVY_BONUS = 1.5;
 
 /** Speed bag: points for a burst of hits (5 each, more for a big flurry). */
 export const bagPoints = (hits) => Math.round(5 * hits + 2 * Math.max(0, hits - 15));
@@ -1336,7 +1391,25 @@ export function summarizeWorkout(rows) {
     pct: training.length ? Math.round((100 * inZone) / training.length) : 0,
     avgBpm: trainingBeats.length ? Math.round(trainingBeats.reduce((a, b) => a + b, 0) / trainingBeats.length) : 0,
     peakBpm: beats.length ? Math.max(...beats) : 0,
+    recovery: recoveryDrop(rows),
   };
+}
+
+/**
+ * One-minute heart-rate recovery (v57; Supernatural / Les Mills research: a guided cool-down with a
+ * fitness number to watch): how many BPM you drop in the first 60 s after training ends. A bigger
+ * drop is a fitter heart. null when the cool-down was under a minute or readings are missing.
+ * Uses ~5 s averages at both ends so one noisy reading doesn't decide it.
+ */
+export function recoveryDrop(rows) {
+  const i0 = rows.findIndex((r) => r.phase === 'CoolDown');
+  if (i0 < 1) return null;
+  const t0 = rows[i0].t;
+  const avg = (sel) => { const b = rows.filter(sel).map((r) => Number(r.bpm)).filter((x) => x > 0); return b.length ? b.reduce((a, x) => a + x, 0) / b.length : null; };
+  const start = avg((r) => r.t >= t0 - 5 && r.t <= t0);
+  const later = avg((r) => r.t >= t0 + 57 && r.t <= t0 + 63 && r.phase !== 'Training');
+  if (start == null || later == null) return null;
+  return Math.round(start - later);
 }
 
 // ---------------------------------------------------------------- calories

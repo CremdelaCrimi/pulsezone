@@ -94,7 +94,11 @@
   <section id="wkBox" hidden>
     <h2>Workout data</h2>
     <p id="wkText" style="margin:0 0 10px"></p>
-    <button id="wkSave">Save workout file</button>
+    <div class="stack">
+      <button id="wkSave">Save workout file</button>
+      <button id="wkTcx" class="secondary">Export TCX (Strava / Garmin)</button>
+    </div>
+    <p class="muted" style="font-size:13px;margin:8px 0 0">TCX imports into Strava, Garmin Connect and most fitness apps.</p>
     <p class="muted" style="font-size:13px;margin:8px 0 0">Tip: in the share sheet pick <b>Save to Files</b>, then OneDrive, so it lands next to the game's project folder.</p>
   </section>
 
@@ -113,6 +117,6 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script type="module" src="./js/bridge.js?v56"></script>
+<script type="module" src="./js/bridge.js?v57"></script>
 </body>
 </html>

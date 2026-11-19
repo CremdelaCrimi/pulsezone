@@ -119,7 +119,8 @@ export class OptionsPanel {
     label('Walls'); button('move-duck', 'Duck', 175, 140, s.moves.duck); button('move-squatSide', 'Side squat', 325, 200, s.moves.squatSide);
     button('move-lean', 'Lean', 535, 130, s.moves.lean); button('move-pillar', 'Pillar', 675, 140, s.moves.pillar);
     button('move-shift', 'Shift', 825, 150, s.moves.shift); y += R;
-    label('Music & sounds'); button('sound', s.sound ? 'On' : 'Off', 520, 140, s.sound); button('vol-', 'Vol −', 680, 140); button('vol+', 'Vol +', 830, 140); y += R;
+    label('Sound'); button('sound', s.sound ? 'On' : 'Off', 175, 120, s.sound); button('vol-', 'Vol −', 305, 140); button('vol+', 'Vol +', 455, 140);
+    button('voice', s.voice ? (s.voiceOk ? 'Coach voice on' : 'Voice (none here)') : 'Coach voice off', 610, 360, s.voice && s.voiceOk); y += R;
     label(s.songAvailable ? 'Music style' : 'Music style (no song file yet)');
     button('music-song', 'Song', 520, 215, s.musicStyle === 'song' && s.songAvailable); button('music-synth', 'Synth', 755, 215, s.musicStyle === 'synth' || !s.songAvailable); y += R;
     // Test tools for headset sessions: a diagnostics line on the scoreboard, and send-me-this-move buttons.

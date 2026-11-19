@@ -14,12 +14,14 @@ import {
   stationHold, wallBallBeat, wallBallGoal, WALLBALL, ACTS, actPlan, actAt, actWeights, weekSummary, weekDots, PLAN_SHAPES, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
-} from './core.js?v56';
+  hitTier, HEAVY_BONUS, posePoints, poseHeld, POSE_RING_R, POSE_HOLD,
+} from './core.js?v57';
+import { VoiceCoach } from './coach.js?v57';
 import { HostLink } from './link.js?v9';
-import { AudioEngine } from './audio.js?v56';
+import { AudioEngine } from './audio.js?v57';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v56';
-import { loadTuning, createDevPanel } from './dev.js?v56';
+import { OptionsPanel } from './options.js?v57';
+import { loadTuning, createDevPanel } from './dev.js?v57';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -70,6 +72,7 @@ const SETTINGS_KEY = 'pulsezone.settings';
 const settings = {
   targetBpm: 120, age: 30, weightLb: 165, sex: '', trainingMinutes: 15, warmUpSeconds: 30, coolDownMinutes: 2, sound: true, volume: 0.8, challenge: 'normal',
   gameType: 'punch',   // 'punch' = hit hard enough; 'touch' = just hold your hand where the orb arrives
+  voice: true,         // voice coach (v57): short spoken cues from the browser's own speech
   musicStyle: 'song',
   diag: false,         // show the diagnostics line (what the game is doing) on the scoreboard
   profile: 'steady',   // workout shape: 'steady' | 'waves' (target rolls +/-5 BPM) | 'build' (climbs to a peak)  // 'song' = recorded track (time-stretched to your pace) when available; 'synth' = live synth
@@ -81,6 +84,7 @@ const settings = {
     acts: true,    // the workout in themed chapters of ~4 min (v55)
     program: true, // weekly plan: 3 workouts a week, Steady -> Waves -> Build (picks the shape)
     bag: true, ropes: true, heavy: true, sled: true, barrage: true, duck: true, squatSide: true, lean: true, pillar: true,
+    pose: true,   // pose walls (v57): hold a Y / T / squat-press shape while a body-shaped wall slides past
     shift: false, // side shifts (stepping off your centre line) are off by default: safer to stay centred
   },
 };
@@ -97,7 +101,7 @@ try {
 const MOVE_LABELS = {
   jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then punch up', guard: 'Guard & counter', hammer: 'Hammer fists',
   trace: 'Rope tracing', sweep: 'Two-hand rope', bag: 'Speed bag', ropes: 'Battle ropes', heavy: 'Heavy bag', sled: 'Sled run', barrage: 'Dodge barrage (missiles)',
-  duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar', shift: 'Side shifts (step left/right)',
+  duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar', shift: 'Side shifts (step left/right)', pose: 'Pose walls (hold a Y, a T, or a squat + press)',
   knee: 'Pull-down knee drive', press: 'Wall-ball rounds', chop: 'Woodchopper', tiptoe: 'Tiptoe reach',
   charge: 'Charge & coast (all out, then land in your zone)',
   acts: 'Acts (the workout in ~4-minute chapters)', program: 'Weekly plan (3 a week: Steady, Waves, Build)',
@@ -120,6 +124,7 @@ const enabledActivities = (forSpawn = false) => ({
   barrage: settings.moves.barrage,
   duck: settings.moves.duck,
   squatSide: settings.moves.squatSide,
+  pose: settings.moves.pose,
   lateral: settings.moves.lean || settings.moves.pillar,
   knee: settings.moves.knee, press: settings.moves.press, chop: settings.moves.chop, tiptoe: settings.moves.tiptoe,
 });
@@ -205,7 +210,7 @@ fetch(SONG.url, { method: 'HEAD' }).then((r) => {
   if (songAvailable) audio.setSong(SONG.url, SONG.bpm, SONG.loopStart, SONG.loopEnd);
   audio.setMusicMode(songAvailable && settings.musicStyle === 'song' ? 'song' : 'synth');
 }).catch(() => { /* offline: synth only */ });
-const unlockAudio = () => audio.unlock();
+const unlockAudio = () => { audio.unlock(); coach.warm(); };
 let songWarned = false;
 document.addEventListener('pointerdown', unlockAudio, true);
 document.addEventListener('keydown', unlockAudio, true);
@@ -292,6 +297,7 @@ let difficulty = difficultyFor(0.15);
 let signalLostToggle = false;
 let avgSum = 0, avgN = 0, kcal = 0; // kcal: estimated calories this workout
 let lastStatus = Zone.NoSignal;
+let lastPhase = null, statusSince = 0, voicedStatus = null, coolDownAt = null, recoveryVoiced = false, last30Voiced = false; // voice coach (v57)
 let gameTime = 0;              // seconds of (unpaused) workout
 
 // Learned "what raises your heart rate", kept across workouts in this browser.
@@ -454,7 +460,7 @@ function testMove(key) {
     startCharge(true); return;
   }
   if (key === 'wall') { // one of the wall shapes you have switched on
-    const on = [settings.moves.duck && 'duck', (settings.moves.lean || settings.moves.pillar) && 'lateral', settings.moves.squatSide && 'squatSide'].filter(Boolean);
+    const on = [settings.moves.duck && 'duck', (settings.moves.lean || settings.moves.pillar) && 'lateral', settings.moves.squatSide && 'squatSide', settings.moves.pose && 'pose'].filter(Boolean);
     if (!on.length) { say('No walls switched on', 2); return; }
     key = on[Math.floor(Math.random() * on.length)];
   }
@@ -518,7 +524,9 @@ function updateMotion(dt, head) {
 // ------------------------------------------------------------------ score
 
 const score = {
-  reset() { Object.assign(this, { score: 0, combo: 0, best: 0, hits: 0, perfect: 0, misses: 0, weak: 0, wrong: 0, dodges: 0, wallHits: 0, blocks: 0, guardsMissed: 0, bombDodges: 0, bombHits: 0 }); },
+  reset() { Object.assign(this, { score: 0, combo: 0, best: 0, hits: 0, perfect: 0, misses: 0, weak: 0, wrong: 0, dodges: 0, wallHits: 0, blocks: 0, guardsMissed: 0, bombDodges: 0, bombHits: 0, heavy: 0, powerSum: 0, powerN: 0, poses: 0 }); },
+  /** Average punch power 0..100 over the workout (v57: power-graded hits). */
+  powerPct() { return this.powerN ? Math.round((100 * this.powerSum) / this.powerN) : 0; },
   inZone: () => controller?.status === Zone.InZone,
   hit(bonus = 1, label = '') {
     this.hits++; this.combo++; this.best = Math.max(this.best, this.combo);
@@ -549,11 +557,15 @@ const now = () => performance.now() / 1000;
  * (zone, waves, spotlight, streaks, results), 3 = praise. A lower tier can't replace a higher one
  * that's still showing (tiers 1-2 show for 1.8 s, praise for 0.9 s).
  */
+const coach = new VoiceCoach(); // v57: spoken cues (browser speech); 'Coach voice' on the board
+coach.setEnabled(settings.voice !== false);
 const SAY_HOLD = { 1: 1.8, 2: 1.8, 3: 0.9 };
 function say(text, tier = 2) {
   const t = now();
   if (t - lastEventAt < SAY_HOLD[lastTier] && tier > lastTier) return false;
   lastEvent = text; lastEventAt = t; lastTier = tier;
+  // The voice coach (v57) reads out the do-this-now cues (walls, stations, slams), never test lines.
+  if (tier === 1 && !/^(Test|Already|No |Saved|Song|Weekly|COOL-DOWN|CHARGE|COAST|LANDING)/.test(text)) coach.say(text, 1);
   return true;
 }
 const sayFresh = () => now() - lastEventAt < SAY_HOLD[lastTier];
@@ -676,11 +688,36 @@ function clearObstacles() {
  * Walls are translucent boxes: the open gap is where your head goes, and the box's length is
  * how long you have to hold the position (about 1.2 s for a duck).
  */
+const poseRingGeo = new THREE.TorusGeometry(POSE_RING_R, 0.025, 8, 28);
+const poseRingMat = { left: new THREE.MeshBasicMaterial({ color: HAND_COLOR.left }), right: new THREE.MeshBasicMaterial({ color: HAND_COLOR.right }), held: new THREE.MeshBasicMaterial({ color: 0x4dff73 }) };
+/** A pose wall's shape: the full lane with a body-shaped hole (head circle, torso, two arms out to the rings). */
+function poseShape(pose, standing) {
+  const W = 1.3, TOP = Math.max(2.4, standing + 0.6);
+  const shape = new THREE.Shape([[-W, 0], [W, 0], [W, TOP], [-W, TOP]].map(([x, y]) => new THREE.Vector2(x + centerX, y)));
+  const [hx, hy] = pose.head;
+  const hole = new THREE.Path();
+  hole.absarc(centerX + hx, hy, 0.24, 0, Math.PI * 2, false);
+  shape.holes.push(hole);
+  const torso = new THREE.Path(); // from the floor up to the shoulders
+  const sh = hy - 0.28;
+  torso.moveTo(centerX + hx - 0.26, 0); torso.lineTo(centerX + hx + 0.26, 0); torso.lineTo(centerX + hx + 0.26, sh); torso.lineTo(centerX + hx - 0.26, sh); torso.closePath();
+  shape.holes.push(torso);
+  for (const [rx, ry] of pose.rings) { // an arm: a bar from the shoulder to just past the ring
+    const sx = centerX + hx + Math.sign(rx) * 0.2, sy = sh - 0.02, ex = centerX + rx, ey = ry;
+    const dx = ex - sx, dy = ey - sy, len = Math.hypot(dx, dy) + POSE_RING_R + 0.06, nx = -dy / Math.hypot(dx, dy) * 0.16, ny = dx / Math.hypot(dx, dy) * 0.16;
+    const ux = dx / Math.hypot(dx, dy) * len, uy = dy / Math.hypot(dx, dy) * len;
+    const arm = new THREE.Path();
+    arm.moveTo(sx + nx, sy + ny); arm.lineTo(sx + ux + nx, sy + uy + ny); arm.lineTo(sx + ux - nx, sy + uy - ny); arm.lineTo(sx - nx, sy - ny); arm.closePath();
+    shape.holes.push(arm);
+  }
+  return shape;
+}
 function spawnWall(head, standing, type, activity, opts = {}) {
-  const poly = wallPolygon(type, standing);
+  const pose = posePoints(type, standing);
+  const poly = pose ? null : wallPolygon(type, standing);
   const speed = difficulty.orbSpeed * 0.8;
   const depth = opts.hold ? Math.max(0.3, opts.hold * speed) : wallDepth(type, speed);
-  const shape = new THREE.Shape(poly.map(([x, y]) => new THREE.Vector2(x + centerX, y)));
+  const shape = pose ? poseShape(pose, standing) : new THREE.Shape(poly.map(([x, y]) => new THREE.Vector2(x + centerX, y)));
   const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
   const group = new THREE.Group();
   const fill = new THREE.Mesh(geo, MAT.wall);
@@ -690,9 +727,16 @@ function spawnWall(head, standing, type, activity, opts = {}) {
   scene.add(group);
   if (LOW_WALLS.includes(type)) standNext = true;   // you'll have to stand back up for the next box
   if (type === 'rise') standNext = false;
+  let rings = null;
+  if (pose) { // two fist rings on the near face, in hand colours; green while a fist is in them
+    rings = pose.rings.map(([x, y], i) => {
+      const m = new THREE.Mesh(poseRingGeo, poseRingMat[i === 0 ? 'left' : 'right']);
+      m.position.set(centerX + x, y, depth); group.add(m); return m;
+    });
+  }
   walls.push({
     mesh: group, fill, poly, type, activity: activity === 'stand' ? null : activity, depth, speed, passZ: head.z + 0.3, hit: false, announced: false,
-    label: WALL_TYPES.find((w) => w.type === type).label,
+    label: WALL_TYPES.find((w) => w.type === type).label, pose, rings, held: 0, inside: 0, cued: false,
   });
 }
 
@@ -2672,6 +2716,7 @@ function updateActs() {
   actIdx = i;
   const a = ACTS[acts[i].key];
   say(`ACT ${i + 1}/${acts.length}: ${a.name} - ${a.blurb}`, 1);
+  if (i === acts.length - 1 && acts.length > 1) coach.line('finale', 1); else coach.say(`Act ${i + 1}. ${a.name}.`, 1);
   audio.sfx('streak', { level: i + 2 });
   audio.dropIn();
   logEvent('act', { act: acts[i].key, n: i + 1 });
@@ -2717,6 +2762,7 @@ function updateCharge() {
     if (over || (secs >= CHARGE.chargeSeconds && !roundOn) || secs >= CHARGE.chargeSeconds + 15) {
       charge = { ...charge, stage: 'coast', since: gameTime, peak: predictPeak(bpm, attribution.projectedRise(), c.bpmTrend), coastIntensity: c.intensity };
       say(over ? 'COAST! Ease right off' : 'COAST! Light moves - let your heart rate land', 1);
+      coach.line('coast', 1);
       audio.sfx('zone');
       logEvent('coast', { bpm, peak: Math.round(charge.peak) });
     }
@@ -2735,6 +2781,7 @@ function updateCharge() {
       color: { perfect: '#ffd34d', nearly: '#7cffb0', over: '#ff9933', short: '#59b3ff' }[verdict], until: gameTime + 6,
     };
     say({ perfect: 'PERFECT LANDING!', nearly: 'NEARLY!', over: 'OVERSHOT', short: 'SHORT' }[verdict], 1);
+    coach.line({ perfect: 'landingPerfect', nearly: 'landingNearly', over: 'landingOver', short: 'landingShort' }[verdict], 1);
     pendingNote = pendingNote ? `${pendingNote}; landing ${verdict}` : `landing ${verdict}`; // in the workout CSV too
     if (verdict === 'perfect' || verdict === 'nearly') { audio.sfx('streak', { level: verdict === 'perfect' ? 4 : 2 }); pulseBoth(verdict === 'perfect' ? 1 : 0.6, 160); }
     else audio.sfx('zone');
@@ -2872,9 +2919,14 @@ function tryHit(orb, fist, hand = fist?.hand, speed = fist ? fist.speed : 3) {
     }
   }
   if (bonus > 1 && !orb.power) power = Math.max(power, 0.7);
+  // Power-graded hits (v57): every plain punch is a tap, solid or HEAVY; heavy ones score x1.5
+  // with a bigger boom, so you throw from the shoulder instead of flicking.
+  const tier = punchMode && fist && !orb.power ? hitTier(punchPower(speed, travel)) : null;
+  if (tier === 'heavy') { bonus *= HEAVY_BONUS; label = `HEAVY! ${label}`; score.heavy++; if (Math.random() < 0.3) coach.line('heavy', 3); }
+  if (tier) { score.powerSum += punchPower(speed, travel); score.powerN++; }
   pulse(fist, 0.35 + 0.65 * power, 30 + 60 * power);
   popText(score.hit(bonus, label), orb.group.position, label ? '#ffffff' : HAND_CSS[orb.hand]);
-  audio.sfx(orb.power ? 'power' : bonus > 1 ? 'perfect' : 'hit', { hand, power });
+  audio.sfx(orb.power ? 'power' : bonus > 1 && tier !== 'heavy' ? 'perfect' : 'hit', { hand, power: tier === 'heavy' ? Math.max(power, 0.85) : power });
   attribution.record(orb.activity, gameTime);
   if (orb.combo) comboResult(orb, true);
   // Hit feel: the orb freezes and flashes white for a split second, then shatters along your punch.
@@ -2997,16 +3049,17 @@ function drawSummary(w, records) {
 
   // Stats, with gold "NEW BEST" tags.
   const isNew = (k) => records.includes(k);
-  const stat = (label, value, x, y, rec) => {
-    g.textAlign = 'left'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif'; g.fillText(label, x, y);
-    g.fillStyle = rec ? '#ffc04d' : '#ffffff'; g.font = '700 40px system-ui, sans-serif'; g.fillText(value, x, y + 40);
+  const stat = (label, value, x, y, rec, maxW = 230) => {
+    g.textAlign = 'left'; g.fillStyle = '#8d95a5'; g.font = '24px system-ui, sans-serif'; g.fillText(label, x, y, maxW);
+    g.fillStyle = rec ? '#ffc04d' : '#ffffff'; g.font = '700 40px system-ui, sans-serif'; g.fillText(value, x, y + 40, maxW);
     if (rec) { g.font = '700 20px system-ui, sans-serif'; g.fillText('NEW BEST', x, y + 76); }
   };
   stat('Time in zone', `${mmss(w.inZoneSeconds)}  (${w.pct}%)`, 48, 380, isNew('pct'));
   stat('Avg / peak', `${w.avgBpm || '--'} / ${w.peakBpm || '--'}`, 400, 380, false);
   stat('Longest streak', mmss(w.streak), 640, 380, isNew('streak'));
+  if (w.recovery != null) stat('1-min recovery', `-${w.recovery} BPM`, 830, 380, false, 170); // v57: HR drop in the first minute of cool-down
   stat('Score', String(w.score), 48, 490, isNew('score'));
-  stat('Calories (est.)', `${w.kcal} kcal`, 400, 490, false);
+  stat('Calories · punch power', `${w.kcal} kcal · ${score.powerPct()}%`, 400, 490, false, 225); // v57: average hit power (heavy hits raise it)
   // Your top 3 heart-raising moves (learned), with bars: BPM added per 10 reps/min, and reps today.
   const rank = attribution.ranking().slice(0, 3);
   const maxG = Math.max(1, ...rank.map((r) => r.bpmPer10));
@@ -3090,6 +3143,7 @@ function updateStreak(gdt) {
   if (!m) return;
   const bonus = 20 * Math.min(m, 8);
   score.score += bonus;
+  if (m === 2) coach.line('streak30', 2); else if (m === 4) coach.line('streak60', 2); else if (m === 8) coach.line('streak120', 2);
   reactor.charge = Math.min(0.999, reactor.charge + 0.04);
   say(`ZONE STREAK ${mmss(m * ZONE_STREAK_STEP)}!  +${bonus}`);
   audio.sfx('streak', { level: m });
@@ -3260,7 +3314,7 @@ const options = new OptionsPanel({
     target: settings.targetBpm, minutes: settings.trainingMinutes, warmUp: settings.warmUpSeconds, profile: settings.profile, diag: settings.diag, source: sourceKind, sound: settings.sound,
     volume: Math.round(settings.volume * 10), challenge: settings.challenge,
     gameType: settings.gameType, moves: { ...settings.moves }, phase: controller.phase,
-    musicStyle: settings.musicStyle, songAvailable,
+    musicStyle: settings.musicStyle, songAvailable, voice: settings.voice !== false, voiceOk: coach.available,
     ranking: attribution.ranking().map((r) => ({ ...r, bpmPer10: Math.round(r.bpmPer10) })),
   }),
   act: (id) => {
@@ -3277,6 +3331,7 @@ const options = new OptionsPanel({
       case 'src-phone': setSource('phone'); break;
       case 'src-sim': setSource('sim'); break;
       case 'sound': setSound(!settings.sound); break;
+      case 'voice': settings.voice = !settings.voice; coach.setEnabled(settings.voice); saveSettings(); if (settings.voice) coach.say(coach.available ? 'Coach voice on.' : '', 1); say(settings.voice ? (coach.available ? 'Coach voice on' : 'Coach voice: no voices in this browser') : 'Coach voice off', 2); break;
       case 'vol-': settings.volume = Math.max(0.1, settings.volume - 0.1); audio.setVolume(settings.volume); saveSettings(); break;
       case 'vol+': settings.volume = Math.min(1, settings.volume + 0.1); audio.setVolume(settings.volume); saveSettings(); break;
       case 'ch-gentle': case 'ch-normal': case 'ch-hard': {
@@ -3346,7 +3401,7 @@ function buildMovesUI() {
     ${group('Workout plan', ['program', 'acts'])}
     ${group('Whole-body moves', ['knee', 'press', 'chop', 'tiptoe', 'charge'])}
     ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes', 'heavy', 'sled', 'barrage'])}
-    ${group('Walls & footwork', ['duck', 'squatSide', 'lean', 'pillar', 'shift'])}
+    ${group('Walls & footwork', ['duck', 'squatSide', 'pose', 'lean', 'pillar', 'shift'])}
     <div class="muted" id="movesNote" style="font-size:12px"></div>`;
   box.addEventListener('change', (e) => {
     const t = e.target;
@@ -3699,7 +3754,7 @@ function trySpawn(activity, extra = {}) {
     return true;
   }
   if (activity === 'squatSide' && difficulty.intensity >= SLALOM.from && Math.random() < SLALOM.chance) return spawnSlalom();
-  const wallType = wallTypeFor(activity, Math.random, settings.moves);
+  const wallType = wallTypeFor(activity, Math.random, { ...settings.moves, intensity: difficulty.intensity });
   const kind = ACTIVITIES.find((a) => a.key === activity)?.kind;
   if (kind === 'wall' && !wallType) return true; // no wall shape allowed for this one: skip it
   const speed = difficulty.orbSpeed;
@@ -3897,8 +3952,24 @@ function frame(time) {
     kcal += kcalPerMinute(src.currentBpm, { age: settings.age, weightKg: settings.weightLb * 0.4536, sex: settings.sex }) * gdt / 60;
   }
   if (controller.status === Zone.InZone && lastStatus !== Zone.InZone && controller.phase !== Phase.Finished) audio.sfx('zone');
+  // Voice coach (v57): zone news, spoken a few seconds after the status settles (heart rate wobbles at the edge).
+  if (controller.status !== lastStatus) statusSince = gameTime;
+  if (!paused && controller.phase === Phase.Training && !charge && controller.status !== voicedStatus && gameTime - statusSince > 4) {
+    voicedStatus = controller.status;
+    if (voicedStatus === Zone.InZone) coach.line('zoneIn', 2);
+    else if (voicedStatus === Zone.Below && gameTime - statusSince > 12) coach.line(trendShown === 'climbing' ? 'climbing' : 'below', 2);
+    else if (voicedStatus === Zone.Above) coach.line('above', 2);
+  }
+  if (controller.phase !== lastPhase) {
+    if (controller.phase === Phase.CoolDown) { coach.line('coolDown', 1); coolDownAt = gameTime; }
+    else if (controller.phase === Phase.Training && lastPhase === Phase.WarmUp) coach.line('training', 2);
+    else if (controller.phase === Phase.WarmUp) coach.line('warmUp', 2);
+    lastPhase = controller.phase;
+  }
+  if (controller.phase === Phase.CoolDown && coolDownAt != null && gameTime - coolDownAt > 45 && !recoveryVoiced) { recoveryVoiced = true; coach.line('recovery', 2); }
+  if (controller.phase === Phase.Training && !last30Voiced && controller.phaseDuration - controller.phaseElapsedSeconds <= 30 && controller.phaseDuration - controller.phaseElapsedSeconds > 20) { last30Voiced = true; coach.line('last30', 2); }
   lastStatus = controller.status;
-  if (controller.phase === Phase.Finished && !finishedPlayed) { finishedPlayed = true; audio.sfx('finish'); saveSession(); finishWorkout(); }
+  if (controller.phase === Phase.Finished && !finishedPlayed) { finishedPlayed = true; audio.sfx('finish'); coach.line('finish', 1); saveSession(); finishWorkout(); }
   audio.update({
     intensity: controller.intensity, status: controller.status, bpm: src.hasReading ? src.currentBpm : 0,
     phase: controller.phase, paused, target: controller.s.targetBpm,
@@ -4017,6 +4088,15 @@ function frame(time) {
     if (!w.announced && near > head.z - 6) { w.announced = true; say(w.label, 1); }
     if (!w.faded && near > head.z - 1.0) { w.faded = true; if (!w.hit) w.fill.material = MAT.wallNear; }
     if (w.faded && w.hit && w.fill.material !== MAT.wallHitNear) w.fill.material = MAT.wallHitNear; // you've seen it: don't hide the scoreboard
+    if (w.pose) { // pose wall (v57): count how long you hold the shape while the box passes
+      const fl = fists.map((f) => [f.world.x - centerX, f.world.y]);
+      const ok = xr && poseHeld(w.pose, [head.x - centerX, head.y], fl);
+      w.rings.forEach((m, i) => { m.material = ok ? poseRingMat.held : poseRingMat[i === 0 ? 'left' : 'right']; });
+      if (near >= head.z - 0.15 && far <= head.z) {
+        w.inside += gdt; if (ok || SMOKE) w.held += gdt;
+        if (!w.cued && ok) { w.cued = true; pulseBoth(0.4, 40); }
+      }
+    }
     // You're inside the box while its near face has passed you and its far face hasn't.
     if (!w.hit && near >= head.z && far <= head.z && wallHitsHead(w.poly, head.x - centerX, head.y)) {
       w.hit = true;
@@ -4028,6 +4108,12 @@ function frame(time) {
       pulseBoth(1, 120);
     }
     if (far > w.passZ) {
+      if (w.pose) { // held the shape for most of the pass: a rep; otherwise it counts as a wall hit
+        const need = POSE_HOLD * Math.max(0.2, w.depth / w.speed);
+        if (w.held >= need) { score.dodge(); score.poses++; audio.sfx('dodge'); attribution.record('pose', gameTime); logEvent('pose', { act: w.type, held: +w.held.toFixed(2) }); if (w.type === 'poseLow') lastLowAt = gameTime; }
+        else { score.wallHit(); logEvent('wall-hit', { act: w.type, held: +w.held.toFixed(2) }); say('Hold the shape - both fists in the rings!', 1); audio.sfx('wall'); pulseBoth(1, 120); }
+        scene.remove(w.mesh); walls.splice(i, 1); continue;
+      }
       // Would standing still have hit it? (A stand-tall box only counts if you were low just before.)
       const neededMove = w.type === 'rise' ? gameTime - lastLowAt < 4 : wallHitsHead(w.poly, 0, standing);
       if (!w.hit && neededMove) { score.dodge(); audio.sfx('dodge'); }
@@ -4150,7 +4236,7 @@ window.pz = {
       t: gameTime, head: v(head), standing, centerX, paused: options.open, phase: controller.phase, events: workoutEvents.slice(-12), keyEvents: workoutEvents.filter((e) => ['charge', 'coast', 'landing', 'round'].includes(e.type)).slice(-8), charge: charge && { stage: charge.stage, peak: charge.peak && Math.round(charge.peak) }, act: actNow(), actIdx, acts: acts.map((a) => a.key), week, workoutShape, coach: stations[0]?.coach?.text || null, presenting: renderer.xr.isPresenting,
       fists: fists.map((f) => ({ hand: f.hand, at: v(f.world), speed: +f.speed.toFixed(2) })),
       orbs: orbs.filter((o) => !o.dying).map((o) => ({ at: v(o.group.position), r: o.r, hand: o.hand, swing: o.swing || null, activity: o.activity, power: !!o.power, speed: o.speed })),
-      walls: walls.map((w) => ({ type: w.type, z: w.mesh.position.z, depth: w.depth, speed: w.speed, hit: w.hit, poly: w.poly })),
+      walls: walls.map((w) => ({ type: w.type, z: w.mesh.position.z, depth: w.depth, speed: w.speed, hit: w.hit, poly: w.poly, pose: w.pose, held: w.held })),
       guards: guards.map((g) => ({ zone: g.zone, z: g.group.position.z, speed: g.speed, hitZ: g.hitZ })),
       bombs: bombs.filter((b) => !b.passed).map((b) => ({ at: v(b.group.position), speed: b.speed, locked: !!b.locked })),
       slams: slams.map((s) => ({ at: v(s.group.position), speed: s.speed })),
