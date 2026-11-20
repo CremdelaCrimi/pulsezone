@@ -27,6 +27,7 @@ import { HeartThermometer } from './thermo.js?v7';
 import { OptionsPanel } from './options.js?v61';
 import { loadTuning, createDevPanel } from './dev.js?v61';
 import { KneeLab } from './kneelab.js?v61';
+import { MovePicker } from './movepicker.js?v61';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -287,6 +288,7 @@ function attachFistsForMode() {
 renderer.xr.addEventListener('sessionstart', () => {
   audio.unlock();
   setTimeout(() => { attachFistsForMode(); recenterSoon = true; }, 300);
+  setTimeout(() => { if (!kneeLab.active) openPicker(); }, 700); // v61: pick the moves before the workout (it waits)
   // In VR there are no page taps: a controller trigger or grip is the gesture that can start audio.
   const session = renderer.xr.getSession();
   for (const ev of ['selectstart', 'squeezestart']) session?.addEventListener(ev, unlockAudio);
@@ -3688,6 +3690,7 @@ const options = new OptionsPanel({
       case 'restart': startWorkout(); options.toggle(false); break;
       case 'diag': settings.diag = !settings.diag; saveSettings(); break;
       case 'test-kneelab': options.toggle(false); startKneeLab(); break;
+      case 'pick-moves': openPicker(); break;
       case 'note-slam': case 'note-guard': case 'note-fast': case 'note-great': addNote(NOTE_LABEL[id]); options.toggle(false); break;
       case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift': case 'test-hammer':
       case 'test-heavy': case 'test-sled': case 'test-barrage': case 'test-bag': case 'test-ropes': case 'test-wall':
@@ -3770,6 +3773,7 @@ const lasers = [0, 1].map((i) => {
   ctrl.add(line);
   rig.add(ctrl);
   ctrl.addEventListener('selectstart', () => {
+    if (picker.isOpen) { const hit = laserHit(ctrl, picker.grid.mesh); if (hit) picker.clickUv(hit.uv); return; }
     if (!options.open) return;
     const hit = laserHit(ctrl);
     if (hit) options.clickUv(hit.uv);
@@ -3778,12 +3782,26 @@ const lasers = [0, 1].map((i) => {
 });
 const laserRay = new THREE.Raycaster();
 const tmpMat = new THREE.Matrix4();
-function laserHit(ctrl) {
+function laserHit(ctrl, target = options.mesh) {
   tmpMat.identity().extractRotation(ctrl.matrixWorld);
   laserRay.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
   laserRay.ray.direction.set(0, 0, -1).applyMatrix4(tmpMat);
-  return laserRay.intersectObject(options.mesh, false)[0] || null;
+  return laserRay.intersectObject(target, false)[0] || null;
 }
+
+// ------------------------------------------------------------------ move picker (v61)
+// Choose this workout's moves before it starts: aim at a card to see a looping figure of the move,
+// trigger to switch it on/off, START WORKOUT begins a fresh workout. Opens when you enter VR and from
+// the board (Pick moves). The workout is paused while it's open.
+const picker = new MovePicker(THREE, {
+  moves: () => settings.moves,
+  toggle: (keys, on) => { for (const k of keys) settings.moves[k] = on; saveSettings(); syncMovesUI(); },
+  start: () => pickerStart(),
+  close: () => picker.close(),
+});
+scene.add(picker.group);
+function openPicker() { options.toggle(false); picker.open(); }
+function pickerStart() { picker.close(); startWorkout(); say("Moves set - let's go!", 1); }
 
 // ------------------------------------------------------------------ session log (download from the developer panel)
 
@@ -4018,6 +4036,12 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 });
 renderer.domElement.addEventListener('pointerdown', (e) => {
   if (renderer.xr.isPresenting) return;
+  if (picker.isOpen) {
+    raycaster.setFromCamera(pointer, camera);
+    const hit = raycaster.intersectObject(picker.grid.mesh, false)[0];
+    if (hit) picker.clickUv(hit.uv);
+    return;
+  }
   if (options.open) {
     raycaster.setFromCamera(pointer, camera);
     const hit = raycaster.intersectObject(options.mesh, false)[0];
@@ -4259,9 +4283,10 @@ function frame(time) {
 
   if (!xr) updateDesktop(rawDt, head);
   const btn = xrButtons();
-  if (btn.b) options.toggle();                                   // B / Y = options
-  if (btn.a && controller.phase === Phase.Finished && !options.open) startWorkout();
-  const paused = options.open || kneeLab.active; // v61: the Knee lab pauses the workout
+  if (btn.b) { if (picker.isOpen) picker.close(); else options.toggle(); } // B / Y = options (or back out of the move picker)
+  if (btn.a && picker.isOpen) pickerStart();                     // A = start from the move picker
+  else if (btn.a && controller.phase === Phase.Finished && !options.open) startWorkout();
+  const paused = options.open || kneeLab.active || picker.isOpen; // v61: the Knee lab and the move picker pause the workout
   if (paused !== laneHidden) setLaneVisible(!paused);
   const gdt = paused ? 0 : dt;                                   // game time stops while options are open
 
@@ -4571,6 +4596,24 @@ function frame(time) {
     look: controller.phase === Phase.Finished ? { cold: 0, flame: 0.3, hyper: 0 } : heatLook(controller.status, src.currentBpm, controller.s.targetBpm),
   });
 
+  // Move picker: straight ahead, lasers / mouse to aim (v61).
+  if (picker.isOpen) {
+    picker.group.position.set(centerX, standing - 0.2, head.z - 1.5);
+    let uv = null;
+    if (xr) {
+      for (const l of lasers) {
+        l.line.visible = true;
+        const hit = laserHit(l.ctrl, picker.grid.mesh);
+        l.line.scale.z = hit ? hit.distance : 3;
+        if (hit) uv = hit.uv;
+      }
+    } else {
+      raycaster.setFromCamera(pointer, camera);
+      uv = raycaster.intersectObject(picker.grid.mesh, false)[0]?.uv || null;
+    }
+    picker.setHoverUv(uv);
+    picker.update(now());
+  }
   // Options: laser pointers in VR, mouse hover on desktop.
   if (options.open) {
     let hoverUv = null;
@@ -4587,7 +4630,7 @@ function frame(time) {
     }
     options.setHoverUv(hoverUv);
     options.draw();
-  } else {
+  } else if (!picker.isOpen) {
     for (const l of lasers) l.line.visible = false;
   }
 
@@ -4708,5 +4751,6 @@ window.pz = {
   drift(x) { updateDrift({ x, z: head.z }, true, false); return drifting; },
   act: (id) => options.hooks.act(id),
   logRows: () => sessionLog,
+  picker: { open: () => openPicker(), close: () => picker.close(), start: () => pickerStart(), obj: picker },
   kneeLab: { start: () => startKneeLab(), lab: kneeLab, phase: () => kneeLab.active && kneeLab.phaseAt(now()), body: () => readBodyJoints(), bodyNote: () => labBodyNote },
 };

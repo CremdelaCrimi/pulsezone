@@ -97,3 +97,14 @@ Gio asked how leg moves (high knees, cross crunch) could be measured when the Qu
 Tests: new test/kneetrack.test.mjs (27 checks: steps vs standing still and slow squats, knee bumps vs punching through the pad and slow drift, alternating crunches vs squats, head angles, tracked knee lifts, the whole lab end to end); all 8 suites pass. Emulator (`?emulate&kneelab`): the lab ran all five steps and finished, the workout clock stayed at 0 throughout, the result saved (158 KB for ~1700 frames), no errors besides PeerJS's "ID taken". Nothing fired in the emulator, as expected (it doesn't move).
 
 To run it on the Quest: open https://cremdelacrimi.github.io/pulsezone/?kneelab, link the phone, Enter VR (allow body tracking if asked), board (Y) -> Knee lab. Then Save workout file on the phone page and send the file.
+
+### v61 also: move picker with previews
+
+Gio: "a nice choose-the-workout-types (ski, punching etc.) and when you aim at it, a quick video of the move as reference before starting the workout".
+
+- **js/movepicker.js**: 18 move cards in a 6 x 3 grid (Orbs: punching, squat punches, hammer fists, rope tracing, guard & counter; Bursts: speed bag, battle ropes, heavy bag, sled run, missiles; Body: knee drive, wall ball, tree chop, tiptoe reach; Walls: duck, side squats, lean, pose). Each card switches its moveset keys together (e.g. Punching = jab + hooks/uppercuts + power). Aim at a card: the panel on the right plays a looping figure of the move at 120 BPM with a line on how to do it. Trigger = on/off; All on / All off; Back; START WORKOUT starts a fresh workout. A = start, B = back.
+- **js/movefig.js**: the stick-figure rig from the Move Lab page, with a figure for each card (no videos: figures are drawn live, so they cost nothing to download).
+- Opens by itself when you enter VR (the workout waits, paused), and from the board: Moveset -> Pick moves (with previews). Side shifts are not on any card (stay centred).
+- Drawn on top of everything (no depth test) and opaque, so the scoreboard never shows through.
+
+Tests: test/movepicker.test.mjs (every card switches real moveset keys, every board move is on a card, no shifts, every figure has finite joints, stays above the floor and visibly moves); all 9 suites pass. Emulator: picker opens, aiming shows the preview, toggling Guard & counter saves to settings and back, the workout clock stays paused while it's open, START closes it and starts a fresh workout; no errors besides PeerJS's "ID taken". Not checked: the auto-open on entering VR (the emulator has no VR session).

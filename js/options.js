@@ -106,7 +106,8 @@ export class OptionsPanel {
     button('shape-waves', 'Waves', 640, 150, !s.moves.program && s.profile === 'waves'); button('shape-build', 'Build', 800, 150, !s.moves.program && s.profile === 'build'); y += R;
     label('Heart rate from'); button('src-phone', 'Phone', 520, 215, s.source === 'phone'); button('src-sim', 'Simulator', 755, 215, s.source === 'sim'); y += R;
     label('Game type'); button('mode-punch', 'Punch', 520, 215, s.gameType === 'punch'); button('mode-touch', 'Touch', 755, 215, s.gameType === 'touch'); y += R;
-    // Moveset: tap to switch each move on/off (highlighted = on).
+    // Moveset: tap to switch each move on/off (highlighted = on). v61: or pick them with previews.
+    label('Moveset'); button('pick-moves', 'Pick moves (with previews)', 300, 420, false); y += R;
     label('Orbs'); button('move-jab', 'Punch', 175, 120, s.moves.jab); button('move-low', 'Squat', 305, 130, s.moves.low);
     button('move-swing', 'Hook/upper', 445, 190, s.moves.swing && s.gameType === 'punch'); button('move-hammer', 'Hammer', 645, 160, s.moves.hammer && s.gameType === 'punch');
     button('move-trace', 'Rope', 815, 160, s.moves.trace); y += R;
