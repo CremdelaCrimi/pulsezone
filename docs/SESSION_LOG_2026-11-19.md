@@ -60,3 +60,13 @@ Tests: coach 29 checks (new: pack files, fallback for each line, switching, a sl
 ### Headset questions for v59
 1. Is the Jerry voice clear over the music in the Quest? Does the switch between Jerry and the odd Zira line jar?
 2. Any clip that says the wrong thing for its moment? (Placeholder cutting; tell me the line and I'll drop it to Zira.)
+
+## First v59 headset workout (19 Nov, 19:03 local; TCX from the bridge page)
+
+Waves, full 15 min + 30 s warm-up + 2 min cool-down, target 130 (125-135). Game: 43% in zone (my recount with the waves target: 45%). Avg 125 over training, peak 150 at ~13:45. Clean 1 Hz signal: four single-second gaps, no stuck stretches. The TCX export (v57) works end to end.
+
+Against the 17:31 v55 run (Waves, 7 of 15 min, 18% in zone, avg 112, peak 132): a full session, more than double the time in zone, avg +13 BPM.
+
+Still slow to warm up: below the zone for the first ~4.5 min of training (96 -> 118); first 125 at 4:49. After that it tracked the waves well (minutes 5-12: 65-95% in zone per minute), with one overshoot to 142-150 at minutes 12-13 (target ~134 there).
+
+Cool-down: HR barely fell, 130 -> 127 in the first minute, 124 at the end. Ask Gio what he was doing in the cool-down (still moving? the guided reaches?).
