@@ -134,6 +134,7 @@ export class OptionsPanel {
       label('Test 2'); button('test-heavy', 'Heavy', 175, 126); button('test-sled', 'Sled', 309, 126); button('test-barrage', 'Missiles', 443, 126);
       button('test-bag', 'Speed', 577, 126); button('test-ropes', 'Ropes', 711, 126); button('test-wall', 'Walls', 845, 130); y += R;
       label('Test 3'); button('test-press', 'Press', 175, 150); button('test-chop', 'Chop', 335, 150); button('test-tiptoe', 'Tiptoe', 495, 150); button('test-charge', 'Charge', 655, 160); button('test-boss', 'Guardian', 825, 150); y += R;
+      label('Test 4'); button('test-kneelab', 'Knee lab (75 s)', 175, 260); y += R; // v61: what the headset can tell about your legs
       label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Rep missed', 385, 200, false);
       button('note-fast', 'Too fast', 595, 180, false); button('note-great', 'Felt great', 785, 190, false);
     }
@@ -147,7 +148,7 @@ export class OptionsPanel {
     g.fillText('estimated BPM added per 10 reps/min · reps this workout', 50, y + 62);
     y += 95;
     const max = Math.max(1, ...s.ranking.map((r) => r.bpmPer10));
-    for (const r of s.ranking.slice(0, 4)) {
+    for (const r of s.ranking.slice(0, Math.min(4, Math.floor((H - 30 - y) / 46)))) { // v61: only the rows that fit (the test rows take room)
       g.fillStyle = '#c9ced8'; g.font = '30px system-ui, sans-serif'; g.textAlign = 'left';
       g.fillText(r.label, 50, y + 22);
       g.fillStyle = '#262a38'; g.beginPath(); g.roundRect(400, y + 6, 430, 32, 10); g.fill();

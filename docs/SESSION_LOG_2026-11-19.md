@@ -83,3 +83,17 @@ Gio: the voice "sounded fast but decent for now" (he'll look for a DJ-style voic
 Tests: all 7 suites pass (wall-ball checks moved to the 10-15 s round). Emulator: a forced round ran 13.2 s and asked for 5 reps; the ropes arrived ~4 s after the round ended (the ball's flight), then the mix carried on; no errors besides PeerJS's "ID taken" (another tab).
 
 Rhythm idea (Gio): moves on the beat of the song, the song's tempo rising and falling with the heart-rate plan. Not built yet; see the reply in this session.
+
+## v61: Knee lab (not yet pushed, untried in the headset)
+
+Gio asked how leg moves (high knees, cross crunch) could be measured when the Quest only sees the head and two controllers, and asked for a test that also uses the indirect signs: head bounce, hands behind the head, head and hands twisting to one side.
+
+- **js/kneetrack.js** (pure, Node-tested): `StepCounter` (head bounce: a dip and a rise of 6 mm+ around a 0.6 s baseline = one step; cadence over 4 s), `KneeBump` (a fist resting still on a pad at hip height jolts up 3 cm+ at 0.7 m/s+ = a knee hit it; a fist swinging through the pad doesn't count), `CrunchDetector` (fists by the ears, then the head drops 6 cm+ and tilts 10°+ / turns 14°+ / one fist drops 12 cm+ below the other; the side is the majority of those cues), `KneeLift` (body tracking: the knee joint 15 cm+ above its standing height), `headAngles` (yaw / pitch / roll from the head quaternion). Every threshold is a first guess.
+- **js/kneelab.js**: a 75 s guided test (stand still 6 s, jog 12 s, high knees 12 s, knee pads 15 s, cross crunch 15 s, 3 s get-ready before each) on a panel 1.7 m in front of you; every detection pings and buzzes; live counts on the panel; a results table at the end. Records every frame (head position + yaw/pitch/roll, both fists, their upward speed, tracked knees) and sends it to the phone page as `pulsezone-kneelab-*.json` (Save workout file), also kept in localStorage `pulsezone.kneelab`. The workout pauses while it runs.
+- **Body tracking**: opening the game with `?kneelab` asks the Quest browser for the optional `body-tracking` feature; if it shares a skeleton, the lab records the knee joints and counts lifts. Unknown whether the Quest browser exposes it or how real its legs are; the file will say.
+- Board: Diag on -> Test 4 -> Knee lab (75 s). The "What raises YOUR heart rate" list now only draws the rows that fit (with the test rows on it was clipping off the bottom of the board).
+- Cache tags -> `?v61`.
+
+Tests: new test/kneetrack.test.mjs (27 checks: steps vs standing still and slow squats, knee bumps vs punching through the pad and slow drift, alternating crunches vs squats, head angles, tracked knee lifts, the whole lab end to end); all 8 suites pass. Emulator (`?emulate&kneelab`): the lab ran all five steps and finished, the workout clock stayed at 0 throughout, the result saved (158 KB for ~1700 frames), no errors besides PeerJS's "ID taken". Nothing fired in the emulator, as expected (it doesn't move).
+
+To run it on the Quest: open https://cremdelacrimi.github.io/pulsezone/?kneelab, link the phone, Enter VR (allow body tracking if asked), board (Y) -> Knee lab. Then Save workout file on the phone page and send the file.

@@ -15,17 +15,18 @@ import {
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
   hitTier, HEAVY_BONUS, posePoints, poseHeld, POSE_RING_R, POSE_HOLD,
-} from './core.js?v60';
-import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v60';
-import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v60';
-import { BossView } from './bossview.js?v60';
-import { WorldView } from './worlds.js?v60';
-import { VoiceCoach, VOICE_PACKS } from './coach.js?v60';
+} from './core.js?v61';
+import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v61';
+import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v61';
+import { BossView } from './bossview.js?v61';
+import { WorldView } from './worlds.js?v61';
+import { VoiceCoach, VOICE_PACKS } from './coach.js?v61';
 import { HostLink } from './link.js?v9';
-import { AudioEngine } from './audio.js?v60';
+import { AudioEngine } from './audio.js?v61';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v60';
-import { loadTuning, createDevPanel } from './dev.js?v60';
+import { OptionsPanel } from './options.js?v61';
+import { loadTuning, createDevPanel } from './dev.js?v61';
+import { KneeLab } from './kneelab.js?v61';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -138,6 +139,9 @@ const enabledActivities = (forSpawn = false) => ({
 if (params.has('warmup')) settings.warmUpSeconds = Number(params.get('warmup')) * 60; // ?warmup= is in minutes
 if (params.has('minutes')) settings.trainingMinutes = Number(params.get('minutes'));
 if (params.has('cooldown')) settings.coolDownMinutes = Number(params.get('cooldown'));
+// v61: ?kneelab asks the Quest browser for body tracking (its estimated skeleton) and shows the test tools.
+const KNEELAB_BODY = params.has('kneelab');
+if (KNEELAB_BODY) settings.diag = true;
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ } };
 
 let tuning = loadTuning();
@@ -156,7 +160,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
 document.body.appendChild(renderer.domElement);
-const vrButton = VRButton.createButton(renderer);
+const vrButton = VRButton.createButton(renderer, KNEELAB_BODY ? { optionalFeatures: ['body-tracking'] } : {});
 document.body.appendChild(vrButton);
 if (!navigator.xr) vrButton.style.display = 'none';
 // three.js fills the button in after its own check, so hide it whenever it says VR isn't available.
@@ -3683,6 +3687,7 @@ const options = new OptionsPanel({
         break;
       case 'restart': startWorkout(); options.toggle(false); break;
       case 'diag': settings.diag = !settings.diag; saveSettings(); break;
+      case 'test-kneelab': options.toggle(false); startKneeLab(); break;
       case 'note-slam': case 'note-guard': case 'note-fast': case 'note-great': addNote(NOTE_LABEL[id]); options.toggle(false); break;
       case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift': case 'test-hammer':
       case 'test-heavy': case 'test-sled': case 'test-barrage': case 'test-bag': case 'test-ropes': case 'test-wall':
@@ -3830,13 +3835,64 @@ const stamp = () => new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
  * ~16 KB, and re-escaping the quotes inside each piece can nearly double it, so 6000 characters each.
  */
 function sendToPhone(rec) {
+  return sendFileToPhone(
+    JSON.stringify({ app: 'PulseZone', version: VERSION, saved: new Date().toISOString(), workouts: [rec] }),
+    `pulsezone-workout-${rec.date.slice(0, 16).replace(/[:T]/g, '-')}.json`,
+    `${new Date(rec.date).toLocaleString()} · ${Math.max(1, Math.round(rec.rows.length / 60))} min`);
+}
+function sendFileToPhone(text, name, label) {
   if (link.state !== 'linked') return false;
-  const text = JSON.stringify({ app: 'PulseZone', version: VERSION, saved: new Date().toISOString(), workouts: [rec] });
   const id = Math.random().toString(36).slice(2, 8), size = 6000, n = Math.ceil(text.length / size);
-  const name = `pulsezone-workout-${rec.date.slice(0, 16).replace(/[:T]/g, '-')}.json`;
-  const label = `${new Date(rec.date).toLocaleString()} · ${Math.max(1, Math.round(rec.rows.length / 60))} min`;
   for (let i = 0; i < n; i++) link.send({ t: 'wk', id, i, n, name, label, part: text.slice(i * size, (i + 1) * size) });
   return true;
+}
+
+// ------------------------------------------------------------------ Knee lab (v61)
+// A 75-second guided test of what the headset can tell about your legs (js/kneelab.js): head-bounce
+// steps, knee bumps on two pads, cross crunches, and body tracking's knees when the browser shares
+// them. The workout pauses; every detection pings; the raw motion goes to the phone page as a file.
+const kneeLab = new KneeLab(THREE, scene);
+const KNEELAB_KEY = 'pulsezone.kneelab';
+const labQuat = new THREE.Quaternion();
+let labBodyNote = '';
+kneeLab.onDone = (res) => {
+  res.version = VERSION;
+  const text = JSON.stringify(res);
+  try { localStorage.setItem(KNEELAB_KEY, text); } catch { /* too big to keep: the phone copy is the one that matters */ }
+  const sent = sendFileToPhone(text, `pulsezone-kneelab-${stamp()}.json`, `Knee lab · ${new Date().toLocaleString()}`);
+  say(sent ? 'Knee lab done - saved on the phone page' : 'Knee lab done - link the phone to save the file', 1);
+  audio.sfx('streak', { level: 2 });
+};
+function startKneeLab() {
+  if (kneeLab.active) { kneeLab.stop(); say('Knee lab stopped', 2); return; }
+  camera.getWorldQuaternion(labQuat);
+  kneeLab.start({ head, quat: labQuat, standing, t: now(), bodyShared: false });
+  logEvent('kneelab', { body: KNEELAB_BODY });
+  say(KNEELAB_BODY ? 'KNEE LAB: 5 short moves - follow the board' : 'KNEE LAB: 5 short moves (open with ?kneelab for body tracking)', 1);
+}
+/** Body tracking's joints this frame ({ name: {x,y,z} }), or null when the browser shares none. */
+function readBodyJoints() {
+  try {
+    const frame = renderer.xr.getFrame?.();
+    const body = frame?.body;
+    if (!body) return null;
+    const ref = renderer.xr.getReferenceSpace();
+    const out = {};
+    body.forEach((space, joint) => {
+      const pose = frame.getPose(space, ref);
+      if (pose) { const p = pose.transform.position; out[String(joint)] = { x: p.x, y: p.y, z: p.z }; }
+    });
+    return Object.keys(out).length ? out : null;
+  } catch (e) { labBodyNote = String(e?.message || e); return null; }
+}
+function updateKneeLab(t, dt) {
+  camera.getWorldQuaternion(labQuat);
+  const L = fistByHand.left.world, R = fistByHand.right.world;
+  const events = kneeLab.update({ t, dt, head, quat: labQuat, L, R, vyL: fistByHand.left.vel.y, vyR: fistByHand.right.vel.y, body: readBodyJoints() });
+  for (const e of events) {
+    if (e.type === 'step') audio.sfx('perfect', { hand: 'left', power: 0.15 });
+    else { audio.sfx('perfect', { hand: e.side || 'left', power: 0.7 }); if (e.side) pulse(fistByHand[e.side], 0.5, 40); }
+  }
 }
 function saveWorkoutData() {
   const all = loadHistory();
@@ -4205,7 +4261,7 @@ function frame(time) {
   const btn = xrButtons();
   if (btn.b) options.toggle();                                   // B / Y = options
   if (btn.a && controller.phase === Phase.Finished && !options.open) startWorkout();
-  const paused = options.open;
+  const paused = options.open || kneeLab.active; // v61: the Knee lab pauses the workout
   if (paused !== laneHidden) setLaneVisible(!paused);
   const gdt = paused ? 0 : dt;                                   // game time stops while options are open
 
@@ -4231,6 +4287,7 @@ function frame(time) {
     while (f.hist.length && tNow - f.hist[0][0] > 0.35) f.hist.shift();
   }
   updateMotion(rawDt, head);
+  if (kneeLab.active) updateKneeLab(tNow, rawDt);
 
   // Heart rate -> controller -> difficulty (+ challenge boost when you're stuck).
   sim.signalLost = signalLostToggle && sourceKind === 'sim';
@@ -4651,4 +4708,5 @@ window.pz = {
   drift(x) { updateDrift({ x, z: head.z }, true, false); return drifting; },
   act: (id) => options.hooks.act(id),
   logRows: () => sessionLog,
+  kneeLab: { start: () => startKneeLab(), lab: kneeLab, phase: () => kneeLab.active && kneeLab.phaseAt(now()), body: () => readBodyJoints(), bodyNote: () => labBodyNote },
 };
