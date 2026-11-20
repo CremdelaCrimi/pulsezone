@@ -166,7 +166,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   check(Object.keys(easy).length === 1 && easy.jab, 'very low intensity: only plain punches');
   const mid = count({ intensity: 0.5, status: 'InZone' });
   check(ACTIVITY_KEYS.every((k) => mid[k] > 0), `mid intensity: every activity appears (${JSON.stringify(mid)})`);
-  const gains = { jab: 0.05, low: 0.3, swing: 0.1, duck: 0.3, lateral: 0.2, squatSide: 0.9, trace: 0.15, sweep: 0.3, power: 0.2, pair: 0.35, guard: 0.15, barrage: 0.3 };
+  const gains = { jab: 0.05, low: 0.3, swing: 0.1, duck: 0.3, lateral: 0.2, squatSide: 0.9, trace: 0.15, sweep: 0.3, power: 0.2, pair: 0.35, guard: 0.15, barrage: 0.3, kettle: 0.3 };
   const noBursts = { bag: false, ropes: false, heavy: false, sled: false };
   const stuck = count({ intensity: 0.9, status: 'Below', boost: 1, gains, enabled: noBursts });
   const normal = count({ intensity: 0.9, status: 'InZone', gains, enabled: noBursts });
@@ -194,7 +194,7 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
   // Learning: a synthetic player whose heart responds strongly to side squats and barely to punches.
   // Generated with a slightly different lag than the learner assumes, plus noise.
-  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9, heavy: 0.8, sled: 1.6, barrage: 1.2, hammer: 0.9, knee: 1.4, press: 1.5, chop: 1.1, tiptoe: 0.5, pose: 1.1 };
+  const truth = { jab: 0.2, low: 1.0, swing: 0.5, duck: 1.1, lateral: 0.8, squatSide: 2.0, trace: 0.6, sweep: 1.0, power: 0.7, pair: 1.3, bag: 0.3, ropes: 1.5, guard: 0.9, heavy: 0.8, sled: 1.6, barrage: 1.2, hammer: 0.9, knee: 1.4, press: 1.5, chop: 1.1, tiptoe: 0.5, pose: 1.1, kettle: 1.4 };
   const att = new HeartRateAttribution({ weights: Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 1.0])) });
   const rng = mulberry32(7);
   const tr = Object.fromEntries(ACTIVITY_KEYS.map((k) => [k, 0]));
@@ -755,6 +755,46 @@ console.log('\n== v56: tree chop, slalom, duck-and-weave missiles');
   check(recoveryDrop(rows) === 29 || recoveryDrop(rows) === 30, `one-minute recovery from the log (${recoveryDrop(rows)})`);
   check(recoveryDrop(rows.slice(0, 330)) === null, 'no recovery number for a cool-down under a minute');
   check(sw(rows).recovery === recoveryDrop(rows), 'summary carries the recovery');
+}
+
+// ---- v62: boxing numbers, stance, hammer swing
+{
+  const { NUMBER_COMBOS, numberSteps, pickNumberCombo, STANCE, kettleSwing, KETTLE, STATIONS: ST, lanePlan: lp, ACTIVITIES, SPOTLIGHT_MOVES } = await import('../js/core.js');
+  console.log('\n== v62: boxing numbers, stance, hammer swing');
+  const o = numberSteps([1, 2, 3, 4, 5, 6], 'orthodox'), sp = numberSteps([1, 2, 3, 4, 5, 6], 'southpaw');
+  check(o.map((x) => x.join(':')).join(' ') === 'left:jab right:jab left:hook right:hook left:upper right:upper', 'orthodox: 1 = left jab, 2 = right cross, 3-4 hooks, 5-6 uppercuts');
+  check(sp.every(([h], i) => h !== o[i][0]) && sp.every(([, k], i) => k === o[i][1]), 'southpaw flips every hand, same punches');
+  const easy = new Set(); for (let i = 0; i < 200; i++) easy.add(pickNumberCombo({ intensity: 0 }).nums.join('-'));
+  check([...easy].every((n) => n === '1-2' || n === '1-1-2'), `warm-up: only 1-2 and 1-1-2 (${[...easy].join(', ')})`);
+  const noSwing = new Set(); for (let i = 0; i < 300; i++) noSwing.add(pickNumberCombo({ intensity: 1, swing: false }).nums.join('-'));
+  check([...noSwing].every((n) => /^[12-]+$/.test(n)), 'hooks/uppercuts off: straights only');
+  let again = false; for (let i = 0; i < 300; i++) { if (pickNumberCombo({ intensity: 0.8, last: '1-2' }).nums.join('-') === '1-2') again = true; }
+  check(!again, 'never the same combo twice running');
+  const hard = new Set(); for (let i = 0; i < 600; i++) hard.add(pickNumberCombo({ intensity: 1 }).nums.join('-'));
+  check(hard.has('1-2-3-4-5-6') && hard.size >= 10, `full intensity reaches the 1-6 and most combos (${hard.size})`);
+  check(NUMBER_COMBOS.every((c) => c.nums.every((n) => n >= 1 && n <= 6)), 'every combo uses numbers 1-6');
+  check(STANCE.first > 30 && STANCE.every >= 45 && STANCE.settle > 1, 'stance switches are spaced out, with time to settle');
+  // Hammer swing: hinge + hands together low arms it; up to chest height, out front, standing = a swing.
+  const st = {};
+  check(kettleSwing(st, { midY: -1.0, fwd: 0.1, gap: 0.1, drop: 0.2, vy: 0, t: 0 }) === 'armed', 'hinged with both hands low: armed');
+  check(kettleSwing(st, { midY: -1.0, fwd: 0.1, gap: 0.1, drop: 0.2, vy: 0, t: 0.05 }) === null, 'staying down does not re-arm every frame');
+  kettleSwing(st, { midY: -0.6, fwd: 0.2, gap: 0.1, drop: 0.12, vy: 2.0, t: 0.3 });
+  check(kettleSwing(st, { midY: -0.3, fwd: 0.4, gap: 0.1, drop: 0.03, vy: 1.2, t: 0.5 }) === 'smash', 'a fast swing up to chest height out front: SMASH');
+  const s2 = {};
+  kettleSwing(s2, { midY: -1.0, fwd: 0.1, gap: 0.1, drop: 0.2, vy: 0, t: 0 });
+  kettleSwing(s2, { midY: -0.6, fwd: 0.2, gap: 0.1, drop: 0.1, vy: 0.6, t: 0.6 });
+  check(kettleSwing(s2, { midY: -0.3, fwd: 0.4, gap: 0.1, drop: 0.03, vy: 0.5, t: 1.0 }) === 'swing', 'a slow lift still counts, as a plain swing');
+  const s3 = {};
+  check(kettleSwing(s3, { midY: -1.0, fwd: 0.1, gap: 0.1, drop: 0.02, vy: 0, t: 0 }) === null, 'hands low but no hip hinge (head up): not armed');
+  check(kettleSwing(s3, { midY: -1.0, fwd: 0.1, gap: 0.5, drop: 0.2, vy: 0, t: 0 }) === null, 'hands apart: not armed');
+  check(kettleSwing(s3, { midY: -0.3, fwd: 0.4, gap: 0.1, drop: 0.02, vy: 2, t: 0.2 }) === null, 'not armed: a swing does nothing');
+  kettleSwing(s3, { midY: -1.0, fwd: 0.1, gap: 0.1, drop: 0.2, vy: 0, t: 1 });
+  check(kettleSwing(s3, { midY: -0.9, fwd: 0.1, gap: 0.3, drop: 0.2, vy: 0, t: 1 + KETTLE.window + 0.1 }) === 'late', 'no swing within the window: late');
+  const s4 = {};
+  kettleSwing(s4, { midY: -1.0, fwd: 0.1, gap: 0.1, drop: 0.2, vy: 0, t: 0 });
+  check(kettleSwing(s4, { midY: -0.3, fwd: 0.4, gap: 0.1, drop: 0.2, vy: 2, t: 0.4 }) === null, 'still bent over at the top: not a swing yet (stand tall)');
+  check(ST.kettle && lp('kettle', { now: 0, speed: 3, intensity: 0.5 })?.kind === 'solo', 'hammer swing is a station with a lane slot');
+  check(ACTIVITIES.some((a) => a.key === 'kettle' && a.kind === 'station') && SPOTLIGHT_MOVES.includes('kettle'), 'hammer swing is in the mix and can be a spotlight');
 }
 console.log(failures ? `\n${failures} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

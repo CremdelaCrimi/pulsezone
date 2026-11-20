@@ -3,11 +3,13 @@
 // how to do it; trigger switches it on or off. Opens when you enter VR (the workout waits), and from
 // the board (Pick moves). Gio: "a nice choose-the-workout-types ... when you aim at it, a quick
 // video of the move as reference before starting".
-import { MOVE_FIGS, drawFigure } from './movefig.js?v61';
+import { MOVE_FIGS, drawFigure } from './movefig.js?v62';
+// v62 (Gio: "very blurry and goes left and right"): drawn at 2x resolution with anisotropic filtering,
+// 7 columns (room for the hammer swing), and game.js keeps it anchored where it opened.
 
 /** Picker cards: each switches one or more moveset keys together. */
 export const PICK_CARDS = Object.freeze([
-  { id: 'punch', name: 'Punching', keys: ['jab', 'swing', 'power'], cat: 'Orbs', text: 'Punch the orbs as they fly in. Hooks and uppercuts follow the arrow; armoured power orbs need a hard hit.' },
+  { id: 'punch', name: 'Boxing numbers', keys: ['jab', 'swing', 'power'], cat: 'Orbs', text: 'Called combos: 1 jab, 2 cross, 3-4 hooks, 5-6 uppercuts. Odd = lead hand; switch stance and they flip.' },
   { id: 'squatPunch', name: 'Squat punches', keys: ['low', 'pair'], cat: 'Orbs', text: 'A low orb, then a high one: squat, then punch up or hook.' },
   { id: 'hammer', name: 'Hammer fists', keys: ['hammer'], cat: 'Orbs', text: 'Two drum pads: hammer down with the bottom of your fist, left then right.' },
   { id: 'trace', name: 'Rope tracing', keys: ['trace', 'sweep'], cat: 'Orbs', text: 'Follow the glowing rope with one hand, or both hands together.' },
@@ -20,6 +22,7 @@ export const PICK_CARDS = Object.freeze([
   { id: 'knee', name: 'Knee drive', keys: ['knee'], cat: 'Body', text: 'Grab the bar overhead, pull it down and drive a knee up. Alternate legs.' },
   { id: 'press', name: 'Wall ball', keys: ['press'], cat: 'Body', text: 'Squat, drive up, press the ball to the ring on the beat. 10-15 s, then the ropes.' },
   { id: 'chop', name: 'Tree chop', keys: ['chop'], cat: 'Body', text: 'Hands together by one shoulder, swing across through the trunk.' },
+  { id: 'kettle', name: 'Hammer swing', keys: ['kettle'], cat: 'Body', text: 'Hinge at the hips and grab the hammer low with both hands, then snap your hips and swing it up onto the bag top.' },
   { id: 'tiptoe', name: 'Tiptoe reach', keys: ['tiptoe'], cat: 'Body', text: 'Up on your toes and touch the star, one hand at a time.' },
   { id: 'duck', name: 'Duck walls', keys: ['duck'], cat: 'Walls', text: 'A bar slides in at head height: squat under it.' },
   { id: 'squatSide', name: 'Side squats', keys: ['squatSide'], cat: 'Walls', text: 'Squat and dip your head to the open side, left or right. Feet stay put.' },
@@ -29,27 +32,29 @@ export const PICK_CARDS = Object.freeze([
 /** Is a card on (any of its moves on)? */
 export const cardOn = (card, moves) => card.keys.some((k) => !!moves[k]);
 
-const GW = 1280, GH = 960, PW = 480, PH = 720;
-const COLS = 6, CW = 190, CH = 200, GAP = 16, X0 = 30, Y0 = 130;
+const GW = 1340, GH = 960, PW = 480, PH = 720;
+const COLS = 7, CW = 170, CH = 200, GAP = 14, X0 = 30, Y0 = 130;
+const SS = 2, PSS = 1.5; // supersampling: the canvases are drawn at 2x (grid) and 1.5x (preview) for sharp text
 const CAT = { Orbs: '#6ea2ff', Bursts: '#ff9a4d', Body: '#6dffd8', Walls: '#f2c14e' };
 const FIG = { fig: '#e6efec', dim: '#3d4f49', left: '#3fa9ff', right: '#ff7a3d', prop: '#6dffd8', floor: 'rgba(147,164,158,0.5)' };
 
 export class MovePicker {
   /** hooks: { moves() -> settings.moves, toggle(keys, on), start(), close() } */
-  constructor(THREE, hooks) {
+  constructor(THREE, hooks, { anisotropy = 1 } = {}) {
     this.hooks = hooks; this.isOpen = false; this.hover = null; this.shown = PICK_CARDS[0]; this.key = ''; this.lastPrev = -1;
     this.buttons = [];
-    const mk = (w, h, mw, mh) => {
-      const c = document.createElement('canvas'); c.width = w; c.height = h;
-      const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const mk = (w, h, mw, mh, ss) => {
+      const c = document.createElement('canvas'); c.width = Math.round(w * ss); c.height = Math.round(h * ss);
+      const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = anisotropy;
+      const g = c.getContext('2d'); g.scale(ss, ss); // draw in the same layout units as before
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(mw, mh), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false }));
       mesh.renderOrder = 998; // over the scoreboard and the lane
-      return { c, g: c.getContext('2d'), tex, mesh };
+      return { c, g, tex, mesh };
     };
-    this.grid = mk(GW, GH, 1.2, 0.9);
-    this.prev = mk(PW, PH, 0.6, 0.9);
-    this.grid.mesh.position.set(-0.32, 0, 0);
-    this.prev.mesh.position.set(0.63, 0, 0.08); this.prev.mesh.rotation.y = -0.28;
+    this.grid = mk(GW, GH, 1.2 * GW / 1280, 0.9, SS);
+    this.prev = mk(PW, PH, 0.6, 0.9, PSS);
+    this.grid.mesh.position.set(-0.34, 0, 0);
+    this.prev.mesh.position.set(0.64, 0, 0.08); this.prev.mesh.rotation.y = -0.28;
     this.group = new THREE.Group(); this.group.add(this.grid.mesh, this.prev.mesh); this.group.visible = false;
   }
   open() { this.isOpen = true; this.group.visible = true; this.key = ''; this.drawGrid(); }
@@ -82,7 +87,7 @@ export class MovePicker {
     const moves = this.hooks.moves();
     const key = `${this.hover}|${PICK_CARDS.map((c) => (cardOn(c, moves) ? 1 : 0)).join('')}`;
     if (key !== this.key) { this.key = key; this.drawGrid(); }
-    if (time - this.lastPrev >= 1 / 30) { this.lastPrev = time; this.drawPreview(time * 2, moves); } // 120 BPM
+    if (time - this.lastPrev >= 1 / 24) { this.lastPrev = time; this.drawPreview(time * 2, moves); } // 120 BPM
   }
 
   // ------------------------------------------------------------ drawing

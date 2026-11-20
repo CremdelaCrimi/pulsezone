@@ -5,10 +5,10 @@ import { MOVE_FIGS, poseAt, bodyOf } from '../js/movefig.js';
 
 let failed = 0, passed = 0;
 const check = (name, ok, extra = '') => { if (ok) passed++; else failed++; console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${name}${extra ? `  (${extra})` : ''}`); };
-const MOVE_KEYS = ['jab', 'low', 'swing', 'power', 'pair', 'guard', 'trace', 'sweep', 'hammer', 'knee', 'press', 'chop', 'tiptoe', 'bag', 'ropes', 'heavy', 'sled', 'barrage', 'duck', 'squatSide', 'lean', 'pillar', 'pose'];
+const MOVE_KEYS = ['jab', 'low', 'swing', 'power', 'pair', 'guard', 'trace', 'sweep', 'hammer', 'knee', 'press', 'chop', 'tiptoe', 'kettle', 'bag', 'ropes', 'heavy', 'sled', 'barrage', 'duck', 'squatSide', 'lean', 'pillar', 'pose'];
 
 console.log('== cards');
-check('18 cards with unique ids', PICK_CARDS.length === 18 && new Set(PICK_CARDS.map((c) => c.id)).size === 18);
+check('19 cards with unique ids (v62: + hammer swing)', PICK_CARDS.length === 19 && new Set(PICK_CARDS.map((c) => c.id)).size === 19);
 check('every card switches real moveset keys', PICK_CARDS.every((c) => c.keys.length && c.keys.every((k) => MOVE_KEYS.includes(k))));
 check('every move on the board is on some card', MOVE_KEYS.every((k) => PICK_CARDS.some((c) => c.keys.includes(k))));
 check('no card switches on side shifts (stay centred)', !PICK_CARDS.some((c) => c.keys.includes('shift')));

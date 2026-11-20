@@ -11,23 +11,24 @@ import {
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   STATIONS, STATION_STOP, STATION_WINDOW, HAMMER_GAP, kneeGrab, kneePulled, pressLoaded, pressDone, chopSwing, TREE_CHOP, SLALOM, slalomCount, BOMB_VOLLEY, barrageVolleys, tiptoeReached, tiptoeHeight,
+  kettleSwing, numberSteps, pickNumberCombo, STANCE, PUNCH_NAMES,
   stationHold, wallBallBeat, wallBallGoal, WALLBALL, ACTS, actPlan, actAt, actWeights, weekSummary, weekDots, PLAN_SHAPES, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
   hitTier, HEAVY_BONUS, posePoints, poseHeld, POSE_RING_R, POSE_HOLD,
-} from './core.js?v61';
-import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v61';
-import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v61';
-import { BossView } from './bossview.js?v61';
-import { WorldView } from './worlds.js?v61';
-import { VoiceCoach, VOICE_PACKS } from './coach.js?v61';
+} from './core.js?v62';
+import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v62';
+import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v62';
+import { BossView } from './bossview.js?v62';
+import { WorldView } from './worlds.js?v62';
+import { VoiceCoach, VOICE_PACKS } from './coach.js?v62';
 import { HostLink } from './link.js?v9';
-import { AudioEngine } from './audio.js?v61';
+import { AudioEngine } from './audio.js?v62';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v61';
-import { loadTuning, createDevPanel } from './dev.js?v61';
-import { KneeLab } from './kneelab.js?v61';
-import { MovePicker } from './movepicker.js?v61';
+import { OptionsPanel } from './options.js?v62';
+import { loadTuning, createDevPanel } from './dev.js?v62';
+import { KneeLab } from './kneelab.js?v62';
+import { MovePicker } from './movepicker.js?v62';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -86,7 +87,7 @@ const settings = {
   // The moveset: which moves the game may send you. Shared by the page checklist and the VR board.
   moves: {
     jab: true, low: true, swing: true, power: true, pair: true, guard: false, trace: true, sweep: true, hammer: true,
-    knee: true, press: true, chop: true, tiptoe: true, // whole-body stations
+    knee: true, press: true, chop: true, tiptoe: true, kettle: true, // whole-body stations (kettle = v62 hammer swing)
     charge: true, // charge and coast: an all-out 30 s, then land in your zone
     acts: true,    // the workout in themed chapters of ~4 min (v55)
     program: true, // weekly plan: 3 workouts a week, Steady -> Waves -> Build (picks the shape)
@@ -110,7 +111,7 @@ const MOVE_LABELS = {
   jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then punch up', guard: 'Guard & counter', hammer: 'Hammer fists',
   trace: 'Rope tracing', sweep: 'Two-hand rope', bag: 'Speed bag', ropes: 'Battle ropes', heavy: 'Heavy bag', sled: 'Sled run', barrage: 'Dodge barrage (missiles)',
   duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar', shift: 'Side shifts (step left/right)', pose: 'Pose walls (hold a Y, a T, or a squat + press)',
-  knee: 'Pull-down knee drive', press: 'Wall-ball rounds', chop: 'Woodchopper', tiptoe: 'Tiptoe reach',
+  knee: 'Pull-down knee drive', press: 'Wall-ball rounds', chop: 'Woodchopper', tiptoe: 'Tiptoe reach', kettle: 'Hammer swing (hinge, grab low, swing it up onto the bag)',
   charge: 'Charge & coast (all out, then land in your zone)',
   acts: 'Acts (the workout in ~4-minute chapters)', program: 'Weekly plan (3 a week: Steady, Waves, Build; each day has a name)',
   boss: 'The Guardian (a boss on the last workout of the week: your hits only count in your zone)',
@@ -135,7 +136,7 @@ const enabledActivities = (forSpawn = false) => ({
   squatSide: settings.moves.squatSide,
   pose: settings.moves.pose,
   lateral: settings.moves.lean || settings.moves.pillar,
-  knee: settings.moves.knee, press: settings.moves.press, chop: settings.moves.chop, tiptoe: settings.moves.tiptoe,
+  knee: settings.moves.knee, press: settings.moves.press, chop: settings.moves.chop, tiptoe: settings.moves.tiptoe, kettle: settings.moves.kettle,
 });
 if (params.has('warmup')) settings.warmUpSeconds = Number(params.get('warmup')) * 60; // ?warmup= is in minutes
 if (params.has('minutes')) settings.trainingMinutes = Number(params.get('minutes'));
@@ -436,6 +437,7 @@ function startWorkout() {
   progressBoard.visible = false;
   applyEmberColour();
   lastPick = lastReason = ''; forceShiftNext = false; testQueued = false; comboReadyAt = 0;
+  stance = 'orthodox'; stanceNext = null; lastNumbers = ''; stanceFeet.visible = false;
   Object.assign(tstat, { slams: 0, slamHits: 0, aboveSec: 0, flatSec: 0, notes: [], landings: [] }); pendingNote = '';
   zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
   summaryBoard.visible = false; lastSummary = null;
@@ -525,12 +527,10 @@ function testMove(key) {
   if (pendingBurst && !pendingBurstTest) pendingBurst = null; // an automatic burst that hasn't started yet gives way to the test move
   if (key === 'combo') {
     const en = enabledActivities();
-    const list = availableCombos({ swing: en.swing, low: en.low });
-    if (!list.length) { say('No combos with your current moves', 2); return; }
-    queuedCombo = list[Math.floor(Math.random() * list.length)];
+    queuedCombo = numberTemplate(pickNumberCombo({ intensity: Math.max(0.5, difficulty.intensity), swing: en.swing, last: lastNumbers }));
   }
   queuedActivity = key; queuedFor = 0; testQueued = true;
-  const names = { sweep: 'two-hand rope + slam', duck: 'duck wall', lateral: 'lean wall', squatSide: 'side-squat wall', knee: 'knee drive', press: 'ceiling press', chop: 'woodchopper', tiptoe: 'tiptoe reach' };
+  const names = { sweep: 'two-hand rope + slam', duck: 'duck wall', lateral: 'lean wall', squatSide: 'side-squat wall', knee: 'knee drive', press: 'ceiling press', chop: 'woodchopper', kettle: 'hammer swing', tiptoe: 'tiptoe reach' };
   say(`Test: ${names[key] || key} coming${after}`, 1);
 }
 function setSound(on) { settings.sound = on; audio.setEnabled(on); $('sound').checked = on; saveSettings(); }
@@ -914,6 +914,12 @@ const axeMat = new THREE.MeshStandardMaterial({ color: 0xc8d2dc, metalness: 0.7,
 const hipRingGeo = new THREE.RingGeometry(0.12, 0.16, 32);
 const tipStarGeo = new THREE.OctahedronGeometry(0.13, 0); // bigger again in v55 (Morty: still looked small)
 const tipHaloGeo = new THREE.RingGeometry(0.17, 0.22, 32);
+// Hammer swing (v62): a sledgehammer resting low in front of you, and a heavy bag whose top you smash.
+const kettleHandleGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.5, 10).translate(0, 0.22, 0); // grip at the origin
+const kettleHeadGeo = new THREE.BoxGeometry(0.22, 0.11, 0.11);
+const kettleBagGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.85, 20).translate(0, -0.425, 0); // hangs from its top
+const kettleTopGeo = new THREE.RingGeometry(0.1, 0.16, 32).rotateX(-Math.PI / 2);
+const kettleBagMat = new THREE.MeshStandardMaterial({ color: 0x3a1f17, roughness: 0.8, emissive: 0x1a0a06, emissiveIntensity: 0.5 });
 /** A straight guide like the hook arrows: a tube, an arrowhead at `to` and a ghost dot sliding along it. */
 function stationGuide(from, to, mat) {
   const group = new THREE.Group();
@@ -942,6 +948,7 @@ const STATION_SAY = {
   press: 'WALL BALL ROUND! Squat, drive up, press it to the ring - on the beat, all the way',
   chop: 'CHOP THE TREE! Hands together by your shoulder, swing across through the trunk',
   tiptoe: 'TIPTOE REACH! Up on your toes and touch the star',
+  kettle: 'HAMMER SWING! Hinge down, grab it low, snap your hips and smash the bag top',
 };
 const stTmpL = new THREE.Vector3(), stTmpR = new THREE.Vector3(), stTmpH = new THREE.Vector3(), stMid = new THREE.Vector3();
 function spawnStation(head, standing, key) {
@@ -996,6 +1003,24 @@ function spawnStation(head, standing, key) {
     handle.position.y = -0.1; headM.position.set(0.07, 0.16, 0);
     p.axe.add(handle, headM); p.axe.visible = false;
     group.add(p.orb, p.hip, p.tree, p.axe);
+  } else if (key === 'kettle') {
+    // Hammer swing (v62): grip low between your knees (but never under 42 cm off the floor), the bag
+    // top out in front at chest height. Swing from one to the other.
+    p.home = new THREE.Vector3(0, Math.max(0.42, base - 1.0), 0.12);
+    p.hammer = new THREE.Group();
+    const headM = new THREE.Mesh(kettleHeadGeo, axeMat); headM.position.y = 0.47;
+    p.hammer.add(new THREE.Mesh(kettleHandleGeo, treeBarkMat), headM);
+    p.hammer.position.copy(p.home);
+    p.bag = new THREE.Group();
+    p.bagY = base - 0.38;
+    p.bag.position.set(0, p.bagY, -0.32);
+    p.bag.add(new THREE.Mesh(kettleBagGeo, kettleBagMat));
+    p.top = new THREE.Mesh(kettleTopGeo, glow()); p.top.position.y = 0.005; p.bag.add(p.top);
+    p.swing = { armedAt: null };
+    p.lastY = null; p.lastT = 0; p.hitAt = -9;
+    const gm = glow(); gm.opacity = 0.8;
+    p.guides = [stationGuide(p.home.clone().add(new THREE.Vector3(0, 0.12, 0)), new THREE.Vector3(0, p.bagY + 0.12, -0.1), gm)]; // swing it UP and out
+    group.add(p.hammer, p.bag, p.guides[0].group);
   } else {
     const h = tiptoeHeight(reachUp);
     p.stars = [-1, 1].map((sx) => { const m = new THREE.Mesh(tipStarGeo, stationMat); m.position.set(sx * 0.14, base + h, 0); m.add(new THREE.Mesh(tipHaloGeo, glow())); group.add(m); return m; });
@@ -1033,6 +1058,7 @@ function stationPoints(s) {
   if (s.key === 'knee') return { gripL: w(p.home.clone().setX(-0.25)), gripR: w(p.home.clone().setX(0.25)) };
   if (s.key === 'press') return { ball: w(p.ball.position), ring: w(p.ring.position) };
   if (s.key === 'chop') return { orb: w(p.orb.position), hip: w(p.hip.position) };
+  if (s.key === 'kettle') return { grip: w(p.home), top: w(p.bag.position) };
   return { star: w(p.stars[p.next].position) };
 }
 function stationRep(s, at, label) {
@@ -1046,7 +1072,7 @@ function stationRep(s, at, label) {
   audio.sfx('perfect', { hand: 'left', power: 0.8 });
   pulseBoth(0.6, 60);
   shatter(at, new THREE.Vector3(0, 1, 0.3), STATION_COLOR, 0.5);
-  if (s.reps >= s.need && !s.round) { s.done = true; if (s.key !== 'press' && s.key !== 'chop') s.group.visible = false; } // a round runs its full time; the tree falls
+  if (s.reps >= s.need && !s.round) { s.done = true; if (s.key !== 'press' && s.key !== 'chop' && s.key !== 'kettle') s.group.visible = false; } // a round runs its full time; the tree falls
 }
 /** End of a wall-ball round: the ball flies to the ring, and a call-out with how you did. */
 function finishRound(s) {
@@ -1124,6 +1150,26 @@ function stationStep(s, xr, head) {
       s.stage = 0;
       if (!s.done) { p.side = -p.side; placeChop(s); } // swing back the other way
     } else if (r === 'late') { gaveUp(); s.stage = 0; stationNag(s, 'Swing right across the tree!'); }
+  } else if (s.key === 'kettle') {
+    // Hammer swing (v62): hinge + both hands together low arms it; hands up to chest height out in
+    // front, standing tall, is a swing. How fast the hands rose decides SMASH or a nudge.
+    const dtk = Math.max(1e-3, gameTime - p.lastT);
+    const vy = p.lastY == null ? 0 : (stMid.y - p.lastY) / dtk;
+    p.lastY = stMid.y; p.lastT = gameTime;
+    const r = kettleSwing(p.swing, { midY: stMid.y - standing, fwd: STATION_STOP - stMid.z, gap: L.distanceTo(R), drop: standing - hy, vy, t: gameTime });
+    if (s.stage === 1) { // the hammer rides in your hands, tipping forward as it comes up
+      p.hammer.position.copy(stMid);
+      const k = Math.min(1, Math.max(0, (stMid.y - p.home.y) / Math.max(0.2, p.bagY - p.home.y)));
+      p.hammer.rotation.x = -1.35 * k;
+    } else { p.hammer.position.lerp(p.home, 0.25); p.hammer.rotation.x *= 0.8; }
+    if (r === 'armed' && s.stage === 0) grabbed();
+    else if (r === 'smash' || r === 'swing') {
+      p.hitAt = gameTime;
+      stationRep(s, g.localToWorld(p.bag.position.clone()), r === 'smash' ? 'SMASH! ' : 'SWING! ');
+      logEvent('kettle', { fast: r === 'smash', peakVy: +(p.swing.peakVy || 0).toFixed(2) });
+      if (r === 'swing') stationNag(s, 'Snap your hips - swing it faster!');
+      s.stage = 0;
+    } else if (r === 'late') { gaveUp(); s.stage = 0; stationNag(s, 'Swing it all the way up to the bag top!'); }
   } else {
     const star = p.stars[p.next];
     for (const f of [L, R]) {
@@ -1154,6 +1200,11 @@ function updateStations(dt, xr, head) {
         s.p.axe.visible = false; s.p.orb.visible = false; for (const gd of s.p.guides) gd.group.visible = false;
         s.p.tree.rotation.x = -Math.min(1, (s.doneAge / 0.9) ** 2) * 1.45;
         if (s.doneAge > 1.0) removeStation(s);
+        continue;
+      }
+      if (s.key === 'kettle') { // the bag drops away after the last smash
+        s.p.bag.position.y = s.p.bagY - (s.doneAge / 0.6) ** 2 * 1.5;
+        if (s.doneAge > 0.6) removeStation(s);
         continue;
       }
       if (s.doneAge > 0.35) removeStation(s);
@@ -1188,10 +1239,15 @@ function updateStations(dt, xr, head) {
     }
     slideGuides(s);
     if (s.key === 'knee') s.p.kneeArrow.position.y = 0.42 + 0.06 * Math.sin(gameTime * 6);
+    if (s.key === 'kettle') { // a smash jolts the bag down; the top glows brighter while you're loaded
+      s.p.bag.position.y = s.p.bagY - 0.06 * Math.exp(-(gameTime - s.p.hitAt) * 9);
+      s.p.top.material.opacity = s.stage ? 0.75 + 0.25 * Math.sin(gameTime * 14) : 0.45;
+    }
     if (s.coach) { s.coach.group.visible = s.arrived; if (s.arrived) poseMoveCoach(s, head); } // v56: not while it flies in (Gio: it hid the orbs before it)
     s.label.lookAt(camera.getWorldPosition(sledTmp));
     let what = { knee: s.stage ? 'PULL DOWN + KNEE UP!' : 'GRAB THE BAR', press: s.stage ? 'PRESS IT UP!' : 'SQUAT LOW',
-      chop: s.stage ? 'SWING ACROSS!' : 'HANDS TOGETHER AT THE LIGHT', tiptoe: 'TIPTOE + TOUCH THE STAR' }[s.key];
+      chop: s.stage ? 'SWING ACROSS!' : 'HANDS TOGETHER AT THE LIGHT', tiptoe: 'TIPTOE + TOUCH THE STAR',
+      kettle: s.stage ? 'SNAP YOUR HIPS - SWING UP!' : 'HINGE DOWN + GRAB IT LOW' }[s.key];
     // Rounds: one cue, the coach's, which flips with the beat (Morty: "SQUAT LOW" and "DRIVE UP + PRESS" fought).
     if (s.round) what = `${(s.coach?.text || what).replace('DRIVE UP + PRESS', 'DRIVE UP + PRESS!')}  ·  ${Math.ceil(Math.max(0, s.duration - s.held))}s`;
     if (!renderer.xr.isPresenting) what += '  ·  click = rep'; // desktop: say what the input is (Morty)
@@ -1244,11 +1300,18 @@ const MC_CHOP_LOW = mcPose({ // swung across to the left at chest height, should
   head: [-0.02, 1.58, 0.06], shL: [-0.2, 1.41, -0.05], shR: [0.15, 1.41, 0.09],
   elL: [-0.36, 1.18, 0.04], elR: [-0.04, 1.26, 0.26], haL: [-0.46, 1.24, 0.14], haR: [-0.38, 1.25, 0.22],
 });
+const MC_KETTLE_LOW = mcPose({ // hips back, chest forward, hands low between the knees
+  head: [0, 1.2, 0.34], neck: [0, 1.08, 0.24], pelvis: [0, 0.86, -0.16], hipL: [-0.1, 0.86, -0.16], hipR: [0.1, 0.86, -0.16],
+  kneeL: [-0.13, 0.5, 0.08], kneeR: [0.13, 0.5, 0.08], shL: [-0.18, 1.06, 0.2], shR: [0.18, 1.06, 0.2],
+  elL: [-0.1, 0.82, 0.18], elR: [0.1, 0.82, 0.18], haL: [-0.04, 0.58, 0.12], haR: [0.04, 0.58, 0.12],
+});
+const MC_KETTLE_UP = mcPose({ head: [0, 1.62, -0.02], elL: [-0.12, 1.36, 0.3], elR: [0.12, 1.36, 0.3], haL: [-0.04, 1.36, 0.58], haR: [0.04, 1.36, 0.58] });
 const MC_TOES = mcRaise(mcPose({ elR: [0.21, 1.72, 0.03], haR: [0.15, 1.98, 0.06] }), 0.09); // right hand up (mirrored for the left)
 const MOVE_COACH = { // [phase 0..1, pose, caption from here on]
   knee: { cycle: 2.2, prop: 'bar', frames: [[0, MC_KNEE_UP, 'GRAB THE BAR'], [0.3, MC_KNEE_UP], [0.55, MC_KNEE_PULL, 'PULL DOWN + KNEE UP'], [0.75, MC_KNEE_PULL, 'BACK UP TALL'], [1, MC_KNEE_UP]] },
   press: { cycle: 2.6, prop: 'ball', frames: [[0, MC_PRESS_HOLD, 'SQUAT LOW'], [0.12, MC_PRESS_HOLD], [0.4, MC_PRESS_SQUAT], [0.5, MC_PRESS_SQUAT, 'DRIVE UP + PRESS'], [0.7, MC_PRESS_UP], [0.82, MC_PRESS_UP, 'BRING IT DOWN'], [1, MC_PRESS_HOLD]] },
   chop: { cycle: 1.6, prop: 'orb', frames: [[0, MC_CHOP_HIGH, 'HANDS BY YOUR SHOULDER'], [0.3, MC_CHOP_HIGH], [0.5, MC_CHOP_LOW, 'SWING ACROSS THE TREE'], [0.7, MC_CHOP_LOW, 'WIND UP AGAIN'], [1, MC_CHOP_HIGH]] },
+  kettle: { cycle: 1.5, prop: 'orb', frames: [[0, MC_KETTLE_LOW, 'HINGE + GRAB LOW'], [0.25, MC_KETTLE_LOW], [0.5, MC_KETTLE_UP, 'SNAP HIPS - SMASH'], [0.7, MC_KETTLE_UP], [1, MC_KETTLE_LOW]] },
   tiptoe: { cycle: 2.0, prop: 'star', frames: [[0, MC_BASE, 'UP ON YOUR TOES'], [0.2, MC_BASE], [0.5, MC_TOES, 'REACH THE STAR'], [0.75, MC_TOES], [1, MC_BASE]] },
 };
 const mcFlip = (name) => (name.endsWith('L') ? name.slice(0, -1) + 'R' : name.endsWith('R') ? name.slice(0, -1) + 'L' : name);
@@ -2670,6 +2733,7 @@ let comboReadyAt = 0;            // combos at most every ~9 s, so they stay spec
 const COMBO_COOLDOWN = 9;
 /** Send a combo (one orb per beat, first one landing on a beat). False if the lane isn't free. */
 function spawnCombo(head, standing, tpl) {
+  if (tpl.nums && gameTime < comboReadyAt) return false; // settling into a new stance
   const speed = difficulty.orbSpeed;
   const tempo = audio.tempo || 120;
   const gap = comboGap(tempo), beat = 60 / tempo;
@@ -2682,18 +2746,77 @@ function spawnCombo(head, standing, tpl) {
   lane.push(plan);
   const id = ++comboSeq;
   combos.set(id, { name: tpl.name, n: tpl.steps.length, hit: 0, failed: false });
-  comboReadyAt = gameTime + COMBO_COOLDOWN + gap * tpl.steps.length;
+  if (!tpl.nums) comboReadyAt = gameTime + COMBO_COOLDOWN + gap * tpl.steps.length;
   const chest = standing - 0.35;
-  tpl.steps.forEach(([hand, kind], i) => {
+  // Numbered combos (v62) are steps for the stance you're in NOW (it can switch while one waits).
+  const steps = tpl.nums ? numberSteps(tpl.nums, stance) : tpl.steps;
+  const lead = stance === 'southpaw' ? 'right' : 'left';
+  steps.forEach(([hand, kind], i) => {
     const side = hand === 'left' ? -1 : 1;
-    const x = side * (kind === 'hook' ? 0.28 : 0.17);
+    // Straights (1, 2) come down the middle: the jab just to your lead side, the cross almost dead centre.
+    const x = tpl.nums && kind === 'jab' ? side * (hand === lead ? 0.1 : 0.05) : side * (kind === 'hook' ? 0.28 : kind === 'upper' && tpl.nums ? 0.12 : 0.17);
     const y = kind === 'low' ? Math.max(0.55, standing - 0.85) : kind === 'upper' ? chest - 0.08 : chest + (i % 2 ? 0.05 : -0.02);
     const swing = kind === 'hook' ? (hand === 'left' ? 'right' : 'left') : kind === 'upper' ? 'up' : null;
     const activity = kind === 'low' ? 'low' : swing ? 'swing' : 'jab';
-    spawnOrb(head, standing, activity, { x, y, hand, swing, behind: (snap + gap * i) * speed, combo: id });
+    const orb = spawnOrb(head, standing, activity, { x, y, hand, swing, behind: (snap + gap * i) * speed, combo: id });
+    if (tpl.nums) { const tag = new THREE.Sprite(numberMat(tpl.nums[i], hand)); tag.scale.setScalar(0.13); tag.position.set(0, orb.r + 0.1, 0); orb.group.add(tag); }
   });
-  say(`COMBO  ${tpl.name.toUpperCase()}`);
+  if (tpl.nums) { lastNumbers = tpl.name; logEvent('numbers', { combo: tpl.name, stance }); say(tpl.nums.join(' - ')); }
+  else say(`COMBO  ${tpl.name.toUpperCase()}`);
   return true;
+}
+
+// ------------------------------------------------------------------ boxing numbers + stance (v62)
+
+// Punches come as called numbers (1 jab, 2 cross, 3/4 hooks, 5/6 uppercuts; odd = lead hand), each orb
+// wearing its number. Every STANCE.every s of training the coach calls a stance switch: swap your feet
+// front to back where you stand and the lead hand flips. Glowing footprints show the stance.
+let stance = 'orthodox', stanceNext = null, lastNumbers = '';
+const numberTemplate = (c) => ({ name: c.nums.join('-'), nums: c.nums, steps: numberSteps(c.nums, stance) });
+const numberMats = {};
+function numberMat(n, hand) {
+  const k = `${n}${hand}`;
+  if (numberMats[k]) return numberMats[k];
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.font = '900 104px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 14; g.strokeStyle = '#05080a'; g.strokeText(String(n), 64, 70);
+  g.fillStyle = hand === 'left' ? '#bfe3ff' : '#ffd2bd'; g.fillText(String(n), 64, 70);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  return (numberMats[k] = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+}
+// Footprints on the floor where you stand: the lead foot forward and lit, the rear foot dim.
+const footGeo = new THREE.CircleGeometry(0.06, 20).rotateX(-Math.PI / 2).scale(1, 1, 2.1);
+const footLeadMat = new THREE.MeshBasicMaterial({ color: 0x6dffd8, transparent: true, opacity: 0.85, depthWrite: false });
+const footRearMat = new THREE.MeshBasicMaterial({ color: 0x6dffd8, transparent: true, opacity: 0.3, depthWrite: false });
+const stanceFeet = new THREE.Group();
+const footL = new THREE.Mesh(footGeo, footLeadMat), footR = new THREE.Mesh(footGeo, footRearMat);
+stanceFeet.add(footL, footR); stanceFeet.visible = false; scene.add(stanceFeet);
+let stanceFlashAt = -99;
+function placeStanceFeet(head) {
+  const south = stance === 'southpaw';
+  footL.position.set(-0.13, 0.012, south ? 0.1 : -0.16); footL.material = south ? footRearMat : footLeadMat;
+  footR.position.set(0.13, 0.012, south ? -0.16 : 0.1); footR.material = south ? footLeadMat : footRearMat;
+  stanceFeet.position.set(centerX, 0, head.z);
+  footLeadMat.opacity = 0.55 + 0.4 * Math.exp(-(gameTime - stanceFlashAt) * 0.8) * (0.5 + 0.5 * Math.sin(gameTime * 10));
+}
+function switchStance(test = false) {
+  stance = stance === 'orthodox' ? 'southpaw' : 'orthodox';
+  stanceFlashAt = gameTime;
+  stanceNext = gameTime + STANCE.every;
+  comboReadyAt = Math.max(comboReadyAt, gameTime + STANCE.settle);
+  const foot = stance === 'southpaw' ? 'RIGHT' : 'LEFT';
+  say(`SWITCH STANCE! ${foot} foot forward - your 1 is now the ${foot} hand`, 1);
+  audio.sfx('alert');
+  logEvent('stance', { stance, test: test || undefined });
+}
+function updateStance(head) {
+  const on = settings.moves.jab && controller.phase === Phase.Training && !boss;
+  stanceFeet.visible = settings.moves.jab && (controller.phase === Phase.Training || controller.phase === Phase.WarmUp);
+  if (stanceFeet.visible) placeStanceFeet(head);
+  if (!on) return;
+  if (stanceNext == null) stanceNext = gameTime + STANCE.first;
+  if (gameTime >= stanceNext && !burstActive() && !stations.length && !combos.size) switchStance();
 }
 /** A combo orb was hit or missed: pay the bonus when the whole combo is cleared. */
 function comboResult(orb, hit) {
@@ -3690,11 +3813,12 @@ const options = new OptionsPanel({
       case 'restart': startWorkout(); options.toggle(false); break;
       case 'diag': settings.diag = !settings.diag; saveSettings(); break;
       case 'test-kneelab': options.toggle(false); startKneeLab(); break;
+      case 'test-stance': options.toggle(false); if (controller.phase === Phase.Finished) startWorkout(); switchStance(true); break; // v62
       case 'pick-moves': openPicker(); break;
       case 'note-slam': case 'note-guard': case 'note-fast': case 'note-great': addNote(NOTE_LABEL[id]); options.toggle(false); break;
       case 'test-guard': case 'test-sweep': case 'test-combo': case 'test-shift': case 'test-hammer':
       case 'test-heavy': case 'test-sled': case 'test-barrage': case 'test-bag': case 'test-ropes': case 'test-wall':
-      case 'test-knee': case 'test-press': case 'test-chop': case 'test-tiptoe': case 'test-charge': case 'test-boss': testMove(id.slice(5)); options.toggle(false); break;
+      case 'test-knee': case 'test-press': case 'test-chop': case 'test-tiptoe': case 'test-kettle': case 'test-charge': case 'test-boss': testMove(id.slice(5)); options.toggle(false); break;
       case 'end': endPressed(); options.toggle(false); break;
       case 'save': saveWorkoutData(); break;
       case 'close': options.toggle(false); break;
@@ -3736,7 +3860,7 @@ function buildMovesUI() {
     </div>
     ${group('Orbs', ['jab', 'low', 'swing', 'hammer', 'power', 'pair', 'guard', 'trace', 'sweep'])}
     ${group('Workout plan', ['program', 'acts', 'boss'])}
-    ${group('Whole-body moves', ['knee', 'press', 'chop', 'tiptoe', 'charge'])}
+    ${group('Whole-body moves', ['knee', 'press', 'chop', 'tiptoe', 'kettle', 'charge'])}
     ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes', 'heavy', 'sled', 'barrage'])}
     ${group('Walls & footwork', ['duck', 'squatSide', 'pose', 'lean', 'pillar', 'shift'])}
     <div class="muted" id="movesNote" style="font-size:12px"></div>`;
@@ -3798,9 +3922,10 @@ const picker = new MovePicker(THREE, {
   toggle: (keys, on) => { for (const k of keys) settings.moves[k] = on; saveSettings(); syncMovesUI(); },
   start: () => pickerStart(),
   close: () => picker.close(),
-});
+}, { anisotropy: renderer.capabilities.getMaxAnisotropy() });
 scene.add(picker.group);
-function openPicker() { options.toggle(false); picker.open(); }
+let pickerAnchor = null;
+function openPicker() { options.toggle(false); pickerAnchor = null; picker.open(); }
 function pickerStart() { picker.close(); startWorkout(); say("Moves set - let's go!", 1); }
 
 // ------------------------------------------------------------------ session log (download from the developer panel)
@@ -4351,6 +4476,7 @@ function frame(time) {
     updateStreak(gdt);
     updateWaves();
     updateSpotlight();
+    updateStance(head);
     updateActs();
     updateGhost();
     updateBoss(gdt);
@@ -4428,10 +4554,13 @@ function frame(time) {
       });
       // A plain punch sometimes becomes a combo; like other solo moves it waits for a free lane slot.
       let pick = activity;
-      if (!inShift && !standNext && !queuedActivity && activity === 'jab' && controller.phase === Phase.Training && gameTime >= comboReadyAt && Math.random() < comboChance(difficulty.intensity)) {
+      // v62: punches are never random any more: a punch pick (jab or hook/uppercut) becomes a called
+      // numbered combo for your stance (Gio: "1, 2, 3, 4, 5, 6 ... cross, jab cross, hook, hook, uppercut").
+      if (!inShift && !standNext && !queuedActivity && (activity === 'jab' || activity === 'swing') && settings.moves.jab
+        && (controller.phase === Phase.Training || controller.phase === Phase.WarmUp)) {
         const en = enabledActivities(true);
-        const list = availableCombos({ swing: en.swing, low: en.low });
-        if (list.length) { queuedCombo = list[Math.floor(Math.random() * list.length)]; pick = 'combo'; }
+        queuedCombo = numberTemplate(pickNumberCombo({ intensity: controller.phase === Phase.WarmUp ? 0 : difficulty.intensity, swing: en.swing, last: lastNumbers }));
+        pick = 'combo';
       }
       const reason = inShift ? 'shift' : standNext ? 'stand-up' : queuedActivity ? (testQueued ? 'test' : 'queued')
         : pick === 'combo' ? 'combo' : spotlight && activity === spotlight.key ? 'spotlight'
@@ -4598,7 +4727,10 @@ function frame(time) {
 
   // Move picker: straight ahead, lasers / mouse to aim (v61).
   if (picker.isOpen) {
-    picker.group.position.set(centerX, standing - 0.2, head.z - 1.5);
+    // v62: anchored where it opened (it used to follow your head every frame, so it swam about),
+    // re-placed only if you recentre or your standing height is re-measured by a lot.
+    if (!pickerAnchor || pickerAnchor.cx !== centerX || Math.abs(pickerAnchor.st - standing) > 0.15) pickerAnchor = { cx: centerX, st: standing, z: head.z - 1.3 };
+    picker.group.position.set(pickerAnchor.cx, pickerAnchor.st - 0.2, pickerAnchor.z);
     let uv = null;
     if (xr) {
       for (const l of lasers) {

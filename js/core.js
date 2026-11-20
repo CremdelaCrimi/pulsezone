@@ -569,6 +569,8 @@ export const ACTIVITIES = Object.freeze([
   { key: 'press', label: 'Wall-ball rounds', kind: 'station', from: 0.3, base: 0.07, prior: 1.6 },
   { key: 'chop', label: 'Woodchoppers', kind: 'station', from: 0.25, base: 0.25, prior: 1.2 },
   { key: 'tiptoe', label: 'Tiptoe reach', kind: 'station', from: 0.15, base: 0.2, prior: 0.6 },
+  // v62 hammer swing (Gio's kettlebell idea): hinge, grab the hammer low, snap your hips and swing it up into the bag top.
+  { key: 'kettle', label: 'Hammer swings', kind: 'station', from: 0.3, base: 0.25, prior: 1.5 },
   { key: 'bag', label: 'Speed bag', kind: 'burst', from: 0.35, base: 0.1, prior: 0.3 },     // per punch on the bag
   { key: 'ropes', label: 'Battle ropes', kind: 'burst', from: 0.45, base: 0.1, prior: 1.6 }, // per second of pumping
   { key: 'heavy', label: 'Heavy bag', kind: 'burst', from: 0.4, base: 0.1, prior: 0.9 },    // per strong punch (hooks, uppercuts)
@@ -782,7 +784,7 @@ export function lanePlan(activity, { now = 0, speed, intensity = 0.5, depth = 0,
       const arrive = now + (dist - 0.5) / speed;
       return { kind: 'solo', start: arrive - 0.7, end: arrive + 0.7 };
     }
-    case 'knee': case 'press': case 'chop': case 'tiptoe': { // flies in, stops in front of you, waits `hold` s
+    case 'knee': case 'press': case 'chop': case 'tiptoe': case 'kettle': { // flies in, stops in front of you, waits `hold` s
       const arrive = now + (SPAWN_DISTANCE - STATION_STOP) / speed;
       return { kind: 'solo', start: arrive - 0.6, end: arrive + stationHold(activity, intensity) + 0.5 };
     }
@@ -851,11 +853,11 @@ export const comboPlan = (first, n, gap) => ({ kind: 'solo', start: first - 0.5,
  * (sent 2.5x as often). Below the zone it's one of the moves that raise YOUR heart rate most.
  */
 export const SPOTLIGHT = Object.freeze({ first: 180, every: 240, seconds: 60, boost: 2.5 });
-export const SPOTLIGHT_MOVES = Object.freeze(['power', 'guard', 'low', 'swing', 'pair', 'sweep', 'trace', 'duck', 'squatSide', 'lateral', 'knee', 'press', 'chop']);
+export const SPOTLIGHT_MOVES = Object.freeze(['power', 'guard', 'low', 'swing', 'pair', 'sweep', 'trace', 'duck', 'squatSide', 'lateral', 'knee', 'press', 'chop', 'kettle']);
 export const SPOTLIGHT_NAMES = Object.freeze({
   power: 'POWER ROUND', guard: 'DEFENCE DRILL', low: 'SQUAT ROUND', swing: 'HOOKS & UPPERCUTS', pair: 'SQUAT + PUNCH UP', hammer: 'HAMMER FISTS',
   sweep: 'TWO-HAND ROPES', trace: 'ROPE ROUND', duck: 'DUCK & WEAVE', squatSide: 'SIDE SQUATS', lateral: 'FOOTWORK',
-  knee: 'KNEE DRIVES', press: 'WALL BALLS', chop: 'WOODCHOPPERS', tiptoe: 'TIPTOE ROUND',
+  knee: 'KNEE DRIVES', press: 'WALL BALLS', chop: 'WOODCHOPPERS', tiptoe: 'TIPTOE ROUND', kettle: 'HAMMER SWINGS',
 });
 /** Is a spotlight due at this many seconds into training (given when the last one started)? */
 export function spotlightDue(t, lastStart) {
@@ -929,6 +931,7 @@ export const STATIONS = Object.freeze({
   press: { hold: 25, reps: 8, round: true }, // a wall-ball ROUND: hold and reps come from WALLBALL below
   chop: { hold: 7.5, reps: 4 },  // alternating sides
   tiptoe: { hold: 6, reps: 4 },  // alternating hands
+  kettle: { hold: 10, reps: 5 }, // v62 hammer swings: hinge low, swing it up into the bag top
 });
 /**
  * Wall-ball rounds: squat -> drive up -> press overhead, continuously, on a beat that ladders from
@@ -951,7 +954,7 @@ export function wallBallGoal(seconds) {
 }
 export const STATION_STOP = 0.45; // metres in front of your head where a station stops
 /** Seconds you get for the second half of a move (pull, press, chop) once the first half is done. */
-export const STATION_WINDOW = Object.freeze({ knee: 1.6, press: 1.8, chop: 1.2 });
+export const STATION_WINDOW = Object.freeze({ knee: 1.6, press: 1.8, chop: 1.2, kettle: 1.4 });
 const dist3 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 /** Knee drive, part 1: both hands on the bar, anywhere along it (it's 74 cm wide), 28 cm leeway. */
 const nearBar = (f, bar) => Math.abs(f.x - bar.x) < 0.45 && Math.hypot(f.y - bar.y, f.z - bar.z) < 0.28;
@@ -987,6 +990,70 @@ export function chopSwing(state, { midX, midY, gap, side, t }) {
   if (inBand && midX * side < -C.through) { state.armedAt = null; return 'chop'; }
   return null;
 }
+/**
+ * Hammer swing (v62, Gio: "kettlebell swing could be like a hammer ... you bend and grab and need to
+ * quickly hit the top of a bag"). Both hands together low (below your knees' height, hips hinged:
+ * head 10 cm+ down) grabs the hammer. Then, within `window` s, hands up to chest height and out in
+ * front of you, standing tall again, is a swing. Fast (the hands rose at `vy` m/s or more at some
+ * point) = SMASH; slower still counts, with a nudge to snap the hips. All heights are relative to
+ * your standing eye height; `fwd` = how far in front of your face the hands are.
+ */
+export const KETTLE = Object.freeze({ together: 0.3, low: 0.92, hinge: 0.1, window: 1.4, top: 0.42, reach: 0.22, tall: 0.1, vy: 1.1 });
+export function kettleSwing(state, { midY, fwd, gap, drop, vy, t }) {
+  const K = KETTLE;
+  if (gap < K.together && midY < -K.low && drop > K.hinge) { state.armedAt = t; state.peakVy = 0; return state.wasArmed ? null : (state.wasArmed = true, 'armed'); }
+  state.wasArmed = false;
+  if (state.armedAt == null) return null;
+  state.peakVy = Math.max(state.peakVy || 0, vy || 0);
+  if (t - state.armedAt > K.window) { state.armedAt = null; return 'late'; }
+  if (midY > -K.top && fwd > K.reach && drop < K.tall) { state.armedAt = null; return state.peakVy >= K.vy ? 'smash' : 'swing'; }
+  return null;
+}
+
+/**
+ * Boxing numbers (v62, Gio: "let's not make the balls random ... 1, 2, 3, 4, 5, 6"). Punches come as
+ * called combinations: 1 jab, 2 cross, 3 lead hook, 4 rear hook, 5 lead uppercut, 6 rear uppercut.
+ * Odd numbers are your lead hand, even your rear hand, so which hand throws the 1 depends on your
+ * stance: orthodox (left foot forward) leads with the left, southpaw (right foot forward) with the
+ * right. Every so often the coach calls a stance switch: swap your feet front-to-back where you
+ * stand (no step sideways), and the numbers flip hands.
+ * `from` = the intensity a combo unlocks at; `swing` = it needs hooks / uppercuts switched on.
+ */
+export const PUNCH_NAMES = Object.freeze({ 1: 'jab', 2: 'cross', 3: 'lead hook', 4: 'rear hook', 5: 'lead uppercut', 6: 'rear uppercut' });
+export const NUMBER_COMBOS = Object.freeze([
+  { nums: [1, 2], from: 0 },
+  { nums: [1, 1, 2], from: 0 },
+  { nums: [1, 2, 1, 2], from: 0.3 },
+  { nums: [1, 2, 3], from: 0.15, swing: true },
+  { nums: [2, 3, 2], from: 0.25, swing: true },
+  { nums: [1, 2, 5, 2], from: 0.3, swing: true },
+  { nums: [3, 4], from: 0.2, swing: true },
+  { nums: [5, 6], from: 0.2, swing: true },
+  { nums: [1, 2, 3, 2], from: 0.4, swing: true },
+  { nums: [1, 6, 3, 2], from: 0.45, swing: true },
+  { nums: [1, 2, 3, 4], from: 0.5, swing: true },
+  { nums: [6, 5, 6], from: 0.5, swing: true },
+  { nums: [1, 2, 5, 6], from: 0.55, swing: true },
+  { nums: [1, 2, 3, 4, 5, 6], from: 0.75, swing: true },
+]);
+/** [hand, kind] for each number in a stance ('orthodox' = left lead, 'southpaw' = right lead). */
+export function numberSteps(nums, stance = 'orthodox') {
+  const lead = stance === 'southpaw' ? 'right' : 'left', rear = lead === 'left' ? 'right' : 'left';
+  return nums.map((n) => [n % 2 ? lead : rear, n <= 2 ? 'jab' : n <= 4 ? 'hook' : 'upper']);
+}
+/** Pick a numbered combo for this intensity (never the same one twice running). */
+export function pickNumberCombo({ intensity = 0.5, swing = true, last = '', rng = Math.random } = {}) {
+  let list = NUMBER_COMBOS.filter((c) => c.from <= intensity + 1e-9 && (swing || !c.swing));
+  if (list.length > 1) list = list.filter((c) => c.nums.join('-') !== last);
+  // Lean toward the combos that just unlocked, so the workout climbs into the longer ones.
+  const w = list.map((c) => 1 + 2 * Math.max(0, 1 - Math.abs(intensity - c.from) / 0.3));
+  let r = rng() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < list.length; i++) { r -= w[i]; if (r <= 0) return list[i]; }
+  return list[list.length - 1];
+}
+/** Stance switches: the first at `first` s of training, then every `every` s; `settle` s before the next combo. */
+export const STANCE = Object.freeze({ first: 90, every: 75, settle: 2.5 });
+
 /** Tiptoe reach: a hand on the star while your head is 3 cm+ above your usual standing height. */
 export const TIPTOE_RADIUS = 0.22; // was 0.17: the star is bigger now and has an arrow up to it
 export const tiptoeReached = (fist, star, headY, base) => dist3(fist, star) < TIPTOE_RADIUS && headY >= base + 0.03;
@@ -1116,15 +1183,15 @@ export function boostDifficulty(d, boost) {
 export const ACTS = Object.freeze({
   groove: {
     name: 'GROOVE', blurb: 'punches, combos and ropes - find your rhythm', sky: 0x0b1120, charge: false,
-    weights: { jab: 1.6, swing: 1.3, hammer: 1.3, trace: 1.6, sweep: 1.2, power: 0.9, low: 0.8, pair: 0.6, duck: 0.7, lateral: 0.8, squatSide: 0.3, knee: 0.4, press: 0, chop: 0.6, tiptoe: 0.8, bag: 1.2, ropes: 0.5, heavy: 0.8, sled: 0.2, barrage: 0.5 },
+    weights: { jab: 1.6, swing: 1.3, hammer: 1.3, trace: 1.6, sweep: 1.2, power: 0.9, low: 0.8, pair: 0.6, duck: 0.7, lateral: 0.8, squatSide: 0.3, knee: 0.4, press: 0, chop: 0.6, tiptoe: 0.8, kettle: 0.4, bag: 1.2, ropes: 0.5, heavy: 0.8, sled: 0.2, barrage: 0.5 },
   },
   burn: {
     name: 'THE BURN', blurb: 'squats, wall balls and the sled - the big engines', sky: 0x140b0a, charge: true,
-    weights: { jab: 0.5, swing: 0.7, hammer: 0.9, trace: 0.5, sweep: 1.2, power: 1.0, low: 1.7, pair: 1.7, duck: 1.4, lateral: 0.6, squatSide: 1.9, knee: 1.7, press: 2.5, chop: 1.4, tiptoe: 0.3, bag: 0.4, ropes: 1.6, heavy: 0.6, sled: 1.8, barrage: 0.7 },
+    weights: { jab: 0.5, swing: 0.7, hammer: 0.9, trace: 0.5, sweep: 1.2, power: 1.0, low: 1.7, pair: 1.7, duck: 1.4, lateral: 0.6, squatSide: 1.9, knee: 1.7, press: 2.5, chop: 1.4, tiptoe: 0.3, kettle: 1.8, bag: 0.4, ropes: 1.6, heavy: 0.6, sled: 1.8, barrage: 0.7 },
   },
   fight: {
     name: 'THE FIGHT', blurb: 'combos, the heavy bag and missiles - box your way through', sky: 0x120a18, charge: true,
-    weights: { jab: 1.5, swing: 1.8, hammer: 1.5, trace: 0.4, sweep: 0.6, power: 1.6, low: 1.1, pair: 0.9, duck: 1.1, lateral: 1.2, squatSide: 0.7, knee: 0.8, press: 0.6, chop: 1.2, tiptoe: 0.3, bag: 1.4, ropes: 0.8, heavy: 2.2, sled: 0.5, barrage: 1.8 },
+    weights: { jab: 1.5, swing: 1.8, hammer: 1.5, trace: 0.4, sweep: 0.6, power: 1.6, low: 1.1, pair: 0.9, duck: 1.1, lateral: 1.2, squatSide: 0.7, knee: 0.8, press: 0.6, chop: 1.2, tiptoe: 0.3, kettle: 1.0, bag: 1.4, ropes: 0.8, heavy: 2.2, sled: 0.5, barrage: 1.8 },
   },
   finale: {
     name: 'THE FINALE', blurb: 'everything you have - your best heart-raisers come more often', sky: 0x09130f, charge: true, learned: true,

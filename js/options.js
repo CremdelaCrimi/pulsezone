@@ -114,8 +114,9 @@ export class OptionsPanel {
     label('More'); button('move-power', 'Power', 175, 140, s.moves.power && s.gameType === 'punch'); button('move-pair', 'Squat+punch', 325, 200, s.moves.pair);
     button('move-sweep', '2 ropes', 535, 140, s.moves.sweep); button('move-acts', 'Acts', 685, 130, s.moves.acts);
     button('move-boss', 'Guardian', 825, 150, s.moves.boss && s.moves.program); y += R; // v58: the boss on the week's last workout (needs the week plan)
-    label('Body'); button('move-knee', 'Knee', 175, 150, s.moves.knee); button('move-press', 'Press', 335, 150, s.moves.press);
-    button('move-chop', 'Chop', 495, 150, s.moves.chop); button('move-tiptoe', 'Tiptoe', 655, 150, s.moves.tiptoe); button('move-charge', 'Charge', 815, 160, s.moves.charge); y += R;
+    label('Body'); button('move-knee', 'Knee', 175, 120, s.moves.knee); button('move-press', 'Press', 305, 125, s.moves.press);
+    button('move-chop', 'Chop', 440, 115, s.moves.chop); button('move-tiptoe', 'Tiptoe', 565, 130, s.moves.tiptoe);
+    button('move-kettle', 'Swing', 705, 120, s.moves.kettle); button('move-charge', 'Charge', 835, 140, s.moves.charge); y += R; // v62: hammer swing
     label('Bursts'); button('move-bag', 'Speed', 175, 150, s.moves.bag); button('move-ropes', 'Ropes', 335, 150, s.moves.ropes);
     button('move-heavy', 'Heavy', 495, 150, s.moves.heavy); button('move-sled', 'Sled', 655, 150, s.moves.sled); button('move-barrage', 'Missiles', 815, 160, s.moves.barrage); y += R;
     label('Walls'); button('move-duck', 'Duck', 175, 110, s.moves.duck); button('move-squatSide', 'Side squat', 295, 170, s.moves.squatSide);
@@ -135,7 +136,7 @@ export class OptionsPanel {
       label('Test 2'); button('test-heavy', 'Heavy', 175, 126); button('test-sled', 'Sled', 309, 126); button('test-barrage', 'Missiles', 443, 126);
       button('test-bag', 'Speed', 577, 126); button('test-ropes', 'Ropes', 711, 126); button('test-wall', 'Walls', 845, 130); y += R;
       label('Test 3'); button('test-press', 'Press', 175, 150); button('test-chop', 'Chop', 335, 150); button('test-tiptoe', 'Tiptoe', 495, 150); button('test-charge', 'Charge', 655, 160); button('test-boss', 'Guardian', 825, 150); y += R;
-      label('Test 4'); button('test-kneelab', 'Knee lab (75 s)', 175, 260); y += R; // v61: what the headset can tell about your legs
+      label('Test 4'); button('test-kneelab', 'Knee lab (75 s)', 175, 260); button('test-kettle', 'Hammer swing', 445, 220); button('test-stance', 'Stance', 675, 150); y += R; // v61: what the headset can tell about your legs
       label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Rep missed', 385, 200, false);
       button('note-fast', 'Too fast', 595, 180, false); button('note-great', 'Felt great', 785, 190, false);
     }

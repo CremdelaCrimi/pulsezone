@@ -8,8 +8,8 @@
 // running (summary: null), a 20-second test. A card with a few dashes on it beats a share button
 // that does nothing, so nothing here throws on a thin record and every string is fitted to the card.
 // node test/card.test.mjs checks that with a fake canvas.
-import { summarizeWorkout } from './core.js?v61';
-import { latestRecord } from './tcx.js?v61';
+import { summarizeWorkout } from './core.js?v62';
+import { latestRecord } from './tcx.js?v62';
 
 export const CARD_W = 1080, CARD_H = 1350; // 4:5 portrait: the tallest picture a feed shows uncropped
 
