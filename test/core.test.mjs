@@ -537,12 +537,12 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
 
 {
   console.log('\n== v54: wall-ball rounds, charge & coast, star reach');
-  check(stationHold('press', 0) === WALLBALL.minSeconds && stationHold('press', 1) === WALLBALL.maxSeconds && stationHold('knee', 1) === STATIONS.knee.hold, 'a wall-ball round lasts 20 s easy, 30 s at full intensity; other stations unchanged');
-  check(wallBallBeat(0) === 3.2 && Math.abs(wallBallBeat(1) - 2.2) < 1e-9 && wallBallBeat(0.5) < wallBallBeat(0.2), 'the beat ladders from 3.2 s to 2.2 s per rep');
-  const g20 = wallBallGoal(20), g30 = wallBallGoal(30);
-  check(g20 >= 6 && g20 <= 8 && g30 >= 10 && g30 <= 12, `a round asks for ~7 (20 s) to ~11 (30 s) reps: ${g20}, ${g30}`);
+  check(stationHold('press', 0) === WALLBALL.minSeconds && stationHold('press', 1) === WALLBALL.maxSeconds && stationHold('knee', 1) === STATIONS.knee.hold, 'a wall-ball round lasts 10 s easy, 15 s at full intensity (v60); other stations unchanged');
+  check(wallBallBeat(0) === 2.8 && Math.abs(wallBallBeat(1) - 2.2) < 1e-9 && wallBallBeat(0.5) < wallBallBeat(0.2), 'the beat ladders from 2.8 s to 2.2 s per rep');
+  const g10 = wallBallGoal(10), g15 = wallBallGoal(15);
+  check(g10 >= 3 && g10 <= 4 && g15 >= 5 && g15 <= 6, `a short round asks for ~3 (10 s) to ~5 (15 s) reps: ${g10}, ${g15}`);
   const lp = lanePlan('press', { now: 0, speed: 4, intensity: 1 });
-  check(Math.abs(lp.end - ((14 - STATION_STOP) / 4 + 30 + 0.5)) < 1e-9, 'the lane is booked for the whole round');
+  check(Math.abs(lp.end - ((14 - STATION_STOP) / 4 + 15 + 0.5)) < 1e-9, 'the lane is booked for the whole round');
   const base = { phase: 'Training', status: 'Below', bpm: 100, target: 120, trainingT: 120, now: 200, readyAt: 0 };
   check(chargeWanted(base), 'charge: well below the zone in training starts one');
   check(!chargeWanted({ ...base, bpm: 112 }) && !chargeWanted({ ...base, climbing: true }) && !chargeWanted({ ...base, trainingT: 30 })
@@ -649,9 +649,9 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
   for (let f = 0; f <= 1.0001; f += 0.01) { const b = wallBallBeat(f); if (b > prev + 1e-12) mono = false; prev = b; }
   check(mono, 'the beat only ever gets faster through a round (never steps back down mid-round)');
   check(wallBallBeat(-0.5) === WALLBALL.slowBeat && wallBallBeat(1.5) === WALLBALL.fastBeat && wallBallBeat(9) === WALLBALL.fastBeat,
-    'max tempo cap: never faster than one rep per 2.2 s, even if the round runs over; never slower than 3.2 s');
+    'max tempo cap: never faster than one rep per 2.2 s, even if the round runs over; never slower than 2.8 s');
   let goalsMono = true, beatsMatch = true, fits = true;
-  for (let secs = 20; secs <= 30; secs += 0.5) {
+  for (let secs = 10; secs <= 15; secs += 0.5) {
     const need = wallBallGoal(secs);
     if (need < wallBallGoal(secs - 0.5)) goalsMono = false;
     // The game's beat clock (updateStations): first beat one slow beat after arrival, then
@@ -662,13 +662,13 @@ console.log('\n== Adaptive challenge: activity mix, stuck boost, learning, music
     if (need * WALLBALL.fastBeat > secs) fits = false;
   }
   check(goalsMono, 'a longer round never asks for fewer reps');
-  check(beatsMatch, 'reps asked for = beats that actually tick during the round (20-30 s)');
+  check(beatsMatch, 'reps asked for = beats that actually tick during the round (10-15 s)');
   check(fits, 'the goal always fits even at the fastest tempo');
   check(WALLBALL.onBeat * 2 < WALLBALL.fastBeat, 'the ON THE BEAT window (0.6 s each side) never covers two beats, even at the top tempo');
   check(wallBallGoal(0) === 0 && wallBallGoal(-3) === 0 && wallBallGoal(NaN) === 0 && wallBallGoal(Infinity) === 0,
     'zero / negative / NaN / endless round asks for 0 reps (0, NaN and Infinity used to hang the page)');
-  check(stationHold('press', NaN) === 25 && stationHold('press', undefined) === 25 && stationHold('press', -1) === 20 && stationHold('press', 7) === 30,
-    'a bad intensity still gives a 20-30 s round (NaN used to make it endless)');
+  check(stationHold('press', NaN) === 12.5 && stationHold('press', undefined) === 12.5 && stationHold('press', -1) === 10 && stationHold('press', 7) === 15,
+    'a bad intensity still gives a 10-15 s round (NaN used to make it endless)');
 }
 
 {

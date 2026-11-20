@@ -2,7 +2,7 @@
 // a level fed by minutes in your zone, badges, the ghost of your last run and what the recovery
 // number means. Like core.js: no DOM, no three.js and no storage. The game loads and saves; these
 // functions only read what they are handed, so node test/progress.test.mjs can check every rule.
-import { weekStart, weekSummary, WEEK_GOAL, PLAN_SHAPES } from './core.js?v59';
+import { weekStart, weekSummary, WEEK_GOAL, PLAN_SHAPES } from './core.js?v60';
 
 const DAY = 86400000;
 const WEEK = 7 * DAY;

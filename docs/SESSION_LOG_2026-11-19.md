@@ -70,3 +70,16 @@ Against the 17:31 v55 run (Waves, 7 of 15 min, 18% in zone, avg 112, peak 132): 
 Still slow to warm up: below the zone for the first ~4.5 min of training (96 -> 118); first 125 at 4:49. After that it tracked the waves well (minutes 5-12: 65-95% in zone per minute), with one overshoot to 142-150 at minutes 12-13 (target ~134 there).
 
 Cool-down: HR barely fell, 130 -> 127 in the first minute, 124 at the end. Ask Gio what he was doing in the cool-down (still moving? the guided reaches?).
+
+## v60 (from Gio's notes on the v59 run; not yet pushed)
+
+Gio: the voice "sounded fast but decent for now" (he'll look for a DJ-style voice with more energy himself). The squat + press is what drives his heart rate highest, "but it's asking me to do it for 30 seconds - do less and switch it up, some of those, some of the ropes". He doesn't like the dashed line from the low orb to the next hook.
+
+- Wall-ball rounds 10 s (easy) to 15 s (full intensity), was 20-30 s; beat ladders 2.8 s -> 2.2 s (was 3.2 -> 2.2), so 3-5 reps a round.
+- After a round the battle ropes come straight in (the speed bag if the ropes are off or cooling down): a short circuit. Logged as a `circuit` event.
+- The dashed line between a pair's low orb and its punch-up / hook orb is gone.
+- Cache tags -> `?v60`.
+
+Tests: all 7 suites pass (wall-ball checks moved to the 10-15 s round). Emulator: a forced round ran 13.2 s and asked for 5 reps; the ropes arrived ~4 s after the round ended (the ball's flight), then the mix carried on; no errors besides PeerJS's "ID taken" (another tab).
+
+Rhythm idea (Gio): moves on the beat of the song, the song's tempo rising and falling with the heart-rate plan. Not built yet; see the reply in this session.

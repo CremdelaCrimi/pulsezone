@@ -15,17 +15,17 @@ import {
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
   hitTier, HEAVY_BONUS, posePoints, poseHeld, POSE_RING_R, POSE_HOLD,
-} from './core.js?v59';
-import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v59';
-import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v59';
-import { BossView } from './bossview.js?v59';
-import { WorldView } from './worlds.js?v59';
-import { VoiceCoach, VOICE_PACKS } from './coach.js?v59';
+} from './core.js?v60';
+import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v60';
+import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v60';
+import { BossView } from './bossview.js?v60';
+import { WorldView } from './worlds.js?v60';
+import { VoiceCoach, VOICE_PACKS } from './coach.js?v60';
 import { HostLink } from './link.js?v9';
-import { AudioEngine } from './audio.js?v59';
+import { AudioEngine } from './audio.js?v60';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v59';
-import { loadTuning, createDevPanel } from './dev.js?v59';
+import { OptionsPanel } from './options.js?v60';
+import { loadTuning, createDevPanel } from './dev.js?v60';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -643,7 +643,6 @@ const MAT = {
   powerL: new THREE.MeshStandardMaterial({ color: HAND_COLOR.left, emissive: HAND_COLOR.left, emissiveIntensity: 0.75, roughness: 0.25, metalness: 0.3, flatShading: true }),
   powerR: new THREE.MeshStandardMaterial({ color: HAND_COLOR.right, emissive: HAND_COLOR.right, emissiveIntensity: 0.75, roughness: 0.25, metalness: 0.3, flatShading: true }),
   shell: new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 }),
-  pairLink: new THREE.LineDashedMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, dashSize: 0.12, gapSize: 0.08 }),
 };
 const powerGeo = new THREE.IcosahedronGeometry(1, 0);
 const powerShellGeo = new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(1.35, 0));
@@ -835,12 +834,6 @@ function spawnOrb(head, standing, activity, opts = {}) {
   }
   let guide = null;
   if (swing) { guide = swingGuide(swing, hand); group.add(guide.group); }
-  if (opts.link) { // dashed line back to the first orb of a pair: "low, then up"
-    const pts = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(...opts.link)];
-    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), MAT.pairLink);
-    line.computeLineDistances();
-    group.add(line);
-  }
   scene.add(group);
   const orb = {
     group, mesh, shell, baseMat, r, hand, swing, guide, activity, power, counter: !!opts.counter, speed: opts.speed ?? d.orbSpeed, minPunch: d.minPunchSpeed,
@@ -864,6 +857,7 @@ function spawnHammers(head, standing) {
 /**
  * Squat, then reach up: a low orb for one hand, then a high orb for the other hand about 0.85 s
  * later (it flies in behind the first). Like a squat jump without leaving the floor.
+ * v60: no dashed line between the two any more (Gio: "that doesn't need to be there").
  */
 function spawnPair(head, standing, finish = 'up') {
   const d = difficulty;
@@ -879,7 +873,6 @@ function spawnPair(head, standing, finish = 'up') {
   spawnOrb(head, standing, 'pair', {
     x: highX, y: highY, hand: highHand, behind: gap, speed: d.orbSpeed,
     swing: settings.gameType !== 'punch' ? null : finish === 'hook' ? (highHand === 'right' ? 'left' : 'right') : 'up',
-    link: [lowX - highX, lowY - highY, gap],
   });
   say(finish === 'hook' ? 'Squat... then HOOK!' : 'Squat... then PUNCH UP!');
 }
@@ -1062,6 +1055,13 @@ function finishRound(s) {
     audio.sfx('streak', { level: 3 }); pulseBoth(0.9, 120);
   } else if (pct >= 0.5) say(`Round done: ${s.reps}/${s.need} reps - keep the pace next time!`, 2);
   else { if (!s.reps) score.miss(); say(s.reps ? `Round done: ${s.reps}/${s.need} - squat, drive, press!` : 'Missed the round - next one!', 2); }
+  // v60: short rounds that switch it up - the battle ropes come straight after (the speed bag if the
+  // ropes are off or cooling down). The burst waits until the ball has flown and the lane is clear.
+  if (controller.phase === Phase.Training && !pendingBurst) {
+    const en = enabledActivities(true);
+    const next = en.ropes ? 'ropes' : en.bag ? 'bag' : null;
+    if (next) { trySpawn(next); logEvent('circuit', { after: s.key, next }); }
+  }
 }
 function stationNag(s, text) { if (gameTime - s.nagAt > 2) { s.nagAt = gameTime; say(text, 2); } }
 function stationStep(s, xr, head) {

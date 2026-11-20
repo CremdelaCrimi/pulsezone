@@ -7,7 +7,7 @@
 // Voice packs (v59): a second clip bank (assets/voice-eleven, ElevenLabs placeholder takes) layered
 // over the Windows one. A line the pack doesn't have plays from the Windows bank, so a pack can be
 // partial. Board: Sound row -> voice name.
-import { PHRASES, CUES, cueId, PRELOAD } from './coach-lines.js?v59';
+import { PHRASES, CUES, cueId, PRELOAD } from './coach-lines.js?v60';
 
 const GAP = { 1: 1.0, 2: 3.5, 3: 6 }; // seconds between lines by tier (1 = do this now, 2 = news, 3 = praise)
 const CUE_SET = new Set(CUES);

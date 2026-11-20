@@ -931,12 +931,13 @@ export const STATIONS = Object.freeze({
   tiptoe: { hold: 6, reps: 4 },  // alternating hands
 });
 /**
- * Wall-ball rounds (Morty, 2026-11-17: "three reps is a taster; thirty seconds is a heart-rate
- * event"): squat -> drive up -> press overhead, continuously for 20 s (easy) to 30 s (full
- * intensity), on a beat that ladders from one rep every 3.2 s to one every 2.2 s across the round.
- * Stacks the three biggest heart-rate dials: legs driving up, arms overhead, and cadence.
+ * Wall-ball rounds: squat -> drive up -> press overhead, continuously, on a beat that ladders from
+ * one rep every 2.8 s to one every 2.2 s across the round. Stacks the three biggest heart-rate dials:
+ * legs driving up, arms overhead, and cadence. v60 (Gio's first v59 run: "it brings me the highest,
+ * but 30 seconds is too long - do less and switch it up"): 10 s (easy) to 15 s (full intensity),
+ * then the battle ropes come next (game.js finishRound), so it's a short circuit, not a grind.
  */
-export const WALLBALL = Object.freeze({ minSeconds: 20, maxSeconds: 30, slowBeat: 3.2, fastBeat: 2.2, onBeat: 0.6 });
+export const WALLBALL = Object.freeze({ minSeconds: 10, maxSeconds: 15, slowBeat: 2.8, fastBeat: 2.2, onBeat: 0.6 });
 /** Seconds a station waits once stopped (the wall-ball round scales with intensity). */
 // A non-number intensity (NaN) counts as the default 0.5, so a round always has a finite length.
 export const stationHold = (key, intensity = 0.5) => (key === 'press' ? lerp(WALLBALL.minSeconds, WALLBALL.maxSeconds, clamp01(Number.isFinite(intensity) ? intensity : 0.5)) : STATIONS[key].hold);
