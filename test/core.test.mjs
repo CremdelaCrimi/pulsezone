@@ -796,5 +796,84 @@ console.log('\n== v56: tree chop, slalom, duck-and-weave missiles');
   check(ST.kettle && lp('kettle', { now: 0, speed: 3, intensity: 0.5 })?.kind === 'solo', 'hammer swing is a station with a lane slot');
   check(ACTIVITIES.some((a) => a.key === 'kettle' && a.kind === 'station') && SPOTLIGHT_MOVES.includes('kettle'), 'hammer swing is in the mix and can be a spotlight');
 }
+// ---- v63: pace blocks, one-sided tree chop, arm jacks
+{
+  const { PACES, PACE_LEAD, PACE_GRACE, PACE_LAYOUTS, paceBlocks, paceAt, paceOffset, paceStatus, treeCut, pickTilt, tiltMatches, TREE_TILTS, TREE_SIDE, TREE_CHOP: TC,
+    armJack, jackHeight, jackBeat, JACKS, STATIONS: ST, ZoneController: ZC, Phase: PH, Zone: Z } = await import('../js/core.js');
+  console.log('\n== v63: pace blocks, one-sided tree chop, arm jacks');
+  for (const shape of ['steady', 'waves', 'build']) {
+    const p = paceBlocks(shape, 900);
+    const ok = p[0].start === 0 && Math.abs(p[p.length - 1].end - 900) < 1e-6 && p.every((b, i) => !i || Math.abs(b.start - p[i - 1].end) < 1e-9);
+    const base = p.filter((b) => b.pace === 'base').reduce((a, b) => a + b.end - b.start, 0);
+    check(ok && base >= 0.4 * 900, `${shape}: blocks tile the 15 minutes with no gaps, at least 40% at Base (${Math.round(base)} s)`);
+  }
+  check(PACE_LAYOUTS.build.filter(([k]) => k === 'allout').length === 2 && !PACE_LAYOUTS.steady.some(([k]) => k === 'allout' || k === 'recover'),
+    'Build climbs to two All outs; Steady is Base with short Pushes');
+  const p20 = paceBlocks('build', 1200);
+  check(Math.abs(p20[p20.length - 1].end - 1200) < 1e-6 && Math.abs((p20[4].end - p20[4].start) - 60) < 1e-6, 'longer workouts scale every block (20 min: the All out is 60 s)');
+  check(paceBlocks('waves', 420).length === 1 && paceBlocks('waves', 420)[0].pace === 'base' && paceBlocks('waves', 480).length > 1, 'under 8 minutes: one Base block');
+  check(paceBlocks('steady', NaN).length === 0 && paceAt([], 10) === -1 && paceOffset([], 10) === 0, 'no plan: no blocks, no offset');
+  const b = paceBlocks('build', 900); // base 0-180, push 180-300 ...
+  check(paceOffset(b, 100) === 0 && paceOffset(b, 180 - PACE_LEAD) === 0 && paceOffset(b, 180 - PACE_LEAD + 10) === 5 && paceOffset(b, 180) === 10,
+    'the target moves 30 s before a block and eases in over 20 s');
+  check(paceOffset(b, 520) === 18, 'ALL OUT is +18');
+  // Status: open bands and the grace around a change.
+  const half = 5;
+  check(paceStatus(b, 530, { bpm: 160, target: 138, half, status: Z.Above }) === Z.InZone, 'ALL OUT: above the band is on pace');
+  const rec = b.findIndex((x) => x.pace === 'recover');
+  check(paceStatus(b, b[rec].start + 40, { bpm: 95, target: 108, half, status: Z.Below }) === Z.InZone, 'RECOVER: below the band is on pace');
+  check(paceStatus(b, 100, { bpm: 108, target: 120, half, status: Z.Below }) === Z.Below, 'BASE: below the band is not on pace');
+  check(paceStatus(b, 185, { bpm: 124, target: 130, half, status: Z.Below }) === Z.InZone, 'just into PUSH: still climbing from Base counts (grace)');
+  check(paceStatus(b, 180 + PACE_GRACE + 5, { bpm: 124, target: 130, half, status: Z.Below }) === Z.Below, 'after the grace: Base pace in a Push block is below');
+  check(paceStatus(b, 170, { bpm: 132, target: 130, half, status: Z.InZone }) === Z.InZone && paceStatus(b, 170, { bpm: 122, target: 127, half, status: Z.Below }) === Z.InZone,
+    'in the 30 s lead: anywhere between the old band and the new counts');
+  // The controller: off by default; on, the target follows the blocks and on-pace time is kept per pace.
+  const run = (blocks) => {
+    const c = new ZC({ targetBpm: 120, profile: 'build', blocks, warmUpSeconds: 0, trainingSeconds: 900, safetyCeilingBpm: 170 });
+    const src = { hasReading: true, currentBpm: 120, secondsSinceLastReading: 0 };
+    const seen = {};
+    for (let t = 0; t < 900; t += 1) {
+      const plan = c.pacePlan, i = plan ? paceAt(plan, c.phaseElapsedSeconds) : -1;
+      src.currentBpm = c.phase === PH.Training ? 120 + (plan ? PACES[plan[i].pace].off : 0) : 120;
+      c.tick(src, 1);
+      if (c.phase === PH.Training) seen[Math.round(c.currentSetpoint)] = 1;
+    }
+    return { c, seen };
+  };
+  const off = run(false), on = run(true);
+  check(off.c.pacePlan === null && Object.keys(off.seen).length > 3 && on.c.pacePlan.length === 10, 'blocks off by default in the controller; on, the build plan has 10 blocks');
+  check(on.seen[138] && on.seen[130] && on.seen[108], 'with blocks the training target visits Base, Push, All out and Recover (120/130/138/108)');
+  check(on.c.paceSeconds.base > 200 && on.c.paceSeconds.push > 100 && on.c.paceSeconds.allout > 30 && on.c.paceSeconds.recover > 30, `holding each pace counts on-pace time per pace (${Object.entries(on.c.paceSeconds).map(([k, v]) => `${k} ${Math.round(v)}`).join(', ')})`);
+  // One-sided tree chop.
+  const cut = (tilt, from, to) => { const st = {}; const a = treeCut(st, { midX: from[0], midY: from[1], gap: 0.1, side: 1, tilt, t: 0 }); const r = treeCut(st, { midX: to[0], midY: to[1], gap: 0.3, side: 1, tilt, t: 0.5 }); return [a, r]; };
+  check(cut('down', [0.4, -0.15], [-0.1, -0.5]).join() === 'armed,clean', 'down cut: from over the shoulder down across = CLEAN CUT');
+  check(cut('down', [0.4, -0.15], [-0.1, -0.15])[1] === 'rough', 'down cut swung flat: still a chop, not clean');
+  check(cut('flat', [0.4, -0.38], [-0.1, -0.4]).join() === 'armed,clean', 'flat cut: straight across at chest height = CLEAN CUT');
+  check(cut('up', [0.4, -0.72], [-0.1, -0.35]).join() === 'armed,clean', 'up cut: from the hip up across = CLEAN CUT');
+  check(cut('up', [0.4, -0.15], [-0.1, -0.5])[0] === null, 'up cut: hands up high at the start spot does not arm it (start low)');
+  const st2 = {}; treeCut(st2, { midX: 0.4, midY: -0.15, gap: 0.1, side: 1, tilt: 'down', t: 0 });
+  check(treeCut(st2, { midX: 0.1, midY: -0.3, gap: 0.3, side: 1, tilt: 'down', t: TC.window + 0.1 }) === 'late', 'no swing through in time: late');
+  const st3 = {}; treeCut(st3, { midX: -0.4, midY: -0.15, gap: 0.1, side: -1, tilt: 'down', t: 0 });
+  check(treeCut(st3, { midX: 0.1, midY: -0.5, gap: 0.3, side: -1, tilt: 'down', t: 0.4 }) === 'clean', 'mirrored for a tree on the left');
+  let lowTilts = new Set(), threeRun = false;
+  for (let i = 0; i < 300; i++) lowTilts.add(pickTilt({ intensity: 0.2 }));
+  for (let i = 0; i < 300; i++) if (pickTilt({ intensity: 1, last: ['up', 'up'] }) === 'up') threeRun = true;
+  check(!lowTilts.has('up') && lowTilts.has('down') && lowTilts.has('flat') && !threeRun, 'low intensity: down and flat cuts only; never the same tilt three times running');
+  check(tiltMatches('flat', 0.1) && !tiltMatches('flat', 0.6) && tiltMatches('down', 0.7) && tiltMatches('up', -0.7), 'cut angles: flat, down and up');
+  check(ST.chop.reps === 2 * TREE_SIDE.cuts && ST.chop.hold >= 14, 'a tree-chop station is 5 cuts each side');
+  // Arm jacks.
+  const base = 1.6, sL = { x: -JACKS.x, y: base + 0.35, z: 0 }, sR = { x: JACKS.x, y: base + 0.35, z: 0 };
+  const jst = {}, at = (lx, ly, rx, ry, headY = base) => armJack(jst, { L: { x: lx, y: ly, z: 0 }, R: { x: rx, y: ry, z: 0 }, starL: sL, starR: sR, headY, base });
+  check(at(-0.34, base + 0.35, 0.34, base + 0.35) === null, 'arms already up when it arrives: no jack until they come down');
+  check(at(-0.3, base - 0.7, 0.3, base - 0.7) === 'down' && at(-0.3, base - 0.7, 0.3, base - 0.7) === null, 'arms down by your sides: ready (once)');
+  check(at(-0.3, base + 0.3, 0.3, base + 0.3) === 'jack', 'both fists up to the stars: a jack');
+  check(at(-0.34, base + 0.35, 0.34, base + 0.35) === null, 'holding them up does not count again');
+  at(-0.3, base - 0.7, 0.3, base - 0.7);
+  check(at(-0.3, base + 0.3, 0.3, base - 0.6) === null, 'one arm up only: not a jack');
+  check(at(-0.33, base + 0.34, 0.33, base + 0.34, base + 0.04) === 'toes', 'up on your toes at the top: a toes jack');
+  check(jackHeight(0.45) < 0.45 && jackHeight(2) === 0.5 && jackHeight(0) === 0.22 && jackBeat(0) > jackBeat(1), 'jack stars sit within a flat-footed reach; the beat quickens with intensity');
+  check(ST.tiptoe.reps === 5, 'arm jacks: 5 per station');
+}
+
 console.log(failures ? `\n${failures} CHECK(S) FAILED` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

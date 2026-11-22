@@ -22,10 +22,12 @@ export const MOVE_FIGS = {
   barrage: { view: 'front', prop: null, frames: [{ d: .05, h: G, b: .5 }, { d: .3, lean: -16, h: G, b: .75 }, { d: .05, h: G, b: .5 }, { d: .3, lean: 16, h: G, b: .75 }, { d: .05, h: G, b: .5 }, { d: .38, h: G, b: 1 }] },
   knee: { view: 'side', prop: 'bar', frames: [{ d: 0, rise: .02, h: [[.12, .58], [.16, .58]], f: [[0, 0], [.04, 0]], b: 1 }, { d: .02, lean: 12, h: [[.18, -.12], [.22, -.1]], f: [[0, 0], [.22, .48]], k: [null, [.34, .78]], b: 1 }] },
   press: { view: 'front', prop: 'ball', frames: [{ d: .36, h: [[-.13, -.22], [.13, -.22]], b: 1 }, { d: 0, rise: .03, h: [[-.12, .56], [.12, .56]], b: 1 }] },
-  chop: { view: 'front', prop: 'grip', frames: [{ d: .04, lean: -6, h: [[.26, .36], [.34, .4]], b: 1 }, { d: .3, lean: 10, h: [[-.32, -.72], [-.24, -.76]], b: 1 }, { d: .04, lean: 6, h: [[-.34, .4], [-.26, .36]], b: 1 }, { d: .3, lean: -10, h: [[.24, -.76], [.32, -.72]], b: 1 }] },
+  // v63 one-sided tree chop: wind up on the tree's side, chop through the tilted cut (high to low, then straight across, then low to high), back the same side.
+  chop: { view: 'front', prop: 'grip', frames: [{ d: .04, lean: -6, h: [[.26, .36], [.34, .4]], b: 1 }, { d: .3, lean: 10, h: [[-.32, -.72], [-.24, -.76]], b: 1 }, { d: .06, lean: -6, h: [[.28, -.02], [.36, 0]], b: 1 }, { d: .08, lean: 8, h: [[-.36, -.04], [-.28, -.02]], b: 1 }, { d: .3, lean: -8, h: [[.26, -.72], [.34, -.7]], b: 1 }, { d: .06, lean: 8, h: [[-.34, .3], [-.26, .32]], b: 1 }] },
   // v62 hammer swing: hinge with the hands low between the knees, then snap up with the arms out at chest height.
   kettle: { view: 'side', prop: 'grip', frames: [{ d: .12, lean: 44, h: [[.08, -.66], [.1, -.66]], b: .6 }, { d: .12, lean: 44, h: [[.08, -.66], [.1, -.66]], b: .2 }, { d: 0, h: [[.5, .02], [.52, .02]], b: .5 }, { d: 0, h: [[.5, .02], [.52, .02]], b: .3 }] },
-  tiptoe: { view: 'front', prop: 'star', frames: [{ d: 0, h: [[-.2, -.5], [.2, -.5]], b: .5 }, { d: 0, rise: .06, h: [[-.2, -.5], [.16, .64]], b: 1 }, { d: 0, h: [[-.2, -.5], [.2, -.5]], b: .5 }, { d: 0, rise: .06, h: [[-.16, .64], [.2, -.5]], b: 1 }] },
+  // v63 arm jacks (the 'tiptoe' station): both fists from your sides up to the two stars, on the beat.
+  tiptoe: { view: 'front', prop: 'star', frames: [{ d: 0, h: [[-.24, -.56], [.24, -.56]], b: .5 }, { d: 0, rise: .04, h: [[-.34, .5], [.34, .5]], b: .5 }] },
   duck: { view: 'front', prop: 'duckbar', frames: [...hold({ d: .02, h: G }, 1), ...hold({ d: .42, h: G }, 1)] },
   squatSide: { view: 'front', prop: null, frames: [{ d: .03, h: G, b: .75 }, { d: .32, lean: -14, h: G, b: .75 }, { d: .03, h: G, b: .75 }, { d: .32, lean: 14, h: G, b: .75 }] },
   lean: { view: 'front', prop: null, frames: [{ d: .02, h: G, b: .75 }, { d: .04, lean: -22, h: G, b: .75 }, { d: .02, h: G, b: .75 }, { d: .04, lean: 22, h: G, b: .75 }] },

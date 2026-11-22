@@ -102,8 +102,9 @@ export class OptionsPanel {
     const warm = s.warmUp === 0 ? 'Off' : s.warmUp < 60 ? `${s.warmUp} s` : `${+(s.warmUp / 60).toFixed(1)} min`;
     label('Warm-up'); button('warmup-', '−', 520, 100); value(warm, 630, 230); button('warmup+', '+', 870, 100); y += R;
     label('Workout length'); button('minutes-', '−', 520, 100); value(`${s.minutes} min`, 630, 230); button('minutes+', '+', 870, 100); y += R;
-    label('Workout shape'); button('shape-plan', 'Week plan', 300, 170, s.moves.program); button('shape-steady', 'Steady', 480, 150, !s.moves.program && s.profile === 'steady');
-    button('shape-waves', 'Waves', 640, 150, !s.moves.program && s.profile === 'waves'); button('shape-build', 'Build', 800, 150, !s.moves.program && s.profile === 'build'); y += R;
+    label('Workout shape'); button('shape-plan', 'Week plan', 300, 160, s.moves.program); button('shape-steady', 'Steady', 470, 130, !s.moves.program && s.profile === 'steady');
+    button('shape-waves', 'Waves', 610, 120, !s.moves.program && s.profile === 'waves'); button('shape-build', 'Build', 740, 110, !s.moves.program && s.profile === 'build');
+    button('move-blocks', 'Blocks', 860, 115, s.moves.blocks); y += R; // v63: pace blocks (Base / Push / All out / Recover)
     label('Heart rate from'); button('src-phone', 'Phone', 520, 215, s.source === 'phone'); button('src-sim', 'Simulator', 755, 215, s.source === 'sim'); y += R;
     label('Game type'); button('mode-punch', 'Punch', 520, 215, s.gameType === 'punch'); button('mode-touch', 'Touch', 755, 215, s.gameType === 'touch'); y += R;
     // Moveset: tap to switch each move on/off (highlighted = on). v61: or pick them with previews.
@@ -115,7 +116,7 @@ export class OptionsPanel {
     button('move-sweep', '2 ropes', 535, 140, s.moves.sweep); button('move-acts', 'Acts', 685, 130, s.moves.acts);
     button('move-boss', 'Guardian', 825, 150, s.moves.boss && s.moves.program); y += R; // v58: the boss on the week's last workout (needs the week plan)
     label('Body'); button('move-knee', 'Knee', 175, 120, s.moves.knee); button('move-press', 'Press', 305, 125, s.moves.press);
-    button('move-chop', 'Chop', 440, 115, s.moves.chop); button('move-tiptoe', 'Tiptoe', 565, 130, s.moves.tiptoe);
+    button('move-chop', 'Chop', 440, 115, s.moves.chop); button('move-tiptoe', 'Jacks', 565, 130, s.moves.tiptoe);
     button('move-kettle', 'Swing', 705, 120, s.moves.kettle); button('move-charge', 'Charge', 835, 140, s.moves.charge); y += R; // v62: hammer swing
     label('Bursts'); button('move-bag', 'Speed', 175, 150, s.moves.bag); button('move-ropes', 'Ropes', 335, 150, s.moves.ropes);
     button('move-heavy', 'Heavy', 495, 150, s.moves.heavy); button('move-sled', 'Sled', 655, 150, s.moves.sled); button('move-barrage', 'Missiles', 815, 160, s.moves.barrage); y += R;
@@ -135,7 +136,7 @@ export class OptionsPanel {
       button('test-knee', 'Knee', 335, 150); button('test-sweep', '2 ropes', 495, 150); button('test-hammer', 'Hammer', 655, 150); button('test-combo', 'Combo', 815, 160); y += R;
       label('Test 2'); button('test-heavy', 'Heavy', 175, 126); button('test-sled', 'Sled', 309, 126); button('test-barrage', 'Missiles', 443, 126);
       button('test-bag', 'Speed', 577, 126); button('test-ropes', 'Ropes', 711, 126); button('test-wall', 'Walls', 845, 130); y += R;
-      label('Test 3'); button('test-press', 'Press', 175, 150); button('test-chop', 'Chop', 335, 150); button('test-tiptoe', 'Tiptoe', 495, 150); button('test-charge', 'Charge', 655, 160); button('test-boss', 'Guardian', 825, 150); y += R;
+      label('Test 3'); button('test-press', 'Press', 175, 150); button('test-chop', 'Chop', 335, 150); button('test-tiptoe', 'Jacks', 495, 150); button('test-charge', 'Charge', 655, 160); button('test-boss', 'Guardian', 825, 150); y += R;
       label('Test 4'); button('test-kneelab', 'Knee lab (75 s)', 175, 260); button('test-kettle', 'Hammer swing', 445, 220); button('test-stance', 'Stance', 675, 150); y += R; // v61: what the headset can tell about your legs
       label('Note'); button('note-slam', 'Slam missed', 175, 200, false); button('note-guard', 'Rep missed', 385, 200, false);
       button('note-fast', 'Too fast', 595, 180, false); button('note-great', 'Felt great', 785, 190, false);

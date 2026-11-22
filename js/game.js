@@ -11,24 +11,25 @@ import {
   summarizeWorkout, updateBests, MIN_RECORD_SECONDS, SLAM_BOX, SLAM_GAP, fistSlams, slamTogether,
   SHIFT, shiftWanted, shiftOffsetAt, breathAt, sensorLooksFlat, SPOTLIGHT, SPOTLIGHT_NAMES, spotlightDue, pickSpotlight, availableCombos, comboGap, comboChance, comboPlan,
   STATIONS, STATION_STOP, STATION_WINDOW, HAMMER_GAP, kneeGrab, kneePulled, pressLoaded, pressDone, chopSwing, TREE_CHOP, SLALOM, slalomCount, BOMB_VOLLEY, barrageVolleys, tiptoeReached, tiptoeHeight,
+  treeCut, pickTilt, TREE_TILTS, TREE_SIDE, armJack, jackHeight, jackBeat, JACKS,
   kettleSwing, numberSteps, pickNumberCombo, STANCE, PUNCH_NAMES,
-  stationHold, wallBallBeat, wallBallGoal, WALLBALL, ACTS, actPlan, actAt, actWeights, weekSummary, weekDots, PLAN_SHAPES, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
+  stationHold, wallBallBeat, wallBallGoal, WALLBALL, ACTS, actPlan, actAt, actWeights, PACES, PACE_LEAD, paceAt, weekSummary, weekDots, PLAN_SHAPES, CHARGE, chargeWanted, predictPeak, coastOver, landingVerdict,
   minPunchTravel, powerPunchSpeed, punchPower, bagPoints, ROPE_PUMP_SPEED, ROPE_HARD, ROPE_MAX, ROPE_TIER_MULT, ropeTier,
   lanePlan, laneFree, SPAWN_DISTANCE, COUNTER_DISTANCE,
   hitTier, HEAVY_BONUS, posePoints, poseHeld, POSE_RING_R, POSE_HOLD,
-} from './core.js?v62';
-import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v62';
-import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v62';
-import { BossView } from './bossview.js?v62';
-import { WorldView } from './worlds.js?v62';
-import { VoiceCoach, VOICE_PACKS } from './coach.js?v62';
+} from './core.js?v63';
+import { todayWorkout, actTitles, levelFor, levelUp, trailFor, trailUnlocked, BADGES, newBadges, ghostTrace, ghostDelta, ghostLabel, recoveryStory } from './progress.js?v63';
+import { BOSS, newBoss, bossTick, bossHit, bossLanding, bossSummary } from './boss.js?v63';
+import { BossView } from './bossview.js?v63';
+import { WorldView } from './worlds.js?v63';
+import { VoiceCoach, VOICE_PACKS } from './coach.js?v63';
 import { HostLink } from './link.js?v9';
-import { AudioEngine } from './audio.js?v62';
+import { AudioEngine } from './audio.js?v63';
 import { HeartThermometer } from './thermo.js?v7';
-import { OptionsPanel } from './options.js?v62';
-import { loadTuning, createDevPanel } from './dev.js?v62';
-import { KneeLab } from './kneelab.js?v62';
-import { MovePicker } from './movepicker.js?v62';
+import { OptionsPanel } from './options.js?v63';
+import { loadTuning, createDevPanel } from './dev.js?v63';
+import { KneeLab } from './kneelab.js?v63';
+import { MovePicker } from './movepicker.js?v63';
 
 const params = new URLSearchParams(location.search);
 const SMOKE = params.has('smoke');            // automated play-through for testing
@@ -91,6 +92,7 @@ const settings = {
     charge: true, // charge and coast: an all-out 30 s, then land in your zone
     acts: true,    // the workout in themed chapters of ~4 min (v55)
     program: true, // weekly plan: 3 workouts a week, Steady -> Waves -> Build (picks the shape)
+    blocks: true,  // v63 pace blocks: the shape becomes timed Base / Push / All out / Recover blocks
     boss: true,    // the Guardian (v58): a heart-rate boss on the week's last planned workout
     bag: true, ropes: true, heavy: true, sled: true, barrage: true, duck: true, squatSide: true, lean: true, pillar: true,
     pose: true,   // pose walls (v57): hold a Y / T / squat-press shape while a body-shaped wall slides past
@@ -111,9 +113,10 @@ const MOVE_LABELS = {
   jab: 'Punches', low: 'Squat punches', swing: 'Hooks & uppercuts', power: 'Power orbs', pair: 'Squat then punch up', guard: 'Guard & counter', hammer: 'Hammer fists',
   trace: 'Rope tracing', sweep: 'Two-hand rope', bag: 'Speed bag', ropes: 'Battle ropes', heavy: 'Heavy bag', sled: 'Sled run', barrage: 'Dodge barrage (missiles)',
   duck: 'Duck', squatSide: 'Side squat', lean: 'Lean left/right', pillar: 'Centre pillar', shift: 'Side shifts (step left/right)', pose: 'Pose walls (hold a Y, a T, or a squat + press)',
-  knee: 'Pull-down knee drive', press: 'Wall-ball rounds', chop: 'Woodchopper', tiptoe: 'Tiptoe reach', kettle: 'Hammer swing (hinge, grab low, swing it up onto the bag)',
+  knee: 'Pull-down knee drive', press: 'Wall-ball rounds', chop: 'Tree chop (one side, tilted cuts, 5 each side)', tiptoe: 'Arm jacks (x5 on the beat)', kettle: 'Hammer swing (hinge, grab low, swing it up onto the bag)',
   charge: 'Charge & coast (all out, then land in your zone)',
   acts: 'Acts (the workout in ~4-minute chapters)', program: 'Weekly plan (3 a week: Steady, Waves, Build; each day has a name)',
+  blocks: 'Pace blocks (Base / Push / All out / Recover, instead of one zone)',
   boss: 'The Guardian (a boss on the last workout of the week: your hits only count in your zone)',
 };
 /** Which activities the moveset allows right now (forSpawn: also respect burst cooldowns). */
@@ -407,6 +410,7 @@ function startWorkout() {
     ki: tuning.controller.ki * ch.ki,
     targetBpm: settings.targetBpm,
     profile: workoutShape,
+    blocks: !!settings.moves.blocks,
     safetyCeilingBpm: Math.min(maxBpm * 0.9, settings.targetBpm + 35),
     warmUpSeconds: settings.warmUpSeconds,
     trainingSeconds: workoutMinutes * 60,
@@ -438,6 +442,7 @@ function startWorkout() {
   applyEmberColour();
   lastPick = lastReason = ''; forceShiftNext = false; testQueued = false; comboReadyAt = 0;
   stance = 'orthodox'; stanceNext = null; lastNumbers = ''; stanceFeet.visible = false;
+  paceIdx = -1; paceNextIdx = -1;
   Object.assign(tstat, { slams: 0, slamHits: 0, aboveSec: 0, flatSec: 0, notes: [], landings: [] }); pendingNote = '';
   zoneStreak = 0; longestStreak = 0; streakFlash = 0; trend = trendShown = projSmooth = null; trendFor = 0;
   summaryBoard.visible = false; lastSummary = null;
@@ -530,7 +535,7 @@ function testMove(key) {
     queuedCombo = numberTemplate(pickNumberCombo({ intensity: Math.max(0.5, difficulty.intensity), swing: en.swing, last: lastNumbers }));
   }
   queuedActivity = key; queuedFor = 0; testQueued = true;
-  const names = { sweep: 'two-hand rope + slam', duck: 'duck wall', lateral: 'lean wall', squatSide: 'side-squat wall', knee: 'knee drive', press: 'ceiling press', chop: 'woodchopper', kettle: 'hammer swing', tiptoe: 'tiptoe reach' };
+  const names = { sweep: 'two-hand rope + slam', duck: 'duck wall', lateral: 'lean wall', squatSide: 'side-squat wall', knee: 'knee drive', press: 'ceiling press', chop: 'tree chop', kettle: 'hammer swing', tiptoe: 'arm jacks' };
   say(`Test: ${names[key] || key} coming${after}`, 1);
 }
 function setSound(on) { settings.sound = on; audio.setEnabled(on); $('sound').checked = on; saveSettings(); }
@@ -933,21 +938,30 @@ function stationGuide(from, to, mat) {
 }
 function disposeGuide(gd) { gd.group.parent?.remove(gd.group); gd.tube.geometry.dispose(); }
 function slideGuides(s) { for (const gd of s.p.guides || []) gd.ghost.position.lerpVectors(gd.from, gd.to, (gameTime * 0.9) % 1); }
-/** Tree chop: the lit start spot beside the shoulder on `side` (x>0 = your right), an arrow across the trunk to the other side. */
+/**
+ * One-sided tree chop (v63): the lit start spot is on `side` (x>0 = your right) at the cut's start
+ * height, the tree on the other side, the arrow runs through the tilted cut mark on the trunk to the
+ * other side. A new tilt for every cut.
+ */
+const TILT_WORD = { down: 'HIGH TO LOW', flat: 'STRAIGHT ACROSS', up: 'LOW TO HIGH' };
 function placeChop(s) {
-  const p = s.p;
-  p.home.set(p.side * 0.42, s.base - 0.3, 0.05);
+  const p = s.p, T = TREE_TILTS[p.tilt], C = TREE_SIDE;
+  p.home.set(p.side * C.startX, s.base + T.startY, 0.05);
   p.orb.position.copy(p.home);
-  p.hip.position.set(-p.side * 0.42, s.base - 0.4, 0.05); // where the swing ends (kept as 'hip' for the test hooks)
+  p.hip.position.set(-p.side * C.endX, s.base + T.endY, 0.05); // where the swing ends (kept as 'hip' for the test hooks)
   for (const gd of p.guides) disposeGuide(gd);
   p.guides = [stationGuide(p.home, p.hip.position, p.guideMat)];
   s.group.add(p.guides[0].group);
+  // The cut mark: where the swing's line crosses the trunk, at the swing's angle.
+  const f = (C.startX + C.trunkX) / (C.startX + C.endX); // the trunk is on the far side
+  p.cut.position.set(0, s.base + T.startY + f * (T.endY - T.startY), 0.09);
+  p.cut.rotation.z = Math.atan((T.endY - T.startY) / (-p.side * (C.startX + C.endX)));
 }
 const STATION_SAY = {
   knee: 'KNEE DRIVE! Grab the bar overhead, pull it down and drive your knee up',
   press: 'WALL BALL ROUND! Squat, drive up, press it to the ring - on the beat, all the way',
-  chop: 'CHOP THE TREE! Hands together by your shoulder, swing across through the trunk',
-  tiptoe: 'TIPTOE REACH! Up on your toes and touch the star',
+  chop: 'TREE CHOP! Hands together at the light, chop through the cut mark - 5 each side',
+  tiptoe: 'ARM JACKS! Arms down by your sides, then sweep both up to the stars - 5 on the beat',
   kettle: 'HAMMER SWING! Hinge down, grab it low, snap your hips and smash the bag top',
 };
 const stTmpL = new THREE.Vector3(), stTmpR = new THREE.Vector3(), stTmpH = new THREE.Vector3(), stMid = new THREE.Vector3();
@@ -984,7 +998,9 @@ function spawnStation(head, standing, key) {
     p.guides[0].group.visible = false; // shows once you're down in the squat
     group.add(p.ball, p.ring, p.guides[0].group);
   } else if (key === 'chop') {
-    p.side = chopSide; chopSide = -chopSide;
+    p.side = chopSide; chopSide = -chopSide; // the next tree starts on the other side
+    p.tilts = []; p.tilt = pickTilt({ intensity: difficulty.intensity }); p.tilts.push(p.tilt);
+    p.sideReps = 0; p.moveAt = null;
     p.orb = new THREE.Mesh(chopOrbGeo, glow()); // the start spot: hands together here
     p.orb.material.opacity = 0.7;
     p.home = new THREE.Vector3();
@@ -993,10 +1009,10 @@ function spawnStation(head, standing, key) {
     p.guides = [];
     p.swing = { armedAt: null };
     p.tree = new THREE.Group(); // the trunk stands a little beyond where your hands pass
-    p.tree.position.set(0, 0, -0.4); // 85 cm out: in view without filling it
+    p.tree.position.set(-p.side * TREE_SIDE.trunkX, 0, -0.4); // 85 cm out, on the side you chop toward (v63)
     p.tree.add(new THREE.Mesh(treeTrunkGeo, treeBarkMat), new THREE.Mesh(treeCrownGeo, treeLeafMat));
-    p.cut = new THREE.Mesh(treeCutGeo, treeCutMat); // the notch: deeper with every chop
-    p.cut.position.set(0, base - 0.35, 0.07); p.cut.scale.set(0.3, 1, 0.3);
+    p.cut = new THREE.Mesh(treeCutGeo, treeCutMat); // the tilted cut mark: deeper with every chop
+    p.cut.scale.set(1.5, 0.45, 0.3);
     p.tree.add(p.cut);
     p.axe = new THREE.Group();
     const handle = new THREE.Mesh(axeHandleGeo, treeBarkMat), headM = new THREE.Mesh(axeHeadGeo, axeMat);
@@ -1022,20 +1038,14 @@ function spawnStation(head, standing, key) {
     p.guides = [stationGuide(p.home.clone().add(new THREE.Vector3(0, 0.12, 0)), new THREE.Vector3(0, p.bagY + 0.12, -0.1), gm)]; // swing it UP and out
     group.add(p.hammer, p.bag, p.guides[0].group);
   } else {
-    const h = tiptoeHeight(reachUp);
-    p.stars = [-1, 1].map((sx) => { const m = new THREE.Mesh(tipStarGeo, stationMat); m.position.set(sx * 0.14, base + h, 0); m.add(new THREE.Mesh(tipHaloGeo, glow())); group.add(m); return m; });
-    p.next = Math.random() < 0.5 ? 0 : 1;
-    p.stars[1 - p.next].visible = false; // one star at a time, alternating hands
-    // An arrow from shoulder height up to the lit star, so the reach has somewhere to go (v54).
-    p.guideMat = glow(); p.guideMat.opacity = 0.8;
-    p.guides = [];
-    p.placeGuide = () => {
-      for (const gd of p.guides) disposeGuide(gd);
-      const star = p.stars[p.next].position;
-      p.guides = [stationGuide(new THREE.Vector3(star.x * 1.4, base - 0.25, 0.1), star.clone().setY(star.y - 0.1), p.guideMat)];
-      group.add(p.guides[0].group);
-    };
-    p.placeGuide();
+    // Arm jacks (v63, replaces the one-hand tiptoe reach; key kept): a star up and out on each side,
+    // an arrow from each hip up to it, 5 jacks on a beat.
+    const h = jackHeight(reachUp);
+    p.stars = [-1, 1].map((sx) => { const m = new THREE.Mesh(tipStarGeo, stationMat); m.position.set(sx * JACKS.x, base + h, 0.05); m.add(new THREE.Mesh(tipHaloGeo, glow())); group.add(m); return m; });
+    p.jack = { down: false }; p.flashAt = -9;
+    const gm = glow(); gm.opacity = 0.8;
+    p.guides = [-1, 1].map((sx) => stationGuide(new THREE.Vector3(sx * 0.3, base - 0.7, 0.1), new THREE.Vector3(sx * (JACKS.x - 0.02), base + h - 0.12, 0.06), gm));
+    group.add(...p.guides.map((gd) => gd.group));
   }
   const { lc, tex, label } = burstLabel();
   label.position.set(0, base - 0.3, -0.9); label.scale.setScalar(1.4); // further back, so it never blocks your view
@@ -1046,6 +1056,7 @@ function spawnStation(head, standing, key) {
     reps: 0, need: STATIONS[key].reps, stage: 0, stageAt: 0, smokeT: 0, done: false, doneAge: 0, nagAt: -9,
     round: !!STATIONS[key].round, beatAt: -9, nextBeatAt: 0, onBeat: 0,
     coach: makeMoveCoach(key), grabNear: 9, pullBest: { drop: 0, crunch: 0 },
+    beat: key === 'tiptoe', beatLen: key === 'tiptoe' ? jackBeat(difficulty.intensity) : 0, // v63: arm jacks keep a beat
   };
   if (key === 'chop') placeChop(st);
   if (st.round) { st.need = wallBallGoal(st.duration); st.coachPh = 0.3; }
@@ -1059,16 +1070,17 @@ function stationPoints(s) {
   if (s.key === 'press') return { ball: w(p.ball.position), ring: w(p.ring.position) };
   if (s.key === 'chop') return { orb: w(p.orb.position), hip: w(p.hip.position) };
   if (s.key === 'kettle') return { grip: w(p.home), top: w(p.bag.position) };
-  return { star: w(p.stars[p.next].position) };
+  return { starL: w(p.stars[0].position), starR: w(p.stars[1].position) };
 }
 function stationRep(s, at, label) {
   s.reps++;
   // Wall-ball rounds: a rep within WALLBALL.onBeat s of a beat is ON THE BEAT (worth 1.5x).
-  const onBeat = s.round && s.arrived && Math.min(Math.abs(gameTime - s.beatAt), Math.abs(s.nextBeatAt - gameTime)) <= WALLBALL.onBeat;
-  if (onBeat) { s.onBeat++; label = 'ON THE BEAT! '; }
-  logEvent('rep', { act: s.key, rep: s.reps, secs: +(gameTime - s.stageAt).toFixed(2), onBeat: s.round ? onBeat : undefined });
+  const beaty = s.round || s.beat;
+  const onBeat = beaty && s.arrived && Math.min(Math.abs(gameTime - s.beatAt), Math.abs(s.nextBeatAt - gameTime)) <= (s.round ? WALLBALL.onBeat : JACKS.onBeat);
+  if (onBeat) { s.onBeat++; label = s.round ? 'ON THE BEAT! ' : `ON THE BEAT! ${label}`; }
+  logEvent('rep', { act: s.key, rep: s.reps, secs: +(gameTime - s.stageAt).toFixed(2), onBeat: beaty ? onBeat : undefined });
   attribution.record(s.key, gameTime);
-  popText(score.hit(s.key === 'press' ? (onBeat ? 2.2 : 1.5) : 1.5, label), at, '#6dffd8');
+  popText(score.hit(beaty ? (onBeat ? 2.2 : 1.5) : 1.5, label), at, '#6dffd8');
   audio.sfx('perfect', { hand: 'left', power: 0.8 });
   pulseBoth(0.6, 60);
   shatter(at, new THREE.Vector3(0, 1, 0.3), STATION_COLOR, 0.5);
@@ -1141,15 +1153,27 @@ function stationStep(s, xr, head) {
     const gap = L.distanceTo(R);
     p.axe.visible = gap < TREE_CHOP.together + 0.1;
     if (p.axe.visible) { p.axe.position.copy(stMid); p.axe.rotation.set(0, 0, -p.side * 0.5 + stMid.x * p.side * 1.5); }
-    const r = chopSwing(p.swing, { midX: stMid.x, midY: stMid.y - s.base, gap, side: p.side, t: gameTime });
+    if (p.moveAt != null) return; // the tree is moving over to the other side
+    // v63 one-sided chop: through the tilted cut mark; the right angle is a CLEAN CUT.
+    const r = treeCut(p.swing, { midX: stMid.x, midY: stMid.y - s.base, gap, side: p.side, tilt: p.tilt, t: gameTime });
     if (r === 'armed' && s.stage === 0) grabbed();
-    else if (r === 'chop') {
-      stationRep(s, g.localToWorld(new THREE.Vector3(0, stMid.y, 0)), s.reps + 1 < s.need ? 'CHOP! Other side! ' : 'TIMBER! ');
-      const deep = 0.3 + 0.7 * Math.min(1, s.reps / s.need);
-      p.cut.scale.set(deep, 1, deep);
+    else if (r === 'clean' || r === 'rough') {
+      const last = s.reps + 1 >= s.need, sideDone = p.sideReps + 1 >= TREE_SIDE.cuts;
+      stationRep(s, g.localToWorld(new THREE.Vector3(p.tree.position.x, stMid.y, 0)), last ? 'TIMBER! ' : r === 'clean' ? 'CLEAN CUT! ' : 'CHOP! ');
+      if (r === 'clean') score.score += 10;
+      else stationNag(s, `Follow the cut - ${TILT_WORD[p.tilt].toLowerCase()}!`);
+      logEvent('cut', { tilt: p.tilt, clean: r === 'clean', slope: +(p.swing.slope ?? 0).toFixed(2), side: p.side > 0 ? 'right' : 'left' });
+      p.sideReps++;
+      p.cut.scale.set(1.5, 0.45 + 0.55 * Math.min(1, p.sideReps / TREE_SIDE.cuts), 0.3 + 0.7 * Math.min(1, p.sideReps / TREE_SIDE.cuts));
       s.stage = 0;
-      if (!s.done) { p.side = -p.side; placeChop(s); } // swing back the other way
-    } else if (r === 'late') { gaveUp(); s.stage = 0; stationNag(s, 'Swing right across the tree!'); }
+      if (!s.done) {
+        if (sideDone) { // the tree moves over: 5 more from the other side
+          p.side = -p.side; p.sideReps = 0; p.moveAt = gameTime; p.moveFrom = p.tree.position.x;
+          p.orb.visible = false; for (const gd of p.guides) gd.group.visible = false;
+          say('Other side! The tree is moving over', 2);
+        } else { p.tilt = pickTilt({ intensity: difficulty.intensity, last: p.tilts }); p.tilts.push(p.tilt); placeChop(s); }
+      }
+    } else if (r === 'late') { gaveUp(); s.stage = 0; stationNag(s, `Chop right through the cut - ${TILT_WORD[p.tilt].toLowerCase()}!`); }
   } else if (s.key === 'kettle') {
     // Hammer swing (v62): hinge + both hands together low arms it; hands up to chest height out in
     // front, standing tall, is a swing. How fast the hands rose decides SMASH or a nudge.
@@ -1171,20 +1195,15 @@ function stationStep(s, xr, head) {
       s.stage = 0;
     } else if (r === 'late') { gaveUp(); s.stage = 0; stationNag(s, 'Swing it all the way up to the bag top!'); }
   } else {
-    const star = p.stars[p.next];
-    for (const f of [L, R]) {
-      if (f.distanceTo(star.position) < 0.22) {
-        // One touch per rep: with both hands up, the other hand was already on the next star, so one
-        // reach counted 3 reps in a frame (2026-11-18 workout). Wait a beat before the next star counts.
-        if (gameTime - (p.lastTipAt ?? -9) < 0.6) break;
-        if (tiptoeReached(f, star.position, hy, s.base)) {
-          p.lastTipAt = gameTime;
-          stationRep(s, g.localToWorld(star.position.clone()), 'TIPTOE! ');
-          star.visible = false; p.next = 1 - p.next; p.stars[p.next].visible = true; p.placeGuide();
-          break;
-        }
-        stationNag(s, 'Up on your toes!');
-      }
+    // Arm jacks (v63): both fists down by your sides, then both up to their stars = a jack.
+    const r = armJack(p.jack, { L, R, starL: p.stars[0].position, starR: p.stars[1].position, headY: hy, base: s.base });
+    s.stage = p.jack.down ? 1 : 0;
+    if (r === 'down' && !s.reps) logEvent('grab', { act: s.key });
+    if (r === 'jack' || r === 'toes') {
+      p.flashAt = gameTime;
+      stationRep(s, g.localToWorld(new THREE.Vector3(0, p.stars[0].position.y, 0.05)), r === 'toes' ? 'JACK + TOES! ' : 'JACK! ');
+      if (r === 'toes') score.score += 5;
+      logEvent('jack', { toes: r === 'toes' });
     }
   }
 }
@@ -1237,6 +1256,20 @@ function updateStations(dt, xr, head) {
         continue;
       }
     }
+    if (s.key === 'chop' && s.p.moveAt != null) { // v63: the tree slides over to the other side
+      const k = Math.min(1, (gameTime - s.p.moveAt) / 0.6);
+      s.p.tree.position.x = s.p.moveFrom + (-s.p.side * TREE_SIDE.trunkX - s.p.moveFrom) * (k * k * (3 - 2 * k));
+      if (k >= 1) {
+        s.p.moveAt = null; s.p.orb.visible = true;
+        s.p.tilt = pickTilt({ intensity: difficulty.intensity, last: s.p.tilts }); s.p.tilts.push(s.p.tilt); placeChop(s);
+      }
+    }
+    if (s.beat && s.arrived && !s.done) { // v63 arm jacks: a tick on every beat, the stars pulse with it
+      if (s.nextBeatAt === 0) s.nextBeatAt = gameTime + s.beatLen;
+      if (gameTime >= s.nextBeatAt) { s.beatAt = s.nextBeatAt; s.nextBeatAt += s.beatLen; audio.sfx('bag'); }
+      const pulse = 1 + 0.35 * Math.exp(-(gameTime - s.beatAt) * 7) + 0.4 * Math.exp(-(gameTime - s.p.flashAt) * 6);
+      for (const st of s.p.stars) st.scale.setScalar(pulse);
+    }
     slideGuides(s);
     if (s.key === 'knee') s.p.kneeArrow.position.y = 0.42 + 0.06 * Math.sin(gameTime * 6);
     if (s.key === 'kettle') { // a smash jolts the bag down; the top glows brighter while you're loaded
@@ -1246,13 +1279,14 @@ function updateStations(dt, xr, head) {
     if (s.coach) { s.coach.group.visible = s.arrived; if (s.arrived) poseMoveCoach(s, head); } // v56: not while it flies in (Gio: it hid the orbs before it)
     s.label.lookAt(camera.getWorldPosition(sledTmp));
     let what = { knee: s.stage ? 'PULL DOWN + KNEE UP!' : 'GRAB THE BAR', press: s.stage ? 'PRESS IT UP!' : 'SQUAT LOW',
-      chop: s.stage ? 'SWING ACROSS!' : 'HANDS TOGETHER AT THE LIGHT', tiptoe: 'TIPTOE + TOUCH THE STAR',
+      chop: s.p.moveAt != null ? 'OTHER SIDE...' : s.stage ? `CHOP ${TILT_WORD[s.p.tilt]}!` : `HANDS AT THE LIGHT  ·  ${TILT_WORD[s.p.tilt]}`,
+      tiptoe: s.stage ? 'SWEEP UP TO BOTH STARS!' : 'ARMS DOWN BY YOUR SIDES',
       kettle: s.stage ? 'SNAP YOUR HIPS - SWING UP!' : 'HINGE DOWN + GRAB IT LOW' }[s.key];
     // Rounds: one cue, the coach's, which flips with the beat (Morty: "SQUAT LOW" and "DRIVE UP + PRESS" fought).
     if (s.round) what = `${(s.coach?.text || what).replace('DRIVE UP + PRESS', 'DRIVE UP + PRESS!')}  ·  ${Math.ceil(Math.max(0, s.duration - s.held))}s`;
     if (!renderer.xr.isPresenting) what += '  ·  click = rep'; // desktop: say what the input is (Morty)
     const left = s.arrived ? Math.max(0, s.duration - s.held) : s.duration;
-    const beatFlash = s.round && s.arrived && gameTime - s.beatAt < 0.18; // the beat has a face: the label flashes white
+    const beatFlash = (s.round || s.beat) && s.arrived && gameTime - s.beatAt < 0.18; // the beat has a face: the label flashes white
     drawBurstLabel(s, `${s.reps}/${s.need}`, what, left / s.duration, beatFlash ? '#ffffff' : s.stage ? '#7cffb0' : '#6dffd8');
   }
 }
@@ -1306,13 +1340,14 @@ const MC_KETTLE_LOW = mcPose({ // hips back, chest forward, hands low between th
   elL: [-0.1, 0.82, 0.18], elR: [0.1, 0.82, 0.18], haL: [-0.04, 0.58, 0.12], haR: [0.04, 0.58, 0.12],
 });
 const MC_KETTLE_UP = mcPose({ head: [0, 1.62, -0.02], elL: [-0.12, 1.36, 0.3], elR: [0.12, 1.36, 0.3], haL: [-0.04, 1.36, 0.58], haR: [0.04, 1.36, 0.58] });
+const MC_JACK_UP = mcRaise(mcPose({ elL: [-0.36, 1.62, 0.04], elR: [0.36, 1.62, 0.04], haL: [-0.38, 1.94, 0.06], haR: [0.38, 1.94, 0.06] }), 0.04); // arms up and out, a little rise
 const MC_TOES = mcRaise(mcPose({ elR: [0.21, 1.72, 0.03], haR: [0.15, 1.98, 0.06] }), 0.09); // right hand up (mirrored for the left)
 const MOVE_COACH = { // [phase 0..1, pose, caption from here on]
   knee: { cycle: 2.2, prop: 'bar', frames: [[0, MC_KNEE_UP, 'GRAB THE BAR'], [0.3, MC_KNEE_UP], [0.55, MC_KNEE_PULL, 'PULL DOWN + KNEE UP'], [0.75, MC_KNEE_PULL, 'BACK UP TALL'], [1, MC_KNEE_UP]] },
   press: { cycle: 2.6, prop: 'ball', frames: [[0, MC_PRESS_HOLD, 'SQUAT LOW'], [0.12, MC_PRESS_HOLD], [0.4, MC_PRESS_SQUAT], [0.5, MC_PRESS_SQUAT, 'DRIVE UP + PRESS'], [0.7, MC_PRESS_UP], [0.82, MC_PRESS_UP, 'BRING IT DOWN'], [1, MC_PRESS_HOLD]] },
   chop: { cycle: 1.6, prop: 'orb', frames: [[0, MC_CHOP_HIGH, 'HANDS BY YOUR SHOULDER'], [0.3, MC_CHOP_HIGH], [0.5, MC_CHOP_LOW, 'SWING ACROSS THE TREE'], [0.7, MC_CHOP_LOW, 'WIND UP AGAIN'], [1, MC_CHOP_HIGH]] },
   kettle: { cycle: 1.5, prop: 'orb', frames: [[0, MC_KETTLE_LOW, 'HINGE + GRAB LOW'], [0.25, MC_KETTLE_LOW], [0.5, MC_KETTLE_UP, 'SNAP HIPS - SMASH'], [0.7, MC_KETTLE_UP], [1, MC_KETTLE_LOW]] },
-  tiptoe: { cycle: 2.0, prop: 'star', frames: [[0, MC_BASE, 'UP ON YOUR TOES'], [0.2, MC_BASE], [0.5, MC_TOES, 'REACH THE STAR'], [0.75, MC_TOES], [1, MC_BASE]] },
+  tiptoe: { cycle: 1.4, prop: 'star', frames: [[0, MC_BASE, 'ARMS DOWN'], [0.15, MC_BASE], [0.5, MC_JACK_UP, 'UP TO BOTH STARS'], [0.65, MC_JACK_UP], [1, MC_BASE]] }, // v63 arm jacks
 };
 const mcFlip = (name) => (name.endsWith('L') ? name.slice(0, -1) + 'R' : name.endsWith('R') ? name.slice(0, -1) + 'L' : name);
 const mcA = new THREE.Vector3(), mcB = new THREE.Vector3();
@@ -1334,7 +1369,7 @@ function poseMoveCoach(s, head) {
   const c = s.coach, mv = MOVE_COACH[s.key];
   c.group.position.set(centerX + 0.95, 0, head.z - 3.0);
   c.group.rotation.y = -0.5;
-  const mirror = s.key === 'knee' ? kneeLeg === 'right' : s.key === 'chop' ? s.p.side < 0 : s.key === 'tiptoe' ? s.p.next === 0 : false;
+  const mirror = s.key === 'knee' ? kneeLeg === 'right' : s.key === 'chop' ? s.p.side < 0 : false;
   if (s.coachT0 === undefined) s.coachT0 = gameTime;
   const t = s.coachPh != null ? ((s.coachPh % 1) + 1) % 1 : ((gameTime - s.coachT0) % mv.cycle) / mv.cycle; // rounds: on the beat
   const f = mv.frames;
@@ -3054,6 +3089,7 @@ function updateCharge() {
   if (c.phase !== Phase.Training) { charge = null; return; }
   if (!charge) {
     if (!settings.moves.charge || phoneFallback || sensorFlat || burstActive() || pendingBurst || stations.length) return;
+    if (c.pacePlan) return; // v63: pace blocks plan the all-outs themselves
     if (actNow() && !ACTS[actNow()].charge) return; // not in the opening act: find your groove first
     if (chargeWanted({ phase: c.phase, status: c.status, bpm, target: c.currentSetpoint, climbing: trendShown === 'climbing',
       trainingT: c.phaseElapsedSeconds, now: gameTime, readyAt: chargeReadyAt })) startCharge();
@@ -3115,7 +3151,8 @@ function chargeLine() {
 
 /** The activity mix's base weights, with the spotlight move boosted while a round is on. */
 function spawnWeights() {
-  let base = actNow() ? actWeights(actNow(), attribution.w, tuning.weights) : tuning.weights;
+  const mix = paceMix() || actNow();
+  let base = mix ? actWeights(mix, attribution.w, tuning.weights) : tuning.weights;
   const feat = today && ACTIVITIES.find((x) => x.key === today.feature); // today's featured move comes up more often
   if (feat) base = { ...(base || {}), [feat.key]: ((base || {})[feat.key] ?? feat.base) * FEATURE_BOOST };
   if (!spotlight) return base;
@@ -3518,7 +3555,7 @@ function drawSummary(w, records) {
     ? `Test: slams ${tstat.slamHits}/${tstat.slams} · guards ${score.blocks}/${score.blocks + score.guardsMissed} · walls hit ${score.wallHits}/${score.wallHits + score.dodges} · bombs hit ${score.bombHits}/${score.bombHits + score.bombDodges} · above zone ${mmss(tstat.aboveSec)} · stuck sensor ${mmss(tstat.flatSec)} · notes ${tstat.notes.length}`
     : '';
   const bestLine = report ? '' : bests ? `Bests: ${bests.pct}% in zone · ${mmss(bests.streak)} streak · ${bests.score} points · ${bests.workouts} workout${bests.workouts === 1 ? '' : 's'}` : '';
-  g.fillText(report || [w.weekText || bestLine, short].filter(Boolean).join('  ·  '), W / 2, 600, W - 60);
+  g.fillText(report || [w.weekText || bestLine, paceEndLine(), short].filter(Boolean).join('  ·  '), W / 2, 600, W - 60);
   sumTex.needsUpdate = true;
 }
 
@@ -3561,7 +3598,7 @@ function updateTrend(rawDt, src) {
 let waveState = 0;
 function updateWaves() {
   const c = controller;
-  if (c.phase !== Phase.Training || c.s.profile === 'steady') { waveState = 0; return; }
+  if (c.phase !== Phase.Training || c.s.profile === 'steady' || c.pacePlan) { waveState = 0; return; }
   const off = profileOffset(c.s.profile, c.phaseElapsedSeconds, c.s.trainingSeconds);
   if (c.s.profile === 'waves') {
     const st = off > 2.5 ? 1 : off < -2.5 ? -1 : waveState;
@@ -3570,6 +3607,57 @@ function updateWaves() {
     const st = Math.floor((off + 6) / 3); // every 3 BPM up the build
     if (st > waveState) { if (waveState) { say(`BUILDING - target ${Math.round(c.currentSetpoint)}`); audio.sfx('burst'); } waveState = st; }
   }
+}
+
+// ------------------------------------------------------------------ pace blocks (v63)
+
+// Training as timed blocks (core.js PACES / paceBlocks): a call-out PACE_LEAD s before each change
+// (the target and the moves change then, since heart rate lags effort), another when the block
+// starts, and at the start of an ALL OUT the wall-ball -> ropes circuit if it's on.
+let paceIdx = -1, paceNextIdx = -1;
+const paceNow = () => { const c = controller, plan = c?.phase === Phase.Training ? c.pacePlan : null; return plan ? plan[paceAt(plan, c.phaseElapsedSeconds)] : null; };
+/** The act whose move weights to use: the block 30 s ahead (moves change early). */
+function paceMix() {
+  const c = controller, plan = c?.phase === Phase.Training ? c.pacePlan : null;
+  if (!plan) return null;
+  return PACES[plan[paceAt(plan, c.phaseElapsedSeconds + PACE_LEAD)].pace].mix;
+}
+const paceMins = (b) => { const d = Math.round(b.end - b.start); return d >= 90 ? `${+(d / 60).toFixed(1)} minutes` : `${d} seconds`; };
+function updatePace() {
+  const c = controller, plan = c.phase === Phase.Training ? c.pacePlan : null;
+  if (!plan) { paceIdx = paceNextIdx = -1; return; }
+  const t = c.phaseElapsedSeconds;
+  const i = paceAt(plan, t), j = paceAt(plan, t + PACE_LEAD);
+  if (j !== paceNextIdx && j > i && plan[j].pace !== plan[i].pace) { // heads-up: the next block, 30 s out
+    paceNextIdx = j;
+    const b = plan[j], P = PACES[b.pace];
+    const tgt = Math.round(c.s.targetBpm + P.off);
+    say(`${P.name} IN 30 s - ${b.pace === 'recover' ? 'ease off' : b.pace === 'base' ? 'settle in' : 'pick it up'} now (target ${b.pace === 'allout' ? `${tgt}+` : tgt})`, 2);
+    audio.sfx('alert');
+    logEvent('paceNext', { pace: b.pace, in: PACE_LEAD });
+  }
+  if (i === paceIdx) return;
+  const first = paceIdx < 0;
+  paceIdx = i;
+  const b = plan[i], P = PACES[b.pace];
+  const tgt = Math.round(c.s.targetBpm + P.off);
+  const band = b.pace === 'allout' ? `${tgt} and up` : b.pace === 'recover' ? `under ${tgt + c.s.zoneHalfWidth}` : `${tgt - c.s.zoneHalfWidth}-${tgt + c.s.zoneHalfWidth}`;
+  say(`${P.name} for ${paceMins(b)} - heart rate ${band}`, 1);
+  audio.sfx(b.pace === 'allout' ? 'burst' : 'streak', { level: b.pace === 'allout' ? 4 : 2 });
+  logEvent('pace', { pace: b.pace, n: i + 1, of: plan.length, secs: Math.round(b.end - b.start), first: first || undefined });
+  if (b.pace === 'allout' && !pendingBurst && !burstActive() && !stations.length) { // the all-out circuit
+    const en = enabledActivities(true);
+    const go = en.press ? 'press' : en.ropes ? 'ropes' : en.bag ? 'bag' : null;
+    if (go) trySpawn(go);
+  }
+  hudKey = '';
+}
+/** End-board line: on-pace time at each pace in today's plan. */
+function paceEndLine() {
+  const c = controller, plan = c?.pacePlan;
+  if (!plan) return '';
+  const used = Object.keys(PACES).filter((k) => plan.some((b) => b.pace === k));
+  return `On pace: ${used.map((k) => `${PACES[k].name.toLowerCase()} ${mmss(c.paceSeconds[k])}`).join(' · ')}`;
 }
 
 function updateStreak(gdt) {
@@ -3595,6 +3683,8 @@ function statusLabel(c) {
   // Heart rate lags effort by 30-40 s: say so when you're already doing the right thing.
   if (c.phase === Phase.WarmUp && c.status === Zone.InZone) return 'WARM-UP: ON PACE';
   if (charge && c.status !== Zone.SafetyBrake) return charge.stage === 'charge' ? 'CHARGE: ALL OUT' : 'COASTING';
+  const pb = c.phase === Phase.Training && c.status !== Zone.SafetyBrake && c.status !== Zone.NoSignal ? paceNow() : null;
+  if (pb) return `${PACES[pb.pace].name}: ${{ InZone: 'ON PACE', Below: trendShown === 'climbing' ? 'CLIMBING' : 'PICK IT UP', Above: trendShown === 'easing' ? 'SETTLING' : 'EASE OFF' }[c.status]}`;
   if (trendShown === 'climbing' && c.status === Zone.Below) return 'CLIMBING';
   if (trendShown === 'easing' && c.status === Zone.Above) return 'SETTLING';
   return { InZone: 'IN THE ZONE', Below: 'PICK IT UP', Above: 'EASE OFF', SafetyBrake: 'SAFETY BRAKE - SLOW DOWN', NoSignal: 'NO HEART-RATE SIGNAL' }[c.status];
@@ -3645,10 +3735,10 @@ function drawHud(xr) {
   if (!compact) { g.fillStyle = '#ffb36b'; g.font = '600 28px system-ui, sans-serif'; g.fillText(`${Math.round(kcal)} kcal`, 42, 162); } // estimated from heart rate
   g.textAlign = 'center';
 
-  const shaped = c.phase === Phase.Training && c.s.profile !== 'steady';
+  const shaped = c.phase === Phase.Training && (c.s.profile !== 'steady' || !!c.pacePlan);
   const target = c.phase === Phase.WarmUp
     ? `target ${Math.round(c.currentSetpoint)} -> ${Math.round(c.trainingTarget(0))}`
-    : shaped ? `target ${Math.round(c.currentSetpoint)} (${PROFILE_LABEL[c.s.profile]})` : `target ${c.s.targetBpm} +/-${c.s.zoneHalfWidth}`;
+    : shaped ? `target ${Math.round(c.currentSetpoint)} (${c.pacePlan ? `${paceNow() ? PACES[paceNow().pace].name.toLowerCase() : 'base'} · ${PROFILE_LABEL[c.s.profile]}` : PROFILE_LABEL[c.s.profile]})` : `target ${c.s.targetBpm} +/-${c.s.zoneHalfWidth}`;
   g.fillStyle = zc; g.font = '600 40px system-ui, sans-serif';
   g.fillText(c.phase === Phase.Finished ? statusLabel(c) : `${statusLabel(c)}  ·  ${target}`, W / 2, 230);
 
@@ -3839,6 +3929,7 @@ function setGameType(type) {
 }
 function toggleMove(key, on = !settings.moves[key]) {
   settings.moves[key] = on;
+  if (key === 'blocks' && controller) { controller.s.blocks = on; hudKey = ''; }
   saveSettings();
   syncMovesUI();
 }
@@ -3859,7 +3950,7 @@ function buildMovesUI() {
       <label><input type="radio" name="profile" value="build"> Build &amp; peak (start easy, finish hard)</label>
     </div>
     ${group('Orbs', ['jab', 'low', 'swing', 'hammer', 'power', 'pair', 'guard', 'trace', 'sweep'])}
-    ${group('Workout plan', ['program', 'acts', 'boss'])}
+    ${group('Workout plan', ['program', 'blocks', 'acts', 'boss'])}
     ${group('Whole-body moves', ['knee', 'press', 'chop', 'tiptoe', 'kettle', 'charge'])}
     ${group('Bursts (when you\'re stuck below your zone)', ['bag', 'ropes', 'heavy', 'sled', 'barrage'])}
     ${group('Walls & footwork', ['duck', 'squatSide', 'pose', 'lean', 'pillar', 'shift'])}
@@ -4475,6 +4566,7 @@ function frame(time) {
     if (sensorFlat) tstat.flatSec += gdt;
     updateStreak(gdt);
     updateWaves();
+    updatePace();
     updateSpotlight();
     updateStance(head);
     updateActs();

@@ -64,3 +64,50 @@ Gio's feedback after it:
 - Gio's one-sided tree chop with tilted cuts, and arm jacks x5 replacing the tiptoe reach.
 - Three-pace blocks (Base / Push / All out / Recover) and beat sync: waiting on a go-ahead.
 - Knee lab file from the headset.
+
+## v63 (2026-11-22, built on Gio's "keep moving with your recommendations")
+
+v62 was pushed and live on Nov 20. v63 builds the two remaining moves from Gio's designs and the pace blocks.
+It is committed locally only, not pushed yet.
+
+### Pace blocks (core.js PACES / PACE_LAYOUTS / paceBlocks / paceOffset / paceStatus; game.js updatePace)
+- Training runs in timed blocks instead of one zone. With a target of 120: BASE 115-125, PUSH 125-135 (+10),
+  ALL OUT 133 and up (+18; the safety brake still applies), RECOVER under 113 (-12).
+- Each workout shape is a block layout (15 min; other lengths scale; under 8 min it's one Base block):
+  - Steady: Base 3:00, Push 1:30, Base 3:00, Push 1:30, Base 2:30, Push 1:00, Base 2:30.
+  - Waves: Base and Push in turns, with one Recover.
+  - Build: the layout from the proposal, climbing to two 45 s All outs:
+    Base 3:00, Push 2:00, Base 2:00, Push 1:30, ALL OUT 0:45, Recover 1:15, Base 2:00, Push 1:00, ALL OUT 0:45, Base 0:45.
+- 30 s before a block: a call-out ("PUSH IN 30 s - pick it up now"). The target and the move mix change then, eased over
+  20 s, because heart rate lags effort. At the start: a voice line ("PUSH for 2 minutes - heart rate 125-135").
+- Moves follow the pace: Base uses the Groove mix, Push the Burn mix (big moves), All out the Fight mix. Each All out
+  starts with the wall-ball round, then the ropes circuit.
+- On pace: All out counts anything above its band, Recover anything below. From 30 s before a change to 30 s after it,
+  anywhere between the old band and the new one counts.
+- The scoreboard reads e.g. "PUSH: ON PACE". The end board adds "On pace: base 6:10 · push 2:40 · all out 1:05 · recover 0:50".
+- While blocks are on, automatic charges are off (the blocks plan the all-outs), and the old wave/build call-outs are off.
+- On by default. Turn it off with the Blocks button (board: Workout shape row) or the page checkbox (Workout plan).
+
+### One-sided tree chop (station 'chop'; core.js treeCut / pickTilt / TREE_TILTS / TREE_SIDE)
+- The tree stands 30 cm out on one side. You wind up on the other side at the lit spot and chop into the tilted cut
+  mark on the trunk. 5 cuts, then the tree slides over and you do 5 from the other side (10 per station, 16 s).
+- Every cut has a tilt: HIGH TO LOW (over the shoulder down to the hip), STRAIGHT ACROSS (chest height), or
+  LOW TO HIGH (from 40% intensity). The same tilt never comes three times running.
+- A swing at the cut's angle is a CLEAN CUT (+10). The wrong angle still counts, with "Follow the cut - high to low!".
+- Logged `cut` events carry tilt, clean and slope, for tuning.
+- I first put the tree on the wind-up side, 16 cm out. In the emulator it hid the scoreboard, so it moved to the side you chop toward.
+
+### Arm jacks (replace the tiptoe reach; the station keeps the key 'tiptoe' so saved settings carry over)
+- Two stars up and out (34 cm to each side), set from how high you've been seen to reach, so they're reachable
+  without going up on your toes.
+- Both fists down by your sides, then both up to the stars = a jack. 5 on a beat that quickens with intensity
+  (1.6 s to 1.15 s). ON THE BEAT pays 1.5x; up on your toes at the top earns +5 bonus points.
+- New ghost-coach pose, preview figure and picker card ("Arm jacks"). The board buttons now say Jacks.
+
+### Checks
+- All 9 suites pass; core has 36 new v63 checks (block layouts, offsets, statuses and grace; the controller visiting all four
+  paces and counting on-pace time per pace; clean, rough and late cuts for each tilt, mirrored; jacks: down, up, toes, one arm).
+- Emulator: blocks change on schedule with the 30 s heads-up. The chop and jack stations spawn at the right spots; the cut mark
+  tilts with the arrow. An 8-minute workout ran to the end board with the On-pace line. No errors apart from PeerJS.
+- Not checked: anything in the headset. The emulator can't move hands, so cuts and jacks are tested only in Node. The pace
+  offsets (+10 / +18 / -12) are the proposal's numbers, untried on a real heart.

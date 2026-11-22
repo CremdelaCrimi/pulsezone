@@ -192,10 +192,78 @@ export function profileOffset(profile, t, total = 900) {
   return 0;
 }
 
+/**
+ * Pace blocks (v63, Gio: "go above and below on purpose"). Training runs in timed blocks, each with
+ * its own heart-rate band around your target: BASE (your zone), PUSH (+10), ALL OUT (+18 and up,
+ * the safety brake still applies) and RECOVER (-12 and under). Each workout shape is a block layout:
+ * Steady = long Base with short Pushes, Waves = Base and Push in turns with one Recover, Build =
+ * climbs to two All outs at the end. Heart rate lags effort by 30-40 s, so the target (and the move
+ * mix) moves PACE_LEAD s before a block starts, eased over PACE_RAMP s, and for PACE_GRACE s after
+ * a change you're on pace anywhere between the old band and the new one.
+ * `mix` = the act whose move weights a pace uses; `open` = that side of the band also counts.
+ */
+export const PACES = Object.freeze({
+  base: Object.freeze({ name: 'BASE', off: 0, mix: 'groove' }),
+  push: Object.freeze({ name: 'PUSH', off: 10, mix: 'burn' }),
+  allout: Object.freeze({ name: 'ALL OUT', off: 18, mix: 'fight', open: 'up' }),
+  recover: Object.freeze({ name: 'RECOVER', off: -12, mix: 'groove', open: 'down' }),
+});
+export const PACE_LEAD = 30, PACE_RAMP = 20, PACE_GRACE = 30;
+/** Block layouts for a 15-minute training block (seconds); shorter or longer workouts scale. */
+export const PACE_LAYOUTS = Object.freeze({
+  steady: [['base', 180], ['push', 90], ['base', 180], ['push', 90], ['base', 150], ['push', 60], ['base', 150]],
+  waves: [['base', 150], ['push', 120], ['base', 120], ['push', 120], ['recover', 75], ['base', 105], ['push', 120], ['base', 90]],
+  build: [['base', 180], ['push', 120], ['base', 120], ['push', 90], ['allout', 45], ['recover', 75], ['base', 120], ['push', 60], ['allout', 45], ['base', 45]],
+});
+/** The blocks for a workout shape and training length: [{ pace, start, end }]. Under 8 min: one Base block (blocks would be too short to feel). */
+export function paceBlocks(shape, seconds) {
+  if (!(seconds > 0) || !Number.isFinite(seconds)) return [];
+  const layout = PACE_LAYOUTS[shape] || PACE_LAYOUTS.steady;
+  if (seconds < 480) return [{ pace: 'base', start: 0, end: seconds }];
+  const total = layout.reduce((a, [, d]) => a + d, 0), k = seconds / total;
+  let t = 0;
+  return layout.map(([pace, d]) => { const b = { pace, start: t, end: t + d * k }; t = b.end; return b; });
+}
+/** Index of the block on at `t` s into training (the last one after the end; -1 for no plan). */
+export function paceAt(plan, t) {
+  if (!plan || !plan.length) return -1;
+  for (let i = 0; i < plan.length; i++) if (t < plan[i].end) return i;
+  return plan.length - 1;
+}
+/** Target offset (BPM) at `t`: the block PACE_LEAD s ahead, eased in from the one before over PACE_RAMP s. */
+export function paceOffset(plan, t) {
+  const i = paceAt(plan, t + PACE_LEAD);
+  if (i < 0) return 0;
+  const off = PACES[plan[i].pace].off;
+  if (i === 0) return off;
+  const since = t + PACE_LEAD - plan[i].start;
+  return lerp(PACES[plan[i - 1].pace].off, off, clamp01(since / PACE_RAMP));
+}
+/**
+ * On pace? `status` is the plain band check against the current (leading) target. An open block
+ * (All out above, Recover below) also counts that side, and around a change (from PACE_LEAD s before
+ * to PACE_GRACE s after) anywhere between the old band and the new one counts.
+ */
+export function paceStatus(plan, t, { bpm, target, half, status }) {
+  if (status !== Zone.Below && status !== Zone.Above) return status;
+  const i = paceAt(plan, t);
+  if (i < 0) return status;
+  const P = PACES[plan[i].pace];
+  if ((P.open === 'up' && status === Zone.Above) || (P.open === 'down' && status === Zone.Below)) return Zone.InZone;
+  const base = target - paceOffset(plan, t);
+  let a = null, b = null;
+  if (i > 0 && t - plan[i].start < PACE_GRACE) { a = PACES[plan[i - 1].pace].off; b = P.off; }
+  else if (plan[i + 1] && plan[i + 1].start - t <= PACE_LEAD) { a = P.off; b = PACES[plan[i + 1].pace].off; }
+  if (a == null) return status;
+  const lo = base + Math.min(a, b) - half, hi = base + Math.max(a, b) + half;
+  return bpm >= lo && bpm <= hi ? Zone.InZone : status;
+}
+
 export function defaultZoneSettings() {
   return {
     targetBpm: 120,
     profile: 'steady',   // workout shape during training: 'steady' | 'waves' | 'build'
+    blocks: false,       // v63 pace blocks: the shape becomes a block layout (see PACES)
     zoneHalfWidth: 5,
     safetyCeilingBpm: 160,
     warmUpSeconds: 120,
@@ -237,6 +305,17 @@ export class ZoneController {
     this.warmUpStartBpm = NaN;
     this.coolDownStartIntensity = 0;
     this.braking = false;
+    this.paceSeconds = { base: 0, push: 0, allout: 0, recover: 0 }; // on-pace seconds per pace (v63)
+    this._pace = { key: '', plan: null };
+  }
+
+  /** The pace-block plan for this shape and length (null when blocks are off). */
+  get pacePlan() {
+    const s = this.s;
+    if (!s.blocks) return null;
+    const key = `${s.profile}|${s.trainingSeconds}`;
+    if (this._pace.key !== key) this._pace = { key, plan: paceBlocks(s.profile, s.trainingSeconds) };
+    return this._pace.plan;
   }
 
   get phaseDuration() {
@@ -289,7 +368,12 @@ export class ZoneController {
     const target = this.phase === Phase.CoolDown ? s.targetBpm : this.currentSetpoint;
     const zoneError = target - this.smoothedBpm;
     this.status = Math.abs(zoneError) <= s.zoneHalfWidth ? Zone.InZone : zoneError > 0 ? Zone.Below : Zone.Above;
-    if (this.phase === Phase.Training && this.status === Zone.InZone) this.secondsInZone += dt;
+    const plan = this.phase === Phase.Training ? this.pacePlan : null;
+    if (plan) this.status = paceStatus(plan, this.phaseElapsedSeconds, { bpm: this.smoothedBpm, target, half: s.zoneHalfWidth, status: this.status });
+    if (this.phase === Phase.Training && this.status === Zone.InZone) {
+      this.secondsInZone += dt;
+      if (plan) { const b = plan[paceAt(plan, this.phaseElapsedSeconds)]; if (b) this.paceSeconds[b.pace] += dt; }
+    }
 
     if (this.phase === Phase.CoolDown) {
       const t = clamp01(this.phaseElapsedSeconds / Math.max(1, s.coolDownSeconds));
@@ -343,7 +427,8 @@ export class ZoneController {
   /** Training target at time t (s into training): your target plus the workout shape, kept under the ceiling. */
   trainingTarget(t) {
     const s = this.s;
-    return Math.min(s.targetBpm + profileOffset(s.profile, t, s.trainingSeconds), s.safetyCeilingBpm - 8);
+    const plan = this.pacePlan;
+    return Math.min(s.targetBpm + (plan ? paceOffset(plan, t) : profileOffset(s.profile, t, s.trainingSeconds)), s.safetyCeilingBpm - 8);
   }
 
   setpointRampRate() {
@@ -567,8 +652,8 @@ export const ACTIVITIES = Object.freeze([
   { key: 'knee', label: 'Knee drives', kind: 'station', from: 0.3, base: 0.25, prior: 1.5 },
   // A wall-ball ROUND holds the lane for 20-30 s, so it's sent rarely in the normal mix (charges send it on purpose).
   { key: 'press', label: 'Wall-ball rounds', kind: 'station', from: 0.3, base: 0.07, prior: 1.6 },
-  { key: 'chop', label: 'Woodchoppers', kind: 'station', from: 0.25, base: 0.25, prior: 1.2 },
-  { key: 'tiptoe', label: 'Tiptoe reach', kind: 'station', from: 0.15, base: 0.2, prior: 0.6 },
+  { key: 'chop', label: 'Tree chops', kind: 'station', from: 0.25, base: 0.25, prior: 1.2 },
+  { key: 'tiptoe', label: 'Arm jacks', kind: 'station', from: 0.15, base: 0.2, prior: 0.6 },
   // v62 hammer swing (Gio's kettlebell idea): hinge, grab the hammer low, snap your hips and swing it up into the bag top.
   { key: 'kettle', label: 'Hammer swings', kind: 'station', from: 0.3, base: 0.25, prior: 1.5 },
   { key: 'bag', label: 'Speed bag', kind: 'burst', from: 0.35, base: 0.1, prior: 0.3 },     // per punch on the bag
@@ -857,7 +942,7 @@ export const SPOTLIGHT_MOVES = Object.freeze(['power', 'guard', 'low', 'swing', 
 export const SPOTLIGHT_NAMES = Object.freeze({
   power: 'POWER ROUND', guard: 'DEFENCE DRILL', low: 'SQUAT ROUND', swing: 'HOOKS & UPPERCUTS', pair: 'SQUAT + PUNCH UP', hammer: 'HAMMER FISTS',
   sweep: 'TWO-HAND ROPES', trace: 'ROPE ROUND', duck: 'DUCK & WEAVE', squatSide: 'SIDE SQUATS', lateral: 'FOOTWORK',
-  knee: 'KNEE DRIVES', press: 'WALL BALLS', chop: 'WOODCHOPPERS', tiptoe: 'TIPTOE ROUND', kettle: 'HAMMER SWINGS',
+  knee: 'KNEE DRIVES', press: 'WALL BALLS', chop: 'WOODCHOPPERS', tiptoe: 'ARM JACKS', kettle: 'HAMMER SWINGS',
 });
 /** Is a spotlight due at this many seconds into training (given when the last one started)? */
 export function spotlightDue(t, lastStart) {
@@ -929,8 +1014,8 @@ export const sledTucked = (headY, standing) => headY < standing - 0.15;
 export const STATIONS = Object.freeze({
   knee: { hold: 8, reps: 4 },    // alternating knees
   press: { hold: 25, reps: 8, round: true }, // a wall-ball ROUND: hold and reps come from WALLBALL below
-  chop: { hold: 7.5, reps: 4 },  // alternating sides
-  tiptoe: { hold: 6, reps: 4 },  // alternating hands
+  chop: { hold: 16, reps: 10 },  // v63: 5 cuts on one side, then the tree moves over for 5 more
+  tiptoe: { hold: 10, reps: 5 }, // v63: arm jacks x5 (key kept from the tiptoe reach it replaces)
   kettle: { hold: 10, reps: 5 }, // v62 hammer swings: hinge low, swing it up into the bag top
 });
 /**
@@ -990,6 +1075,77 @@ export function chopSwing(state, { midX, midY, gap, side, t }) {
   if (inBand && midX * side < -C.through) { state.armedAt = null; return 'chop'; }
   return null;
 }
+/**
+ * One-sided tree chop (v63, Gio's design): the tree stands on one side; hands together at the lit
+ * spot on the other side, chop down and across into the cut mark on the trunk, 5 times, then the tree
+ * moves to the other side. The cut mark is tilted: 'down' (from over your shoulder down to the
+ * opposite hip), 'flat' (across at chest height) or 'up' (from your hip up across your body, from
+ * 40% intensity). A swing that goes through at roughly the cut's angle is a CLEAN CUT; a swing at the
+ * wrong angle still counts as a chop, with a nudge. Heights are relative to your standing eye height.
+ * `slope` = how much the hands dropped per metre across (+ = downward).
+ */
+export const TREE_TILTS = Object.freeze({
+  down: Object.freeze({ startY: -0.15, endY: -0.75, from: 0 }),
+  flat: Object.freeze({ startY: -0.38, endY: -0.38, from: 0 }),
+  up: Object.freeze({ startY: -0.72, endY: -0.12, from: 0.4 }),
+});
+// trunkX: the tree stands 30 cm out on the side the swing ENDS (wind up away from it, chop into it).
+export const TREE_SIDE = Object.freeze({ cuts: 5, startX: 0.42, endX: 0.38, trunkX: 0.3, near: 0.3, slope: 0.3 });
+/** The next cut's tilt for this intensity (not the same one three times running). */
+export function pickTilt({ intensity = 0.5, last = [], rng = Math.random } = {}) {
+  let list = Object.keys(TREE_TILTS).filter((k) => TREE_TILTS[k].from <= intensity + 1e-9);
+  if (last.length >= 2 && last[last.length - 1] === last[last.length - 2]) list = list.filter((k) => k !== last[last.length - 1]) ;
+  if (!list.length) list = ['down'];
+  return list[Math.floor(rng() * list.length) % list.length];
+}
+/** Did a swing's slope match the cut? */
+export const tiltMatches = (tilt, slope) => (tilt === 'down' ? slope >= TREE_SIDE.slope : tilt === 'up' ? slope <= -TREE_SIDE.slope : Math.abs(slope) < TREE_SIDE.slope + 0.05);
+/**
+ * One frame of the one-sided chop. Hands together near the lit start spot (on `side`, at the tilt's
+ * start height) arms it; then, within the window, the hands' midpoint crossing to the other side of
+ * your centre line is a cut: 'clean' at the right angle, 'rough' otherwise. 'late' if it never comes.
+ */
+export function treeCut(state, { midX, midY, gap, side, tilt, t }) {
+  const C = TREE_CHOP, T = TREE_TILTS[tilt] || TREE_TILTS.down;
+  const inBand = midY > -C.low && midY < C.high;
+  if (gap < C.together && midX * side > C.start && Math.abs(midY - T.startY) < TREE_SIDE.near) {
+    state.armedAt = t; state.armX = midX; state.armY = midY; return 'armed';
+  }
+  if (state.armedAt == null) return null;
+  if (t - state.armedAt >= C.window) { state.armedAt = null; return 'late'; }
+  if (inBand && midX * side < -C.through) {
+    state.armedAt = null;
+    state.slope = (state.armY - midY) / Math.max(0.1, (state.armX - midX) * side);
+    return tiltMatches(tilt, state.slope) ? 'clean' : 'rough';
+  }
+  return null;
+}
+
+/**
+ * Arm jacks (v63, replace the one-hand tiptoe reach; Gio's design): a star overhead on each side.
+ * Both fists down by your sides, then both sweep up to the stars together = one jack; 5 on a beat
+ * that quickens with intensity. Rising onto your toes at the top is a bonus. The station keeps the
+ * key 'tiptoe' so saved settings and the learned mix carry over.
+ * Heights are relative to your standing eye height; x is to your right.
+ */
+export const JACKS = Object.freeze({ x: 0.34, down: 0.45, radius: 0.26, toes: 0.03, slowBeat: 1.6, fastBeat: 1.15, onBeat: 0.35 });
+/** How high (above your eyes) to put the jack stars: arms up and out, reachable flat-footed. */
+export const jackHeight = (reachUp) => Math.min(0.5, Math.max(0.22, reachUp - 0.08));
+export const jackBeat = (intensity) => lerp(JACKS.slowBeat, JACKS.fastBeat, clamp01(Number.isFinite(intensity) ? intensity : 0.5));
+/**
+ * One frame of arm jacks. `L`, `R` = fists, `starL`, `starR` = the stars, all {x, y, z} in one frame;
+ * `headY`, `base` = eye height now and standing. Returns 'down' once when both fists come down,
+ * 'jack' / 'toes' (heels up too) when both reach their stars after being down, otherwise null.
+ */
+export function armJack(state, { L, R, starL, starR, headY, base }) {
+  if (L.y < base - JACKS.down && R.y < base - JACKS.down) { if (!state.down) { state.down = true; return 'down'; } return null; }
+  if (state.down && dist3(L, starL) < JACKS.radius && dist3(R, starR) < JACKS.radius) {
+    state.down = false;
+    return headY >= base + JACKS.toes ? 'toes' : 'jack';
+  }
+  return null;
+}
+
 /**
  * Hammer swing (v62, Gio: "kettlebell swing could be like a hammer ... you bend and grab and need to
  * quickly hit the top of a bag"). Both hands together low (below your knees' height, hips hinged:

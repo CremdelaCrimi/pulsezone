@@ -3,7 +3,7 @@
 // how to do it; trigger switches it on or off. Opens when you enter VR (the workout waits), and from
 // the board (Pick moves). Gio: "a nice choose-the-workout-types ... when you aim at it, a quick
 // video of the move as reference before starting".
-import { MOVE_FIGS, drawFigure } from './movefig.js?v62';
+import { MOVE_FIGS, drawFigure } from './movefig.js?v63';
 // v62 (Gio: "very blurry and goes left and right"): drawn at 2x resolution with anisotropic filtering,
 // 7 columns (room for the hammer swing), and game.js keeps it anchored where it opened.
 
@@ -21,9 +21,9 @@ export const PICK_CARDS = Object.freeze([
   { id: 'barrage', name: 'Missiles', keys: ['barrage'], cat: 'Bursts', text: 'Duck and weave: dip to the side away from the pair, or duck under the row.' },
   { id: 'knee', name: 'Knee drive', keys: ['knee'], cat: 'Body', text: 'Grab the bar overhead, pull it down and drive a knee up. Alternate legs.' },
   { id: 'press', name: 'Wall ball', keys: ['press'], cat: 'Body', text: 'Squat, drive up, press the ball to the ring on the beat. 10-15 s, then the ropes.' },
-  { id: 'chop', name: 'Tree chop', keys: ['chop'], cat: 'Body', text: 'Hands together by one shoulder, swing across through the trunk.' },
+  { id: 'chop', name: 'Tree chop', keys: ['chop'], cat: 'Body', text: 'The tree stands on one side: chop through its tilted cut mark 5 times, then it moves over for 5 more.' },
   { id: 'kettle', name: 'Hammer swing', keys: ['kettle'], cat: 'Body', text: 'Hinge at the hips and grab the hammer low with both hands, then snap your hips and swing it up onto the bag top.' },
-  { id: 'tiptoe', name: 'Tiptoe reach', keys: ['tiptoe'], cat: 'Body', text: 'Up on your toes and touch the star, one hand at a time.' },
+  { id: 'tiptoe', name: 'Arm jacks', keys: ['tiptoe'], cat: 'Body', text: 'Arms down by your sides, then sweep both up to the two stars. 5 on the beat; up on your toes for a bonus.' },
   { id: 'duck', name: 'Duck walls', keys: ['duck'], cat: 'Walls', text: 'A bar slides in at head height: squat under it.' },
   { id: 'squatSide', name: 'Side squats', keys: ['squatSide'], cat: 'Walls', text: 'Squat and dip your head to the open side, left or right. Feet stay put.' },
   { id: 'lean', name: 'Lean walls', keys: ['lean', 'pillar'], cat: 'Walls', text: 'Lean your upper body left or right around the wall or the pillar.' },

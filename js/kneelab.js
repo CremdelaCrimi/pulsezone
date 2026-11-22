@@ -5,7 +5,7 @@
 // be checked against real moves. The workout is paused while it runs.
 // Start: board -> Diag -> Test 4 -> Knee lab. Open the game with ?kneelab to also ask the Quest
 // browser for body tracking (its estimated skeleton, legs included, if it shares one).
-import { KNEE, StepCounter, KneeBump, CrunchDetector, KneeLift, headAngles, kneeOf, LEG_JOINT } from './kneetrack.js?v62';
+import { KNEE, StepCounter, KneeBump, CrunchDetector, KneeLift, headAngles, kneeOf, LEG_JOINT } from './kneetrack.js?v63';
 
 export const LAB_STEPS = Object.freeze([
   { key: 'still', secs: 6, title: 'STAND STILL', text: 'Measuring your normal height and stance.' },
